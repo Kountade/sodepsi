@@ -11,7 +11,7 @@ const getBaseUrl = () => {
   
   // Priorité 2 : Détection selon le mode
   if (import.meta.env.PROD) {
-    return 'https://ba-souleymane-fils-backe.onrender.com'
+    return 'https://sodepsi-backend.onrender.com'
   }
   
   // Développement local
