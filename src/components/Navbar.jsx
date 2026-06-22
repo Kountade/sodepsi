@@ -1,4 +1,4 @@
-// src/components/Navbar.jsx - Version Adaptée pour les rôles (Admin & Vendeur)
+// src/components/Navbar.jsx - Version Adaptée pour les rôles (Admin & Vendeur) avec ACHATS
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { 
@@ -97,6 +97,9 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
     'TABLEAU DE BORD': true,
     'VENTES': true,
     'STOCK': false,
+    'ACHATS': false,
+    'FINANCES': false,
+    'ADMINISTRATION': false,
     'MON ESPACE': false
   });
   
@@ -112,6 +115,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
   // Compteurs pour les badges
   const [ventesImpayees, setVentesImpayees] = useState(0);
   const [stocksFaibles, setStocksFaibles] = useState(0);
+  const [commandesALivrer, setCommandesALivrer] = useState(0);
   const [alertesCount, setAlertesCount] = useState(0);
 
   // Récupérer l'utilisateur depuis localStorage
@@ -158,13 +162,15 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
         const isAdmin = role === 'admin';
         
         if (isAdmin) {
-          const [ventesRes, stocksRes, alertsRes] = await Promise.all([
+          const [ventesRes, stocksRes, achatsRes, alertsRes] = await Promise.all([
             AxiosInstance.get('/sales/?payment_status=pending').catch(() => ({ data: [] })),
             AxiosInstance.get('/stocks/low-stock/').catch(() => ({ data: [] })),
+            AxiosInstance.get('/purchase-orders/?status=pending').catch(() => ({ data: [] })),
             AxiosInstance.get('/alerts/').catch(() => ({ data: [] }))
           ]);
           setVentesImpayees(ventesRes.data?.length || 0);
           setStocksFaibles(stocksRes.data?.length || 0);
+          setCommandesALivrer(achatsRes.data?.length || 0);
           setAlertesCount(alertsRes.data?.length || 0);
           
           // Construire les notifications
@@ -187,6 +193,15 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
               type: 'error' 
             });
           }
+          if (commandesALivrer > 0) {
+            notifs.push({ 
+              id: 'achats', 
+              title: 'Commandes à recevoir', 
+              message: `${commandesALivrer} commande(s) en attente`, 
+              link: '/commandes-fournisseurs', 
+              type: 'info' 
+            });
+          }
           setNotifications(notifs);
           setNotificationCount(notifs.length);
         }
@@ -199,7 +214,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
     };
     
     loadData();
-  }, [role, stocksFaibles, ventesImpayees]);
+  }, [role, stocksFaibles, ventesImpayees, commandesALivrer]);
 
   // Initiale utilisateur
   useEffect(() => {
@@ -224,6 +239,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
   const canViewSales = () => isAdmin || isVendeur;
   const canViewPOS = () => isAdmin || isVendeur;
   const canViewStock = () => isAdmin;
+  const canViewPurchases = () => isAdmin;
   const canViewFinances = () => isAdmin;
   const canViewUsers = () => isAdmin;
   const canViewReports = () => isAdmin;
@@ -272,8 +288,21 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
         { id: 'stocks', text: 'Stocks', icon: Boxes, path: '/stocks', permission: canViewStock(), badge: stocksFaibles },
         { id: 'entrepots', text: 'Entrepôts', icon: Warehouse, path: '/entrepots', permission: canViewStock() },
         { id: 'mouvements', text: 'Mouvements', icon: TrendingUp, path: '/mouvements-stock', permission: canViewStock() },
+        { id: 'lots', text: 'Lots', icon: Layers, path: '/lots', permission: canViewStock() },
         { id: 'alertes-expiration', text: 'Alertes expiration', icon: AlertTriangle, path: '/alertes-expiration', permission: canViewStock(), badge: alertesCount },
-        { id: 'inventaire', text: 'Inventaire', icon: ClipboardCheck, path: '/inventaire', permission: canViewStock() }
+        { id: 'inventaire', text: 'Inventaire', icon: ClipboardCheck, path: '/inventaire', permission: canViewStock() },
+        { id: 'transferts', text: 'Transferts', icon: MoveHorizontal, path: '/transferts', permission: canViewStock() }
+      ]
+    }] : []),
+    ...(isAdmin ? [{
+      name: 'ACHATS',
+      icon: ShoppingBag,
+      permission: canViewPurchases(),
+      items: [
+        { id: 'fournisseurs', text: 'Fournisseurs', icon: Building2, path: '/fournisseurs', permission: canViewPurchases() },
+        { id: 'commandes', text: 'Commandes', icon: FileText, path: '/commandes-fournisseurs', permission: canViewPurchases(), badge: commandesALivrer },
+        { id: 'receptions', text: 'Réceptions', icon: PackageCheck, path: '/receptions', permission: canViewPurchases() },
+        { id: 'alertes-achats', text: 'Alertes', icon: AlertTriangle, path: '/purchase-alerts', permission: canViewPurchases(), badge: alertesCount }
       ]
     }] : []),
     ...(isAdmin ? [{
@@ -283,7 +312,8 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
       items: [
         { id: 'tresorerie', text: 'Trésorerie', icon: CreditCard, path: '/tresorerie', permission: canViewFinances() },
         { id: 'depenses', text: 'Dépenses', icon: FileText, path: '/depenses', permission: canViewFinances() },
-        { id: 'rapports', text: 'Rapports', icon: LineChart, path: '/rapports-financiers', permission: canViewFinances() }
+        { id: 'rapports', text: 'Rapports', icon: LineChart, path: '/rapports-financiers', permission: canViewFinances() },
+        { id: 'comptabilite', text: 'Comptabilité', icon: Calculator, path: '/comptabilite', permission: isAdmin }
       ]
     }] : []),
     ...(isAdmin ? [{
