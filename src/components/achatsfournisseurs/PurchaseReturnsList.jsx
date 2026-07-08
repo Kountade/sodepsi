@@ -1,18 +1,17 @@
-// src/components/achats/ReceptionsList.jsx
+// src/components/achats/PurchaseReturnsList.jsx
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import AxiosInstance from '../AxiosInstance';
 import {
-  Plus, Search, Package,
-  RefreshCw, X, CheckCircle, AlertCircle,
+  Plus, Search, Package, RefreshCw, X, CheckCircle, AlertCircle,
   Eye, Filter, ChevronLeft, ChevronRight,
   Truck, Calendar, DollarSign, Clock, FileText,
-  ClipboardList, Download
+  ArrowLeftRight, Download
 } from 'lucide-react';
 
-const ReceptionsList = () => {
+const PurchaseReturnsList = () => {
   const navigate = useNavigate();
-  const [receipts, setReceipts] = useState([]);
+  const [returns, setReturns] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -30,11 +29,11 @@ const ReceptionsList = () => {
 
   const getToken = () => localStorage.getItem('Token');
 
-  const fetchReceipts = async () => {
+  const fetchReturns = async () => {
     setLoading(true);
     try {
       const token = getToken();
-      let url = '/receipts/';
+      let url = '/purchase-returns/';
       const params = new URLSearchParams();
       
       if (statusFilter !== 'all') {
@@ -57,7 +56,7 @@ const ReceptionsList = () => {
       const response = await AxiosInstance.get(url, {
         headers: { 'Authorization': `Token ${token}` }
       });
-      setReceipts(response.data);
+      setReturns(response.data);
     } catch (error) {
       console.error('Erreur:', error);
       if (error.response?.status === 401) {
@@ -72,46 +71,61 @@ const ReceptionsList = () => {
   };
 
   useEffect(() => {
-    fetchReceipts();
+    fetchReturns();
   }, [statusFilter, dateFrom, dateTo]);
 
-  const handleDownloadPdf = (receiptId) => {
-    navigate(`/receptions/${receiptId}/pdf`);
+  const handleDownloadPdf = (returnId) => {
+    navigate(`/purchase-returns/${returnId}/pdf`);
   };
 
-  const filteredReceipts = receipts.filter(receipt => {
+  const filteredReturns = returns.filter(returnItem => {
     const matchesSearch = !searchTerm || 
-      (receipt.receipt_number?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
-      (receipt.po_number?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
-      (receipt.supplier_name?.toLowerCase() || '').includes(searchTerm.toLowerCase());
+      (returnItem.return_number?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+      (returnItem.po_number?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+      (returnItem.supplier_name?.toLowerCase() || '').includes(searchTerm.toLowerCase());
     return matchesSearch;
   });
 
-  const totalPages = Math.ceil(filteredReceipts.length / itemsPerPage);
+  const totalPages = Math.ceil(filteredReturns.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
-  const paginatedReceipts = filteredReceipts.slice(startIndex, startIndex + itemsPerPage);
+  const paginatedReturns = filteredReturns.slice(startIndex, startIndex + itemsPerPage);
 
   const stats = {
-    total: receipts.length,
-    pending: receipts.filter(r => r.status === 'pending').length,
-    inProgress: receipts.filter(r => r.status === 'in_progress').length,
-    completed: receipts.filter(r => r.status === 'completed').length,
-    totalQuantity: receipts.reduce((sum, r) => sum + (r.total_quantity || 0), 0)
+    total: returns.length,
+    requested: returns.filter(r => r.status === 'requested').length,
+    approved: returns.filter(r => r.status === 'approved').length,
+    shipped: returns.filter(r => r.status === 'shipped').length,
+    refunded: returns.filter(r => r.status === 'refunded').length
   };
 
   const getStatusBadge = (status) => {
     switch(status) {
-      case 'pending':
-        return <span className="badge badge-warning">En attente</span>;
-      case 'in_progress':
-        return <span className="badge badge-info">En cours</span>;
-      case 'completed':
-        return <span className="badge badge-success">Terminée</span>;
-      case 'cancelled':
-        return <span className="badge badge-error">Annulée</span>;
+      case 'requested':
+        return <span className="badge badge-warning">Demandé</span>;
+      case 'approved':
+        return <span className="badge badge-info">Approuvé</span>;
+      case 'shipped':
+        return <span className="badge badge-primary">Expédié</span>;
+      case 'refunded':
+        return <span className="badge badge-success">Remboursé</span>;
+      case 'replaced':
+        return <span className="badge badge-secondary">Remplacé</span>;
+      case 'rejected':
+        return <span className="badge badge-error">Refusé</span>;
       default:
         return <span className="badge badge-ghost">{status}</span>;
     }
+  };
+
+  const getReasonLabel = (reason) => {
+    const map = {
+      defective: 'Défectueux',
+      wrong_product: 'Produit incorrect',
+      expired: 'Expiré',
+      damaged: 'Endommagé',
+      other: 'Autre'
+    };
+    return map[reason] || reason;
   };
 
   if (loading) {
@@ -119,7 +133,7 @@ const ReceptionsList = () => {
       <div className="flex items-center justify-center min-h-[calc(100vh-200px)]">
         <div className="text-center space-y-4">
           <div className="loading loading-spinner loading-lg text-primary w-12 h-12"></div>
-          <p className="text-base font-semibold text-gray-500">Chargement des réceptions...</p>
+          <p className="text-base font-semibold text-gray-500">Chargement des retours...</p>
         </div>
       </div>
     );
@@ -148,20 +162,20 @@ const ReceptionsList = () => {
           <div>
             <div className="flex items-center gap-3 mb-2">
               <div className="p-2 bg-primary/10 rounded-xl">
-                <ClipboardList className="w-7 h-7 text-primary" />
+                <ArrowLeftRight className="w-7 h-7 text-primary" />
               </div>
-              <h1 className="text-2xl sm:text-3xl font-black text-primary">Réceptions</h1>
+              <h1 className="text-2xl sm:text-3xl font-black text-primary">Retours fournisseurs</h1>
             </div>
             <p className="text-sm text-gray-500 ml-1">
-              Gérez les réceptions de marchandises – {stats.total} réception(s)
+              Gérez les retours de marchandises – {stats.total} retour(s)
             </p>
           </div>
           <div className="flex flex-wrap gap-3">
-            <button onClick={fetchReceipts} className="btn btn-sm sm:btn-md btn-outline gap-2">
+            <button onClick={fetchReturns} className="btn btn-sm sm:btn-md btn-outline gap-2">
               <RefreshCw className="w-4 h-4" /> Actualiser
             </button>
-            <button onClick={() => navigate('/receptions/nouveau')} className="btn btn-sm sm:btn-md bg-gradient-to-r from-primary to-primary/80 text-white border-none shadow-lg gap-2">
-              <Plus className="w-4 h-4" /> Nouvelle réception
+            <button onClick={() => navigate('/purchase-returns/nouveau')} className="btn btn-sm sm:btn-md bg-gradient-to-r from-primary to-primary/80 text-white border-none shadow-lg gap-2">
+              <Plus className="w-4 h-4" /> Nouveau retour
             </button>
           </div>
         </div>
@@ -172,31 +186,31 @@ const ReceptionsList = () => {
         <div className="bg-white shadow-md rounded-xl p-3">
           <div className="flex items-center justify-between">
             <div><p className="text-xs text-gray-500">Total</p><p className="text-xl font-bold text-primary">{stats.total}</p></div>
-            <ClipboardList className="w-8 h-8 text-primary/20" />
+            <ArrowLeftRight className="w-8 h-8 text-primary/20" />
           </div>
         </div>
         <div className="bg-white shadow-md rounded-xl p-3">
           <div className="flex items-center justify-between">
-            <div><p className="text-xs text-gray-500">En attente</p><p className="text-xl font-bold text-warning">{stats.pending}</p></div>
+            <div><p className="text-xs text-gray-500">Demandés</p><p className="text-xl font-bold text-warning">{stats.requested}</p></div>
             <Clock className="w-8 h-8 text-warning/20" />
           </div>
         </div>
         <div className="bg-white shadow-md rounded-xl p-3">
           <div className="flex items-center justify-between">
-            <div><p className="text-xs text-gray-500">En cours</p><p className="text-xl font-bold text-info">{stats.inProgress}</p></div>
-            <Truck className="w-8 h-8 text-info/20" />
+            <div><p className="text-xs text-gray-500">Approuvés</p><p className="text-xl font-bold text-info">{stats.approved}</p></div>
+            <CheckCircle className="w-8 h-8 text-info/20" />
           </div>
         </div>
         <div className="bg-white shadow-md rounded-xl p-3">
           <div className="flex items-center justify-between">
-            <div><p className="text-xs text-gray-500">Terminées</p><p className="text-xl font-bold text-success">{stats.completed}</p></div>
-            <CheckCircle className="w-8 h-8 text-success/20" />
+            <div><p className="text-xs text-gray-500">Expédiés</p><p className="text-xl font-bold text-primary">{stats.shipped}</p></div>
+            <Truck className="w-8 h-8 text-primary/20" />
           </div>
         </div>
         <div className="bg-white shadow-md rounded-xl p-3">
           <div className="flex items-center justify-between">
-            <div><p className="text-xs text-gray-500">Qté reçue</p><p className="text-sm font-bold text-info">{stats.totalQuantity}</p></div>
-            <Package className="w-8 h-8 text-info/20" />
+            <div><p className="text-xs text-gray-500">Remboursés</p><p className="text-xl font-bold text-success">{stats.refunded}</p></div>
+            <DollarSign className="w-8 h-8 text-success/20" />
           </div>
         </div>
       </div>
@@ -220,10 +234,12 @@ const ReceptionsList = () => {
           <div className={`${showFilters ? 'grid' : 'hidden'} sm:grid grid-cols-1 sm:grid-cols-4 gap-3`}>
             <select className="select select-bordered w-full" value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(1); }}>
               <option value="all">Tous les statuts</option>
-              <option value="pending">En attente</option>
-              <option value="in_progress">En cours</option>
-              <option value="completed">Terminées</option>
-              <option value="cancelled">Annulées</option>
+              <option value="requested">Demandés</option>
+              <option value="approved">Approuvés</option>
+              <option value="shipped">Expédiés</option>
+              <option value="refunded">Remboursés</option>
+              <option value="replaced">Remplacés</option>
+              <option value="rejected">Refusés</option>
             </select>
             <input type="date" className="input input-bordered" placeholder="Date début" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
             <input type="date" className="input input-bordered" placeholder="Date fin" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
@@ -234,55 +250,59 @@ const ReceptionsList = () => {
         </div>
       </div>
 
-      {/* Tableau des réceptions */}
+      {/* Tableau des retours */}
       <div className="bg-white rounded-xl shadow-xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="table w-full">
             <thead className="bg-gray-50">
               <tr>
-                <th className="py-3">N° Réception</th>
+                <th className="py-3">N° Retour</th>
                 <th className="py-3">Commande</th>
                 <th className="py-3">Fournisseur</th>
-                <th className="py-3">Date réception</th>
+                <th className="py-3">Date retour</th>
+                <th className="py-3 text-center">Raison</th>
                 <th className="py-3 text-center">Statut</th>
                 <th className="py-3 text-center">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {paginatedReceipts.length === 0 ? (
+              {paginatedReturns.length === 0 ? (
                 <tr>
-                  <td colSpan="6" className="text-center py-16">
-                    <ClipboardList className="w-16 h-16 text-gray-300 mx-auto mb-3" />
-                    <p className="text-gray-500 font-medium">Aucune réception trouvée</p>
-                    <button onClick={() => navigate('/receptions/nouveau')} className="btn btn-primary btn-sm gap-2 mt-3">
-                      <Plus className="w-4 h-4" /> Créer une réception
+                  <td colSpan="7" className="text-center py-16">
+                    <ArrowLeftRight className="w-16 h-16 text-gray-300 mx-auto mb-3" />
+                    <p className="text-gray-500 font-medium">Aucun retour trouvé</p>
+                    <button onClick={() => navigate('/purchase-returns/nouveau')} className="btn btn-primary btn-sm gap-2 mt-3">
+                      <Plus className="w-4 h-4" /> Créer un retour
                     </button>
                   </td>
                 </tr>
               ) : (
-                paginatedReceipts.map(receipt => (
-                  <tr key={receipt.id} className="hover:bg-gray-50">
-                    <td className="py-3 font-mono font-semibold">{receipt.receipt_number}</td>
-                    <td className="py-3">{receipt.po_number}</td>
-                    <td className="py-3">{receipt.supplier_name}</td>
+                paginatedReturns.map(returnItem => (
+                  <tr key={returnItem.id} className="hover:bg-gray-50">
+                    <td className="py-3 font-mono font-semibold">{returnItem.return_number}</td>
+                    <td className="py-3">{returnItem.po_number}</td>
+                    <td className="py-3">{returnItem.supplier_name}</td>
                     <td className="py-3">
                       <div className="flex items-center gap-1">
                         <Calendar className="w-3 h-3 text-gray-400" />
-                        <span className="text-sm">{new Date(receipt.receipt_date).toLocaleDateString()}</span>
+                        <span className="text-sm">{new Date(returnItem.return_date).toLocaleDateString()}</span>
                       </div>
                     </td>
-                    <td className="py-3 text-center">{getStatusBadge(receipt.status)}</td>
+                    <td className="py-3 text-center">
+                      <span className="badge badge-ghost">{getReasonLabel(returnItem.reason)}</span>
+                    </td>
+                    <td className="py-3 text-center">{getStatusBadge(returnItem.status)}</td>
                     <td className="py-3 text-center">
                       <div className="flex justify-center gap-1">
                         <button 
-                          onClick={() => navigate(`/receptions/${receipt.id}`)} 
+                          onClick={() => navigate(`/purchase-returns/${returnItem.id}`)} 
                           className="btn btn-ghost btn-sm btn-circle"
                           title="Voir détails"
                         >
                           <Eye className="w-4 h-4" />
                         </button>
                         <button 
-                          onClick={() => handleDownloadPdf(receipt.id)} 
+                          onClick={() => handleDownloadPdf(returnItem.id)} 
                           className="btn btn-ghost btn-sm btn-circle text-primary"
                           title="Télécharger PDF"
                         >
@@ -298,10 +318,10 @@ const ReceptionsList = () => {
         </div>
 
         {/* Pagination */}
-        {filteredReceipts.length > 0 && (
+        {filteredReturns.length > 0 && (
           <div className="px-6 py-4 border-t flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="text-sm text-gray-500">
-              Affichage de {startIndex + 1} à {Math.min(currentPage * itemsPerPage, filteredReceipts.length)} sur {filteredReceipts.length}
+              Affichage de {startIndex + 1} à {Math.min(currentPage * itemsPerPage, filteredReturns.length)} sur {filteredReturns.length}
             </div>
             <div className="flex items-center gap-3">
               <select 
@@ -341,4 +361,4 @@ const ReceptionsList = () => {
   );
 };
 
-export default ReceptionsList;
+export default PurchaseReturnsList;

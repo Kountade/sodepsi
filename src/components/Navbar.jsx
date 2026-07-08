@@ -1,4 +1,5 @@
-// src/components/Navbar.jsx - Version Adaptée pour les rôles (Admin & Vendeur) avec ACHATS
+// src/components/Navbar.jsx - Version SODEPCI
+
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { 
@@ -13,8 +14,6 @@ import {
   Settings, 
   Warehouse, 
   ShoppingCart,
-  Handshake,
-  Store,
   Receipt,
   FileText,
   ChevronDown,
@@ -25,100 +24,117 @@ import {
   Moon,
   Sun,
   Shield,
-  Briefcase,
   Clock,
   Calendar,
   MapPin,
-  UserPlus,
   TrendingUp,
   CreditCard,
   UsersRound,
   Boxes,
   AlertTriangle,
-  CheckCircle,
   Search,
   HelpCircle,
   History,
-  ClipboardList,
   Truck,
   ArrowLeftRight,
   DollarSign,
   Grid3x3,
   Ruler,
-  Award,
   ClipboardCheck,
   LineChart,
   MoveHorizontal,
-  GraduationCap,
-  BarChart3,
-  RefreshCw,
-  Plus,
   Calculator,
   PackageCheck,
-  Send,
-  QrCode,
-  Layers
+  Layers,
+  ArrowLeftRight as ReturnIcon,
+  AlertOctagon,
+  Wallet,
+  BookOpen,
+  PiggyBank,
+  ChartPie,
+  Cog,
+  Database,
+  Mail,
+  BellRing,
+  Printer,
+  Globe,
+  Lock,
+  Key,
+  UserCog,
+  CalendarClock,
+  RefreshCw,
+  Activity,
+  Award,
+  BarChart3,
+  Edit,
+  Eye
 } from 'lucide-react';
 
 import logo from '../assets/logo.svg';
-import AxiosInstance from './AxiosInstance';
 
-// Configuration des rôles (Admin & Vendeur)
+// Import conditionnel
+let AxiosInstance = null;
+let GlobalAlerts = null;
+
+try {
+  AxiosInstance = require('./AxiosInstance').default;
+  GlobalAlerts = require('./common/GlobalAlerts').default;
+} catch (error) {
+  console.warn('Modules optionnels non trouvés:', error.message);
+}
+
+// Configuration des rôles
 const ROLE_CONFIG = {
-  admin: { 
-    label: 'Administrateur', 
-    color: 'error', 
-    icon: Shield, 
-    description: 'Accès total', 
-    level: 100 
-  },
-  vendeur: { 
-    label: 'Vendeur', 
-    color: 'success', 
-    icon: Store, 
-    description: 'Gestion des ventes', 
-    level: 60 
-  }
+  admin: { label: 'Administrateur', color: 'error', icon: Shield, description: 'Accès total', level: 100 },
+  gestionnaire: { label: 'Gestionnaire', color: 'secondary', icon: UsersRound, description: 'Gestion complète', level: 90 },
+  comptable: { label: 'Comptable', color: 'primary', icon: Calculator, description: 'Gestion financière', level: 80 },
+  magasinier: { label: 'Magasinier', color: 'info', icon: Boxes, description: 'Gestion des stocks', level: 70 },
+  caissier: { label: 'Caissier', color: 'warning', icon: CreditCard, description: 'Point de vente', level: 60 },
+  livreur: { label: 'Livreur', color: 'neutral', icon: Truck, description: 'Livraisons', level: 50 }
 };
 
 const Navbar = ({ content, mode, toggleColorMode }) => {
   const location = useLocation();
-  const path = location.pathname;
+  const path = location.pathname || '/';
   const navigate = useNavigate();
 
-  // États
+  // États principaux
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
-  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [openSections, setOpenSections] = useState({
     'TABLEAU DE BORD': true,
     'VENTES': true,
-    'STOCK': false,
-    'ACHATS': false,
+    'PRODUITS & STOCKS': false,
+    'ACHATS & FOURNISSEURS': false,
     'FINANCES': false,
-    'ADMINISTRATION': false,
+    'LIVRAISONS': false,
+    'PARAMÈTRES': false,
     'MON ESPACE': false
   });
   
-  const [userInitial, setUserInitial] = useState('');
-  const [userFullName, setUserFullName] = useState('');
-  const [userRole, setUserRole] = useState('vendeur');
-  const [userData, setUserData] = useState(null);
-  const [notifications, setNotifications] = useState([]);
-  const [notificationCount, setNotificationCount] = useState(0);
+  const [userInitial, setUserInitial] = useState('U');
+  const [userFullName, setUserFullName] = useState('Utilisateur');
+  const [userRole, setUserRole] = useState('caissier');
   const [currentTime, setCurrentTime] = useState(new Date());
-  const [isLoading, setIsLoading] = useState(true);
   
-  // Compteurs pour les badges
-  const [ventesImpayees, setVentesImpayees] = useState(0);
-  const [stocksFaibles, setStocksFaibles] = useState(0);
+  // États des compteurs
   const [commandesALivrer, setCommandesALivrer] = useState(0);
-  const [alertesCount, setAlertesCount] = useState(0);
+  const [stocksFaibles, setStocksFaibles] = useState(0);
+  const [ventesImpayees, setVentesImpayees] = useState(0);
+  const [retoursCount, setRetoursCount] = useState(0);
+  const [notificationsCount, setNotificationsCount] = useState(0);
+  const [alertesStockCount, setAlertesStockCount] = useState(0);
+  const [facturesEcheance, setFacturesEcheance] = useState(0);
+  
+  // États des alertes globales
+  const [showGlobalAlerts, setShowGlobalAlerts] = useState(false);
+  const [globalAlertCount, setGlobalAlertCount] = useState(0);
+  const [alertStats, setAlertStats] = useState({ total: 0, error: 0, warning: 0, info: 0 });
 
-  // Récupérer l'utilisateur depuis localStorage
+  // Récupérer l'utilisateur
   const getUserData = () => {
     try {
       const userData = localStorage.getItem('User');
@@ -129,7 +145,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
   };
 
   const user = getUserData();
-  const role = user?.role || 'vendeur';
+  const role = user?.role || 'caissier';
   const userEmail = user?.email || '';
   const firstName = user?.first_name || '';
   const lastName = user?.last_name || '';
@@ -144,77 +160,54 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
   const formattedTime = currentTime.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
   const formattedDate = currentTime.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
 
-  // Charger les données utilisateur et compteurs
-  useEffect(() => {
-    const loadData = async () => {
-      setIsLoading(true);
-      try {
-        // Récupérer les détails complets de l'utilisateur
-        if (user?.id) {
-          const userRes = await AxiosInstance.get(`/users/${user.id}/`);
-          setUserData(userRes.data);
-          setUserRole(userRes.data.role || role);
-        } else {
-          setUserRole(role);
-        }
-        
-        // Charger les compteurs selon le rôle
-        const isAdmin = role === 'admin';
-        
-        if (isAdmin) {
-          const [ventesRes, stocksRes, achatsRes, alertsRes] = await Promise.all([
-            AxiosInstance.get('/sales/?payment_status=pending').catch(() => ({ data: [] })),
-            AxiosInstance.get('/stocks/low-stock/').catch(() => ({ data: [] })),
-            AxiosInstance.get('/purchase-orders/?status=pending').catch(() => ({ data: [] })),
-            AxiosInstance.get('/alerts/').catch(() => ({ data: [] }))
-          ]);
-          setVentesImpayees(ventesRes.data?.length || 0);
-          setStocksFaibles(stocksRes.data?.length || 0);
-          setCommandesALivrer(achatsRes.data?.length || 0);
-          setAlertesCount(alertsRes.data?.length || 0);
-          
-          // Construire les notifications
-          const notifs = [];
-          if (stocksFaibles > 0) {
-            notifs.push({ 
-              id: 'stock', 
-              title: 'Stock faible', 
-              message: `${stocksFaibles} produit(s) en rupture`, 
-              link: '/stocks', 
-              type: 'warning' 
-            });
-          }
-          if (ventesImpayees > 0) {
-            notifs.push({ 
-              id: 'ventes', 
-              title: 'Paiements en attente', 
-              message: `${ventesImpayees} vente(s) impayée(s)`, 
-              link: '/ventes', 
-              type: 'error' 
-            });
-          }
-          if (commandesALivrer > 0) {
-            notifs.push({ 
-              id: 'achats', 
-              title: 'Commandes à recevoir', 
-              message: `${commandesALivrer} commande(s) en attente`, 
-              link: '/commandes-fournisseurs', 
-              type: 'info' 
-            });
-          }
-          setNotifications(notifs);
-          setNotificationCount(notifs.length);
-        }
-        
-      } catch (error) {
-        console.error('Erreur chargement:', error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    
-    loadData();
-  }, [role, stocksFaibles, ventesImpayees, commandesALivrer]);
+  // Permissions
+  const isAdmin = role === 'admin';
+  const isGestionnaire = role === 'gestionnaire';
+  const isComptable = role === 'comptable';
+  const isMagasinier = role === 'magasinier';
+  const isCaissier = role === 'caissier';
+  const isLivreur = role === 'livreur';
+  
+  // Fonctions de permission
+  const canViewSales = () => {
+    return isAdmin || isGestionnaire || isCaissier || isComptable;
+  };
+  
+  const canViewPOS = () => {
+    return isAdmin || isCaissier;
+  };
+  
+  const canViewStock = () => {
+    return isAdmin || isGestionnaire || isMagasinier;
+  };
+  
+  const canViewPurchases = () => {
+    return isAdmin || isGestionnaire;
+  };
+  
+  const canViewFinances = () => {
+    return isAdmin || isGestionnaire || isComptable;
+  };
+  
+  const canViewUsers = () => {
+    return isAdmin;
+  };
+  
+  const canViewDeliveries = () => {
+    return isAdmin || isGestionnaire || isLivreur;
+  };
+  
+  const canViewParameters = () => {
+    return isAdmin || isGestionnaire;
+  };
+  
+  const canViewBackups = () => {
+    return isAdmin;
+  };
+  
+  const canViewAudit = () => {
+    return isAdmin;
+  };
 
   // Initiale utilisateur
   useEffect(() => {
@@ -227,27 +220,71 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
     }
   }, [firstName, lastName, userName]);
 
-  const roleConfig = ROLE_CONFIG[role] || ROLE_CONFIG.vendeur;
+  const roleConfig = ROLE_CONFIG[role] || ROLE_CONFIG.caissier;
   const RoleIcon = roleConfig.icon;
-  
-  // Permissions basées sur les rôles
-  const isAdmin = role === 'admin';
-  const isVendeur = role === 'vendeur';
-  
-  // Méthodes de permission
-  const canViewDashboard = () => true;
-  const canViewSales = () => isAdmin || isVendeur;
-  const canViewPOS = () => isAdmin || isVendeur;
-  const canViewStock = () => isAdmin;
-  const canViewPurchases = () => isAdmin;
-  const canViewFinances = () => isAdmin;
-  const canViewUsers = () => isAdmin;
-  const canViewReports = () => isAdmin;
 
+  // Charger les données
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        const token = localStorage.getItem('Token');
+        if (!token || !AxiosInstance) return;
+
+        if (isAdmin || isGestionnaire) {
+          const ordersRes = await AxiosInstance.get('/purchase-orders/?status=pending', {
+            headers: { Authorization: `Token ${token}` }
+          }).catch(() => ({ data: [] }));
+          setCommandesALivrer(ordersRes.data?.length || 0);
+
+          const retoursRes = await AxiosInstance.get('/purchase-returns/?status=requested', {
+            headers: { Authorization: `Token ${token}` }
+          }).catch(() => ({ data: [] }));
+          setRetoursCount(retoursRes.data?.length || 0);
+
+          const notifRes = await AxiosInstance.get('/notifications/unread-count/', {
+            headers: { Authorization: `Token ${token}` }
+          }).catch(() => ({ data: { unread_count: 0 } }));
+          setNotificationsCount(notifRes.data?.unread_count || 0);
+        }
+
+        if (isAdmin || isMagasinier) {
+          const stocksRes = await AxiosInstance.get('/stocks/low-stock/', {
+            headers: { Authorization: `Token ${token}` }
+          }).catch(() => ({ data: [] }));
+          setStocksFaibles(stocksRes.data?.length || 0);
+
+          const alertesRes = await AxiosInstance.get('/stocks/alerts/', {
+            headers: { Authorization: `Token ${token}` }
+          }).catch(() => ({ data: [] }));
+          setAlertesStockCount(alertesRes.data?.length || 0);
+        }
+
+        if (isAdmin || isComptable || isCaissier) {
+          const ventesRes = await AxiosInstance.get('/sales/?payment_status=pending', {
+            headers: { Authorization: `Token ${token}` }
+          }).catch(() => ({ data: [] }));
+          setVentesImpayees(ventesRes.data?.length || 0);
+
+          const facturesRes = await AxiosInstance.get('/invoices/?status=due', {
+            headers: { Authorization: `Token ${token}` }
+          }).catch(() => ({ data: [] }));
+          setFacturesEcheance(facturesRes.data?.length || 0);
+        }
+
+      } catch (error) {
+        console.error('Erreur chargement données:', error);
+      }
+    };
+
+    loadData();
+  }, [role, isAdmin, isGestionnaire, isMagasinier, isComptable, isCaissier]);
+
+  // Gestion des sections
   const handleSectionToggle = (section) => {
     setOpenSections(prev => ({ ...prev, [section]: !prev[section] }));
   };
 
+  // Déconnexion
   const logoutUser = () => {
     setIsUserMenuOpen(false);
     localStorage.removeItem('Token');
@@ -255,97 +292,169 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
     navigate('/');
   };
 
-  // Menu sections adaptées aux rôles
+  // Menu sections
   const menuSections = [
     {
       name: 'TABLEAU DE BORD',
       icon: LayoutDashboard,
       items: [
-        { id: 'dashboard', text: 'Dashboard', icon: LayoutDashboard, path: '/dashboard', permission: canViewDashboard() },
-        { id: 'statistiques', text: 'Statistiques', icon: TrendingUp, path: '/statistiques', permission: isAdmin },
-        { id: 'analyses', text: 'Analyses', icon: BarChart3, path: '/analyses', permission: isAdmin }
+        { id: 'dashboard', text: 'Dashboard', icon: LayoutDashboard, path: '/dashboard', permission: true },
+        { id: 'statistiques', text: 'Statistiques', icon: TrendingUp, path: '/statistiques', permission: isAdmin || isGestionnaire },
+        { id: 'analyses', text: 'Analyses', icon: BarChart3, path: '/analyses', permission: isAdmin || isGestionnaire }
       ]
     },
     {
       name: 'VENTES',
       icon: ShoppingCart,
-      permission: canViewSales(),
       items: [
-        { id: 'pos', text: 'Point de Vente', icon: ShoppingBag, path: '/point-de-vente', permission: canViewPOS() },
-        { id: 'ventes', text: 'Ventes', icon: ShoppingCart, path: '/ventes', permission: canViewSales(), badge: ventesImpayees > 0 ? ventesImpayees : 0 },
-        { id: 'clients', text: 'Clients', icon: Users, path: '/clients', permission: canViewSales() },
-        { id: 'factures', text: 'Factures', icon: Receipt, path: '/factures', permission: canViewSales() },
-        { id: 'paiements', text: 'Paiements', icon: CreditCard, path: '/paiements', permission: isAdmin }
+        { id: 'pos', text: 'Point de Vente', icon: ShoppingBag, path: '/point-de-vente', permission: isAdmin || isCaissier },
+        { id: 'ventes', text: 'Ventes', icon: ShoppingCart, path: '/ventes', permission: isAdmin || isGestionnaire || isCaissier || isComptable, badge: ventesImpayees > 0 ? ventesImpayees : 0 },
+        { id: 'clients', text: 'Clients', icon: Users, path: '/clients', permission: isAdmin || isGestionnaire || isCaissier || isComptable },
+        { id: 'factures', text: 'Factures', icon: Receipt, path: '/factures', permission: isAdmin || isGestionnaire || isCaissier || isComptable, badge: facturesEcheance > 0 ? facturesEcheance : 0 },
+        { id: 'paiements', text: 'Paiements', icon: CreditCard, path: '/paiements', permission: isAdmin || isGestionnaire || isComptable },
+        { id: 'devis', text: 'Devis', icon: FileText, path: '/devis', permission: isAdmin || isGestionnaire || isCaissier }
       ]
     },
-    ...(isAdmin ? [{
-      name: 'STOCK',
+    {
+      name: 'PRODUITS & STOCKS',
       icon: Package,
-      permission: canViewStock(),
       items: [
-        { id: 'categories', text: 'Catégories', icon: Tags, path: '/categories', permission: canViewStock() },
-        { id: 'produits', text: 'Produits', icon: Package, path: '/produits', permission: canViewStock() },
-        { id: 'stocks', text: 'Stocks', icon: Boxes, path: '/stocks', permission: canViewStock(), badge: stocksFaibles },
-        { id: 'entrepots', text: 'Entrepôts', icon: Warehouse, path: '/entrepots', permission: canViewStock() },
-        { id: 'mouvements', text: 'Mouvements', icon: TrendingUp, path: '/mouvements-stock', permission: canViewStock() },
-        { id: 'lots', text: 'Lots', icon: Layers, path: '/lots', permission: canViewStock() },
-        { id: 'alertes-expiration', text: 'Alertes expiration', icon: AlertTriangle, path: '/alertes-expiration', permission: canViewStock(), badge: alertesCount },
-        { id: 'inventaire', text: 'Inventaire', icon: ClipboardCheck, path: '/inventaire', permission: canViewStock() },
-        { id: 'transferts', text: 'Transferts', icon: MoveHorizontal, path: '/transferts', permission: canViewStock() }
+        { id: 'categories', text: 'Catégories', icon: Tags, path: '/categories', permission: isAdmin || isGestionnaire || isMagasinier },
+        { id: 'produits', text: 'Produits', icon: Package, path: '/produits', permission: isAdmin || isGestionnaire || isMagasinier },
+        { id: 'stocks', text: 'Stocks', icon: Boxes, path: '/stocks', permission: isAdmin || isGestionnaire || isMagasinier, badge: stocksFaibles > 0 ? stocksFaibles : 0 },
+        { id: 'entrepots', text: 'Entrepôts', icon: Warehouse, path: '/entrepots', permission: isAdmin || isGestionnaire },
+        { id: 'mouvements', text: 'Mouvements', icon: TrendingUp, path: '/mouvements-stock', permission: isAdmin || isGestionnaire || isMagasinier },
+        { id: 'inventaire', text: 'Inventaire', icon: ClipboardCheck, path: '/inventaire', permission: isAdmin || isGestionnaire },
+        { id: 'alertes-stock', text: 'Alertes Stock', icon: AlertOctagon, path: '/alertes-stock', permission: isAdmin || isGestionnaire || isMagasinier, badge: alertesStockCount > 0 ? alertesStockCount : 0 }
       ]
-    }] : []),
-    ...(isAdmin ? [{
-      name: 'ACHATS',
+    },
+    {
+      name: 'ACHATS & FOURNISSEURS',
       icon: ShoppingBag,
-      permission: canViewPurchases(),
       items: [
-        { id: 'fournisseurs', text: 'Fournisseurs', icon: Building2, path: '/fournisseurs', permission: canViewPurchases() },
-        { id: 'commandes', text: 'Commandes', icon: FileText, path: '/commandes-fournisseurs', permission: canViewPurchases(), badge: commandesALivrer },
-        { id: 'receptions', text: 'Réceptions', icon: PackageCheck, path: '/receptions', permission: canViewPurchases() },
-        { id: 'alertes-achats', text: 'Alertes', icon: AlertTriangle, path: '/purchase-alerts', permission: canViewPurchases(), badge: alertesCount }
+        { id: 'fournisseurs', text: 'Fournisseurs', icon: Building2, path: '/fournisseurs', permission: isAdmin || isGestionnaire },
+        { id: 'commandes', text: 'Commandes', icon: FileText, path: '/commandes-fournisseurs', permission: isAdmin || isGestionnaire, badge: commandesALivrer > 0 ? commandesALivrer : 0 },
+        { id: 'receptions', text: 'Réceptions', icon: PackageCheck, path: '/receptions', permission: isAdmin || isGestionnaire },
+        { id: 'retours', text: 'Retours fournisseurs', icon: ReturnIcon, path: '/retours-fournisseurs', permission: isAdmin || isGestionnaire, badge: retoursCount > 0 ? retoursCount : 0 }
       ]
-    }] : []),
-    ...(isAdmin ? [{
+    },
+    {
       name: 'FINANCES',
       icon: DollarSign,
-      permission: canViewFinances(),
       items: [
-        { id: 'tresorerie', text: 'Trésorerie', icon: CreditCard, path: '/tresorerie', permission: canViewFinances() },
-        { id: 'depenses', text: 'Dépenses', icon: FileText, path: '/depenses', permission: canViewFinances() },
-        { id: 'rapports', text: 'Rapports', icon: LineChart, path: '/rapports-financiers', permission: canViewFinances() },
-        { id: 'comptabilite', text: 'Comptabilité', icon: Calculator, path: '/comptabilite', permission: isAdmin }
+        { id: 'comptes', text: 'Plan Comptable', icon: Grid3x3, path: '/comptes-comptables', permission: isAdmin || isGestionnaire || isComptable },
+        { id: 'ecritures', text: 'Écritures', icon: BookOpen, path: '/ecritures-comptables', permission: isAdmin || isGestionnaire || isComptable },
+        { id: 'tresorerie', text: 'Trésorerie', icon: Wallet, path: '/tresorerie', permission: isAdmin || isGestionnaire || isComptable },
+        { id: 'depenses', text: 'Dépenses', icon: FileText, path: '/depenses', permission: isAdmin || isGestionnaire || isComptable },
+        { id: 'budgets', text: 'Budgets', icon: PiggyBank, path: '/budgets', permission: isAdmin || isGestionnaire || isComptable },
+        { id: 'sessions-caisse', text: 'Sessions Caisse', icon: Clock, path: '/sessions-caisse', permission: isAdmin || isGestionnaire || isCaissier },
+        { id: 'rapports-financiers', text: 'Rapports', icon: LineChart, path: '/rapports-financiers', permission: isAdmin || isGestionnaire || isComptable }
       ]
-    }] : []),
-    ...(isAdmin ? [{
-      name: 'ADMINISTRATION',
+    },
+    {
+      name: 'LIVRAISONS',
+      icon: Truck,
+      items: [
+        { id: 'livraisons', text: 'Livraisons', icon: Truck, path: '/livraisons', permission: isAdmin || isGestionnaire || isLivreur },
+        { id: 'tournees', text: 'Tournées', icon: MapPin, path: '/tournees', permission: isAdmin || isGestionnaire },
+        { id: 'livreurs', text: 'Livreurs', icon: Users, path: '/livreurs', permission: isAdmin || isGestionnaire },
+        { id: 'suivi', text: 'Suivi', icon: MapPin, path: '/suivi-livraisons', permission: isAdmin || isGestionnaire || isLivreur }
+      ]
+    },
+    {
+      name: 'PARAMÈTRES',
       icon: Settings,
-      permission: canViewUsers(),
       items: [
-        { id: 'utilisateurs', text: 'Utilisateurs', icon: Users, path: '/utilisateurs', permission: canViewUsers() },
-        { id: 'roles', text: 'Rôles & Permissions', icon: Shield, path: '/roles', permission: canViewUsers() },
-        { id: 'audit', text: 'Journal d\'audit', icon: History, path: '/audit', permission: canViewUsers() },
-        { id: 'parametres', text: 'Paramètres', icon: Settings, path: '/parametres', permission: canViewUsers() }
+        { 
+          id: 'company-config', 
+          text: 'Configuration SODEPCI', 
+          icon: Building2, 
+          path: '/company-config', 
+          permission: isAdmin || isGestionnaire 
+        },
+        { 
+          id: 'company-config-edit', 
+          text: 'Modifier SODEPCI', 
+          icon: Edit, 
+          path: '/company-config/edit', 
+          permission: isAdmin || isGestionnaire 
+        },
+        { 
+          id: 'notifications', 
+          text: 'Notifications', 
+          icon: Bell, 
+          path: '/notifications', 
+          permission: isAdmin || isGestionnaire, 
+          badge: notificationsCount > 0 ? notificationsCount : 0 
+        },
+        { 
+          id: 'system-settings', 
+          text: 'Paramètres Système', 
+          icon: Cog, 
+          path: '/system-settings', 
+          permission: isAdmin 
+        },
+        { 
+          id: 'document-templates', 
+          text: 'Modèles Documents', 
+          icon: Printer, 
+          path: '/document-templates', 
+          permission: isAdmin || isGestionnaire 
+        },
+        { 
+          id: 'backups', 
+          text: 'Sauvegardes', 
+          icon: Database, 
+          path: '/backups', 
+          permission: isAdmin 
+        },
+        { 
+          id: 'audit', 
+          text: "Journal d'audit", 
+          icon: History, 
+          path: '/audit', 
+          permission: isAdmin 
+        },
+        { 
+          id: 'utilisateurs', 
+          text: 'Utilisateurs', 
+          icon: Users, 
+          path: '/utilisateurs', 
+          permission: isAdmin 
+        },
+        { 
+          id: 'roles', 
+          text: 'Rôles & Permissions', 
+          icon: Shield, 
+          path: '/roles', 
+          permission: isAdmin 
+        }
       ]
-    }] : []),
+    },
     {
       name: 'MON ESPACE',
       icon: UserCircle,
       items: [
         { id: 'profile', text: 'Mon Profil', icon: UserCircle, path: '/profile', permission: true },
-        { id: 'settings', text: 'Paramètres', icon: Settings, path: '/settings', permission: true },
+        { id: 'my-preferences', text: 'Mes Préférences', icon: Settings, path: '/my-preferences', permission: true },
+        { id: 'my-notifications', text: 'Mes Notifications', icon: BellRing, path: '/my-notifications', permission: true, badge: notificationsCount > 0 ? notificationsCount : 0 },
         { id: 'support', text: 'Support', icon: HelpCircle, path: '/support', permission: true }
       ]
     }
   ];
 
-  // Filtrer les sections vides
-  const visibleSections = menuSections.filter(section => {
-    if (section.permission === false) return false;
-    const visibleItems = section.items.filter(item => item.permission);
-    return visibleItems.length > 0;
-  });
+  // Filtrer les sections
+  const visibleSections = menuSections
+    .map(section => {
+      const visibleItems = section.items.filter(item => item.permission === true);
+      return {
+        ...section,
+        items: visibleItems
+      };
+    })
+    .filter(section => section.items.length > 0);
 
-  // Raccourci clavier recherche
+  // Recherche
   useEffect(() => {
     const handleKeyDown = (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
@@ -364,12 +473,12 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
   const searchResults = searchQuery.length > 1 ? 
     visibleSections.flatMap(section => 
       section.items.filter(item => 
-        item.permission &&
-        (item.text.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        section.name.toLowerCase().includes(searchQuery.toLowerCase()))
+        item.text.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        section.name.toLowerCase().includes(searchQuery.toLowerCase())
       ).map(item => ({ ...item, section: section.name }))
     ) : [];
 
+  // Rendu
   return (
     <div className="min-h-screen bg-base-200">
       
@@ -452,11 +561,11 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                 <div className="relative">
                   <div className="absolute inset-0 bg-primary-content/20 rounded-xl blur-md group-hover:blur-lg transition-all"></div>
                   <div className="relative w-10 h-10 bg-base-100 rounded-xl flex items-center justify-center shadow-lg border-2 border-accent">
-                    <img src={logo} alt="Logo" className="w-7 h-7 object-contain" />
+                    <img src={logo} alt="Logo" className="w-7 h-7 object-contain" onError={(e) => { e.target.style.display = 'none' }} />
                   </div>
                 </div>
                 <div>
-                  <h1 className="text-primary-content font-bold text-lg tracking-wide">SODEPSI</h1>
+                  <h1 className="text-primary-content font-bold text-lg tracking-wide">SODEPCI</h1>
                   <p className="text-primary-content/60 text-[10px] font-medium">ERP Management</p>
                 </div>
               </Link>
@@ -464,9 +573,9 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
               {/* Logo mobile */}
               <div className="lg:hidden flex items-center gap-2">
                 <div className="w-8 h-8 bg-base-100 rounded-lg flex items-center justify-center border-2 border-accent">
-                  <img src={logo} alt="Logo" className="w-6 h-6 object-contain" />
+                  <img src={logo} alt="Logo" className="w-6 h-6 object-contain" onError={(e) => { e.target.style.display = 'none' }} />
                 </div>
-                <span className="text-primary-content font-bold text-sm">SODEPSI</span>
+                <span className="text-primary-content font-bold text-sm">SODEPCI</span>
               </div>
             </div>
 
@@ -499,65 +608,31 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                 <span className="text-primary-content text-xs font-medium">{roleConfig.label}</span>
               </div>
 
-              {/* Notifications - uniquement pour admin */}
-              {isAdmin && (
+              {/* Alertes globales */}
+              {(isAdmin || isGestionnaire) && GlobalAlerts && (
                 <div className="relative">
                   <button
-                    onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
+                    onClick={() => setShowGlobalAlerts(!showGlobalAlerts)}
                     className="relative p-2 rounded-lg text-primary-content hover:bg-primary-content/10 transition-colors"
+                    title="Toutes les alertes"
                   >
                     <Bell className="w-5 h-5" />
-                    {notificationCount > 0 && (
-                      <span className="absolute -top-1 -right-1 min-w-5 h-5 bg-accent text-accent-content text-xs rounded-full flex items-center justify-center font-bold px-1">
-                        {notificationCount > 9 ? '9+' : notificationCount}
+                    {globalAlertCount > 0 && (
+                      <span className="absolute -top-1 -right-1 min-w-5 h-5 bg-accent text-accent-content text-xs rounded-full flex items-center justify-center font-bold px-1 animate-pulse">
+                        {globalAlertCount > 99 ? '99+' : globalAlertCount}
                       </span>
                     )}
                   </button>
                   
-                  {isNotificationsOpen && (
+                  {showGlobalAlerts && (
                     <>
-                      <div className="fixed inset-0 z-40" onClick={() => setIsNotificationsOpen(false)}></div>
-                      <div className="absolute right-0 mt-2 w-80 bg-base-100 rounded-xl shadow-xl z-50 border border-primary/20 overflow-hidden">
-                        <div className="p-3 bg-gradient-to-r from-primary to-primary/80 text-primary-content">
-                          <div className="flex items-center justify-between">
-                            <p className="font-semibold text-sm">Notifications</p>
-                            {notificationCount > 0 && (
-                              <span className="text-xs bg-primary-content/20 px-2 py-0.5 rounded-full">{notificationCount} nouvelle(s)</span>
-                            )}
-                          </div>
-                        </div>
-                        <div className="max-h-96 overflow-y-auto divide-y divide-base-200">
-                          {notifications.map((notif) => (
-                            <button
-                              key={notif.id}
-                              onClick={() => {
-                                setIsNotificationsOpen(false);
-                                navigate(notif.link);
-                              }}
-                              className="w-full flex items-start gap-3 px-4 py-3 hover:bg-primary/5 transition-colors text-left"
-                            >
-                              <div className={`p-2 rounded-lg ${
-                                notif.type === 'warning' ? 'bg-warning/20' : 
-                                notif.type === 'error' ? 'bg-error/20' : 'bg-info/20'
-                              }`}>
-                                {notif.type === 'warning' ? <AlertTriangle className="w-4 h-4 text-warning" /> : 
-                                 notif.type === 'error' ? <AlertTriangle className="w-4 h-4 text-error" /> :
-                                 <ShoppingBag className="w-4 h-4 text-info" />}
-                              </div>
-                              <div className="flex-1">
-                                <p className="text-sm font-medium text-base-content">{notif.title}</p>
-                                <p className="text-xs text-base-content/40">{notif.message}</p>
-                              </div>
-                            </button>
-                          ))}
-                          {notifications.length === 0 && (
-                            <div className="px-4 py-8 text-center">
-                              <CheckCircle className="w-10 h-10 text-success mx-auto mb-2" />
-                              <p className="text-sm text-base-content/50">Tout est bon !</p>
-                              <p className="text-xs text-base-content/40">Aucune notification</p>
-                            </div>
-                          )}
-                        </div>
+                      <div className="fixed inset-0 z-40" onClick={() => setShowGlobalAlerts(false)}></div>
+                      <div className="absolute right-0 mt-2 w-[480px] max-w-[90vw] z-50">
+                        <GlobalAlerts
+                          onClose={() => setShowGlobalAlerts(false)}
+                          onAlertCount={setGlobalAlertCount}
+                          onStatsChange={setAlertStats}
+                        />
                       </div>
                     </>
                   )}
@@ -601,6 +676,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                               <span className={`badge badge-${roleConfig.color} badge-sm`}>
                                 {roleConfig.label}
                               </span>
+                              {isAdmin && <span className="badge badge-error badge-sm">Admin</span>}
                             </div>
                           </div>
                         </div>
@@ -616,12 +692,12 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                           <span className="text-sm text-base-content">Mon profil</span>
                         </Link>
                         <Link
-                          to="/settings"
+                          to="/my-preferences"
                           onClick={() => setIsUserMenuOpen(false)}
                           className="flex items-center gap-3 px-4 py-2.5 hover:bg-primary/5 transition-colors"
                         >
                           <Settings className="w-5 h-5 text-base-content/40" />
-                          <span className="text-sm text-base-content">Paramètres</span>
+                          <span className="text-sm text-base-content">Mes préférences</span>
                         </Link>
                         <div className="border-t border-base-200 my-1"></div>
                         <button
@@ -655,11 +731,11 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
           <div className={`p-4 border-b border-primary/20 ${!sidebarOpen && 'text-center'} bg-gradient-to-r from-primary/5 to-transparent`}>
             <div className={`flex items-center ${!sidebarOpen && 'justify-center'} gap-3`}>
               <div className="w-10 h-10 bg-gradient-to-br from-primary to-primary/80 rounded-xl flex items-center justify-center shadow-lg">
-                <img src={logo} alt="Logo" className="w-7 h-7 object-contain" />
+                <img src={logo} alt="Logo" className="w-7 h-7 object-contain" onError={(e) => { e.target.style.display = 'none' }} />
               </div>
               {sidebarOpen && (
                 <div>
-                  <h2 className="font-bold text-base-content text-sm">SODEPSI</h2>
+                  <h2 className="font-bold text-base-content text-sm">SODEPCI</h2>
                   <p className="text-xs text-base-content/50">ERP Management</p>
                 </div>
               )}
@@ -667,7 +743,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
           </div>
 
           {/* Profil utilisateur */}
-          <div className={`p-4 border-b border-primary/20 ${!sidebarOpen && 'text-center'} ${roleConfig.color === 'error' ? 'bg-error/5' : 'bg-success/5'}`}>
+          <div className={`p-4 border-b border-primary/20 ${!sidebarOpen && 'text-center'}`}>
             <div className={`flex items-center ${!sidebarOpen && 'flex-col'} gap-3`}>
               <div className="avatar placeholder">
                 <div className={`bg-gradient-to-br from-primary to-primary/80 text-primary-content rounded-xl ${sidebarOpen ? 'w-12 h-12' : 'w-10 h-10'} shadow-lg ring-2 ring-primary/20`}>
@@ -678,9 +754,12 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                 <div className="flex-1 min-w-0">
                   <p className="font-semibold text-sm truncate text-base-content">{userFullName || userName}</p>
                   <p className="text-xs text-base-content/50 truncate">{userEmail}</p>
-                  <div className={`badge badge-${roleConfig.color} badge-sm mt-1`}>
-                    <RoleIcon className="w-3 h-3 mr-1" />
-                    {roleConfig.label}
+                  <div className="flex items-center gap-1 mt-1">
+                    <span className={`badge badge-${roleConfig.color} badge-sm`}>
+                      <RoleIcon className="w-3 h-3 mr-1" />
+                      {roleConfig.label}
+                    </span>
+                    {isAdmin && <span className="badge badge-error badge-sm">Admin</span>}
                   </div>
                 </div>
               )}
@@ -690,10 +769,8 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
           {/* Menu de navigation */}
           <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
             {visibleSections.map((section, idx) => {
-              const visibleItems = section.items.filter(item => item.permission);
-              if (visibleItems.length === 0) return null;
               const SectionIcon = section.icon;
-              const isOpen = openSections[section.name];
+              const isOpen = openSections[section.name] || false;
               
               return (
                 <div key={idx} className="mb-1">
@@ -721,7 +798,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                   
                   {sidebarOpen && isOpen && (
                     <div className="ml-6 mt-2 space-y-1 border-l-2 border-primary pl-4">
-                      {visibleItems.map((item) => {
+                      {section.items.map((item) => {
                         const ItemIcon = item.icon;
                         const isActive = path === item.path;
                         return (
@@ -738,7 +815,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                           >
                             <ItemIcon className={`w-4 h-4 ${isActive ? 'text-primary-content' : ''}`} />
                             <span className="flex-1">{item.text}</span>
-                            {item.badge > 0 && (
+                            {item.badge && item.badge > 0 && (
                               <span className={`badge badge-error badge-xs ${isActive ? 'badge-outline' : ''}`}>
                                 {item.badge > 99 ? '99+' : item.badge}
                               </span>
@@ -759,9 +836,9 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <div className="w-1.5 h-1.5 bg-success rounded-full animate-pulse"></div>
-                  <span className="text-xs text-base-content/50">v1.0.0</span>
+                  <span className="text-xs text-base-content/50">v2.0.0</span>
                 </div>
-                <span className="badge badge-primary badge-sm">ERP 2025</span>
+                <span className="badge badge-primary badge-sm">SODEPCI 2026</span>
               </div>
             ) : (
               <div className="text-center">
@@ -775,12 +852,12 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
       {/* Contenu principal */}
       <main className={`transition-all duration-300 pt-16 ${sidebarOpen ? 'lg:pl-72' : 'lg:pl-20'}`}>
         <div className="p-4 sm:p-6">
-          {isLoading ? (
+          {content || (
             <div className="flex items-center justify-center h-64">
-              <span className="loading loading-spinner loading-lg text-primary"></span>
+              <div className="text-center">
+                <p className="text-base-content/50">Aucun contenu à afficher</p>
+              </div>
             </div>
-          ) : (
-            content
           )}
         </div>
       </main>
@@ -794,10 +871,10 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 bg-base-100 rounded-xl flex items-center justify-center p-2 shadow-lg">
-                    <img src={logo} alt="Logo" className="w-full h-full object-contain" />
+                    <img src={logo} alt="Logo" className="w-full h-full object-contain" onError={(e) => { e.target.style.display = 'none' }} />
                   </div>
                   <div>
-                    <h2 className="text-primary-content font-bold text-lg">SODEPSI</h2>
+                    <h2 className="text-primary-content font-bold text-lg">SODEPCI</h2>
                     <p className="text-primary-content/70 text-xs">{roleConfig.label}</p>
                   </div>
                 </div>
@@ -805,14 +882,23 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                   <X className="w-5 h-5" />
                 </button>
               </div>
+              
+              {/* Profil mobile */}
+              <div className="flex items-center gap-3 p-3 bg-primary-content/10 rounded-xl">
+                <div className="w-10 h-10 rounded-full bg-primary-content/20 flex items-center justify-center text-primary-content font-bold">
+                  {userInitial || 'U'}
+                </div>
+                <div>
+                  <p className="text-primary-content font-medium text-sm">{userFullName || userName}</p>
+                  <p className="text-primary-content/60 text-xs">{userEmail}</p>
+                </div>
+              </div>
             </div>
 
             <div className="py-4 px-3 space-y-1">
               {visibleSections.map((section, idx) => {
-                const visibleItems = section.items.filter(item => item.permission);
-                if (visibleItems.length === 0) return null;
                 const SectionIcon = section.icon;
-                const isOpen = openSections[section.name];
+                const isOpen = openSections[section.name] || false;
                 
                 return (
                   <div key={idx} className="mb-2">
@@ -829,7 +915,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                     
                     {isOpen && (
                       <div className="ml-6 mt-2 space-y-1 border-l-2 border-primary pl-4">
-                        {visibleItems.map((item) => {
+                        {section.items.map((item) => {
                           const ItemIcon = item.icon;
                           const isActive = path === item.path;
                           return (
@@ -844,7 +930,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                             >
                               <ItemIcon className="w-4 h-4" />
                               <span>{item.text}</span>
-                              {item.badge > 0 && (
+                              {item.badge && item.badge > 0 && (
                                 <span className="badge badge-error badge-xs ml-auto">{item.badge > 99 ? '99+' : item.badge}</span>
                               )}
                             </Link>

@@ -3,10 +3,11 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import AxiosInstance from '../AxiosInstance';
 import {
-  Plus, Edit, Trash2, Search, ShoppingCart,
+  Plus, Edit, Search, ShoppingCart,
   RefreshCw, X, CheckCircle, AlertCircle,
   Eye, Filter, ChevronLeft, ChevronRight,
-  Truck, Calendar, DollarSign, Clock, FileText, Download
+  Truck, Calendar, DollarSign, Clock, FileText, Download,
+  QrCode
 } from 'lucide-react';
 
 const CommandesList = () => {
@@ -333,6 +334,9 @@ const CommandesList = () => {
                 <button className="join-item btn btn-sm" onClick={() => setCurrentPage(p => Math.max(1, p-1))} disabled={currentPage === 1}>
                   <ChevronLeft className="w-4 h-4" />
                 </button>
+                <span className="join-item btn btn-sm btn-disabled">
+                  Page {currentPage} / {totalPages}
+                </span>
                 <button className="join-item btn btn-sm" onClick={() => setCurrentPage(p => Math.min(totalPages, p+1))} disabled={currentPage === totalPages}>
                   <ChevronRight className="w-4 h-4" />
                 </button>

@@ -5,9 +5,11 @@ import AxiosInstance from '../AxiosInstance';
 import {
   ArrowLeft, ShoppingCart, Truck, Calendar, DollarSign,
   CheckCircle, XCircle, RefreshCw, FileText, Package,
-  Printer, Download, Send, AlertCircle, Building2,
-  Clock, User, Mail, Phone, MapPin, CreditCard, TrendingUp
+  Download, Send, AlertCircle, Building2,
+  Clock, User, Mail, Phone, MapPin, QrCode,
+  ExternalLink, Printer
 } from 'lucide-react';
+import QRCodeViewer from './QRCodeViewer';
 
 const CommandeDetails = () => {
   const navigate = useNavigate();
@@ -17,6 +19,9 @@ const CommandeDetails = () => {
   const [actionLoading, setActionLoading] = useState(false);
   const [notification, setNotification] = useState(null);
   const [activeTab, setActiveTab] = useState('details');
+  const [showQRCode, setShowQRCode] = useState(false);
+  const [qrCodeData, setQrCodeData] = useState(null);
+  const [qrCodeLoading, setQrCodeLoading] = useState(false);
 
   const showNotification = (message, type) => {
     setNotification({ message, type });
@@ -51,6 +56,38 @@ const CommandeDetails = () => {
   useEffect(() => {
     fetchOrderDetails();
   }, [fetchOrderDetails]);
+
+  // Fonction pour générer et afficher le QR Code
+  const handleGenerateQRCode = async () => {
+    setQrCodeLoading(true);
+    try {
+      const token = getToken();
+      const response = await AxiosInstance.get(`/purchase-orders/${id}/generate_qr/`, {
+        headers: { Authorization: `Token ${token}` }
+      });
+      
+      setQrCodeData({
+        url: response.data.qr_code_url,
+        data: response.data.qr_code_data,
+        title: `QR Code - ${order?.po_number || 'Commande'}`
+      });
+      setShowQRCode(true);
+    } catch (error) {
+      console.error('Erreur QR Code:', error);
+      showNotification('Erreur lors de la génération du QR Code', 'error');
+    } finally {
+      setQrCodeLoading(false);
+    }
+  };
+
+  const handleDownloadPdf = () => {
+    // Créer un lien de téléchargement pour le PDF
+    const token = getToken();
+    const url = `/purchase-orders/${id}/pdf/`;
+    
+    // Ouvrir dans un nouvel onglet ou télécharger
+    window.open(`http://127.0.0.1:8000${url}?token=${token}`, '_blank');
+  };
 
   const approveOrder = async () => {
     setActionLoading(true);
@@ -160,6 +197,19 @@ const CommandeDetails = () => {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* Modal QR Code */}
+      {showQRCode && qrCodeData && (
+        <QRCodeViewer
+          qrCodeUrl={qrCodeData.url}
+          qrCodeData={qrCodeData.data}
+          title={qrCodeData.title}
+          onClose={() => {
+            setShowQRCode(false);
+            setQrCodeData(null);
+          }}
+        />
+      )}
+
       {/* Notification Toast */}
       {notification && (
         <div className="fixed top-20 right-4 z-50 animate-slideDown">
@@ -175,9 +225,9 @@ const CommandeDetails = () => {
         </div>
       )}
 
-      {/* Header avec gradient */}
+      {/* Header avec gradient - 100% largeur */}
       <div className="bg-gradient-to-r from-primary/10 via-primary/5 to-transparent border-b border-primary/10">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
             {/* Navigation et titre */}
             <div className="flex items-center gap-4">
@@ -200,7 +250,31 @@ const CommandeDetails = () => {
             </div>
 
             {/* Actions */}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* ✅ Bouton QR Code */}
+              <button 
+                onClick={handleGenerateQRCode} 
+                className="btn btn-secondary btn-sm gap-2"
+                disabled={qrCodeLoading}
+                title="Voir QR Code"
+              >
+                {qrCodeLoading ? (
+                  <span className="loading loading-spinner loading-xs"></span>
+                ) : (
+                  <QrCode className="w-4 h-4" />
+                )}
+                QR Code
+              </button>
+              
+              <button 
+                onClick={handleDownloadPdf} 
+                className="btn btn-primary btn-sm gap-2"
+                title="Télécharger PDF"
+              >
+                <Download className="w-4 h-4" />
+                PDF
+              </button>
+              
               {order.status === 'draft' && (
                 <>
                   <button 
@@ -237,21 +311,15 @@ const CommandeDetails = () => {
               >
                 <RefreshCw className="w-4 h-4" />
               </button>
-              <button className="btn btn-ghost btn-sm btn-circle" title="Imprimer">
-                <Printer className="w-4 h-4" />
-              </button>
-              <button className="btn btn-ghost btn-sm btn-circle" title="Télécharger">
-                <Download className="w-4 h-4" />
-              </button>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Contenu principal */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      {/* Contenu principal - 100% largeur */}
+      <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
         {/* Cartes de statut */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
             <div className="flex items-center gap-3">
               <div className="p-2 bg-primary/10 rounded-lg">
@@ -286,13 +354,25 @@ const CommandeDetails = () => {
             </div>
           </div>
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+            <div className={`p-2 bg-${statusConfig.color}/10 rounded-lg`}>
+              <StatusIcon className={`w-5 h-5 text-${statusConfig.color}`} />
+            </div>
+            <div>
+              <p className="text-xs text-gray-500">Statut</p>
+              <span className={`badge badge-${statusConfig.color}`}>{statusConfig.label}</span>
+            </div>
+          </div>
+          {/* ✅ Carte QR Code */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 cursor-pointer hover:shadow-md transition-shadow" onClick={handleGenerateQRCode}>
             <div className="flex items-center gap-3">
-              <div className={`p-2 bg-${statusConfig.color}/10 rounded-lg`}>
-                <StatusIcon className={`w-5 h-5 text-${statusConfig.color}`} />
+              <div className="p-2 bg-secondary/10 rounded-lg">
+                <QrCode className="w-5 h-5 text-secondary" />
               </div>
               <div>
-                <p className="text-xs text-gray-500">Statut</p>
-                <span className={`badge badge-${statusConfig.color}`}>{statusConfig.label}</span>
+                <p className="text-xs text-gray-500">QR Code</p>
+                <p className="font-semibold text-secondary">
+                  {order.qr_code ? 'Disponible' : 'Générer'}
+                </p>
               </div>
             </div>
           </div>
@@ -301,10 +381,10 @@ const CommandeDetails = () => {
         {/* Tabs navigation */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 mb-6">
           <div className="border-b border-gray-100">
-            <nav className="flex gap-1 px-4" aria-label="Tabs">
+            <nav className="flex gap-1 px-4 overflow-x-auto" aria-label="Tabs">
               <button
                 onClick={() => setActiveTab('details')}
-                className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-all ${
+                className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-all whitespace-nowrap ${
                   activeTab === 'details'
                     ? 'border-primary text-primary'
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
@@ -315,7 +395,7 @@ const CommandeDetails = () => {
               </button>
               <button
                 onClick={() => setActiveTab('products')}
-                className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-all ${
+                className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-all whitespace-nowrap ${
                   activeTab === 'products'
                     ? 'border-primary text-primary'
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
@@ -326,7 +406,7 @@ const CommandeDetails = () => {
               </button>
               <button
                 onClick={() => setActiveTab('supplier')}
-                className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-all ${
+                className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-all whitespace-nowrap ${
                   activeTab === 'supplier'
                     ? 'border-primary text-primary'
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
@@ -335,11 +415,28 @@ const CommandeDetails = () => {
                 <Building2 className="w-4 h-4" />
                 Fournisseur
               </button>
+              {/* ✅ Onglet QR Code */}
+              <button
+                onClick={() => {
+                  setActiveTab('qr');
+                  if (!order.qr_code) {
+                    handleGenerateQRCode();
+                  }
+                }}
+                className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-all whitespace-nowrap ${
+                  activeTab === 'qr'
+                    ? 'border-secondary text-secondary'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                <QrCode className="w-4 h-4" />
+                QR Code
+              </button>
             </nav>
           </div>
 
           {/* Tab content */}
-          <div className="p-6">
+          <div className="p-4 sm:p-6">
             {activeTab === 'details' && (
               <div className="space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -403,13 +500,13 @@ const CommandeDetails = () => {
 
             {activeTab === 'products' && (
               <div className="overflow-x-auto">
-                <table className="w-full">
+                <table className="w-full min-w-[700px]">
                   <thead>
                     <tr className="border-b border-gray-200">
                       <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600">Produit</th>
-                      <th className="px-4 py-3 text-center text-sm font-semibold text-gray-600">Quantité</th>
+                      <th className="px-4 py-3 text-center text-sm font-semibold text-gray-600">Qté</th>
                       <th className="px-4 py-3 text-center text-sm font-semibold text-gray-600">Reçue</th>
-                      <th className="px-4 py-3 text-right text-sm font-semibold text-gray-600">Prix unitaire</th>
+                      <th className="px-4 py-3 text-right text-sm font-semibold text-gray-600">Prix unit.</th>
                       <th className="px-4 py-3 text-right text-sm font-semibold text-gray-600">Remise</th>
                       <th className="px-4 py-3 text-right text-sm font-semibold text-gray-600">Total</th>
                     </tr>
@@ -511,6 +608,79 @@ const CommandeDetails = () => {
                     </div>
                   </div>
                 </div>
+              </div>
+            )}
+
+            {/* ✅ Onglet QR Code */}
+            {activeTab === 'qr' && (
+              <div className="flex flex-col items-center justify-center py-8">
+                {order.qr_code ? (
+                  <div className="text-center">
+                    <div className="bg-gray-50 rounded-2xl p-8 border border-gray-200 inline-block">
+                      <img 
+                        src={order.qr_code_url || `http://127.0.0.1:8000${order.qr_code}`}
+                        alt="QR Code"
+                        className="w-64 h-64 object-contain"
+                      />
+                    </div>
+                    <div className="mt-6 space-y-2">
+                      <p className="text-sm text-gray-500">
+                        Scannez ce QR Code pour accéder aux détails de la commande
+                      </p>
+                      <div className="flex gap-3 justify-center">
+                        <button 
+                          onClick={() => {
+                            window.open(order.qr_code_url || `http://127.0.0.1:8000${order.qr_code}`, '_blank');
+                          }}
+                          className="btn btn-primary btn-sm gap-2"
+                        >
+                          <ExternalLink className="w-4 h-4" /> Ouvrir
+                        </button>
+                        <button 
+                          onClick={() => {
+                            const link = document.createElement('a');
+                            link.href = order.qr_code_url || `http://127.0.0.1:8000${order.qr_code}`;
+                            link.download = `qr_${order.po_number}.png`;
+                            link.click();
+                          }}
+                          className="btn btn-secondary btn-sm gap-2"
+                        >
+                          <Download className="w-4 h-4" /> Télécharger
+                        </button>
+                        <button 
+                          onClick={() => {
+                            window.print();
+                          }}
+                          className="btn btn-outline btn-sm gap-2"
+                        >
+                          <Printer className="w-4 h-4" /> Imprimer
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center">
+                    <div className="w-32 h-32 rounded-full bg-secondary/10 flex items-center justify-center mx-auto mb-4">
+                      <QrCode className="w-16 h-16 text-secondary" />
+                    </div>
+                    <h3 className="text-lg font-semibold text-gray-700 mb-2">QR Code non généré</h3>
+                    <p className="text-gray-500 mb-4">
+                      Cliquez sur le bouton ci-dessous pour générer le QR Code de cette commande
+                    </p>
+                    <button 
+                      onClick={handleGenerateQRCode}
+                      className="btn btn-secondary gap-2"
+                      disabled={qrCodeLoading}
+                    >
+                      {qrCodeLoading ? (
+                        <span className="loading loading-spinner loading-sm"></span>
+                      ) : (
+                        <QrCode className="w-4 h-4" />
+                      )}
+                      Générer le QR Code
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>
