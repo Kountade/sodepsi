@@ -99,6 +99,7 @@ import DevisList from './components/ventesclients/DevisList';
 import DevisForm from './components/ventesclients/DevisForm';
 import DevisDetail from './components/ventesclients/DevisDetail';
 import DevisPdf from './components/ventesclients/DevisPdf';
+import PosForm from './components/ventesclients/PosForm';
 // Modules Audit
 
 
@@ -181,6 +182,8 @@ function App() {
                   <Route path="/ventes/:id" element={<VenteDetail />} />
                   <Route path="/ventes/:id/modifier" element={<VenteForm />} />
                   <Route path="/ventes/:id/pdf" element={<VentePdf />} />
+                  {/* POS - Point de Vente (Interface tactile) */}
+            <Route path="point-de-vente" element={<PosForm />} />
                 
            <Route path="/devis" element={<DevisList />} />
             <Route path="/devis/nouveau" element={<DevisForm />} />
