@@ -1,23 +1,21 @@
-// src/components/ventes/VenteDetail.jsx
+// src/components/devis/DevisDetail.jsx
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import AxiosInstance from '../AxiosInstance';
-import TicketPOS from '../ventesclients/TicketPOS';
 import {
-  ArrowLeft, ShoppingCart, User, Package, CreditCard,
-  Truck, Calendar, DollarSign, FileText, Download,
-  Edit, RefreshCw, CheckCircle, XCircle, AlertCircle,
-  Loader2, Phone, Mail, MapPin, Printer,
-  Send, Ban, Clock, Users, Building2, X
+  ArrowLeft, FileText, User, Package, Calendar,
+  DollarSign, Download, Edit, RefreshCw,
+  CheckCircle, XCircle, AlertCircle, Loader2,
+  Phone, Mail, MapPin, Send, Ban, Clock,
+  FileCheck, FileX, Printer, X
 } from 'lucide-react';
 
-const VenteDetail = () => {
+const DevisDetail = () => {
   const navigate = useNavigate();
   const { id } = useParams();
-  const [vente, setVente] = useState(null);
+  const [devis, setDevis] = useState(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
-  const [printing, setPrinting] = useState(false);
   const [notification, setNotification] = useState(null);
 
   const getToken = () => localStorage.getItem('Token');
@@ -27,7 +25,7 @@ const VenteDetail = () => {
     setTimeout(() => setNotification(null), 4000);
   };
 
-  const fetchVente = async () => {
+  const fetchDevis = async () => {
     setLoading(true);
     try {
       const token = getToken();
@@ -37,28 +35,21 @@ const VenteDetail = () => {
         return;
       }
 
-      const response = await AxiosInstance.get(`/sales/${id}/`, {
+      const response = await AxiosInstance.get(`/devis/${id}/`, {
         headers: { 'Authorization': `Token ${token}` }
       });
       
-      console.log('Données reçues:', response.data);
-      
-      if (response.data) {
-        setVente(response.data);
-      } else {
-        showNotification('Vente non trouvée', 'error');
-        setTimeout(() => navigate('/ventes'), 1500);
-      }
+      setDevis(response.data);
     } catch (error) {
-      console.error('Erreur détaillée:', error);
+      console.error('Erreur:', error);
       if (error.response?.status === 401) {
         showNotification('Session expirée', 'error');
         setTimeout(() => navigate('/login'), 2000);
       } else if (error.response?.status === 404) {
-        showNotification('Vente non trouvée', 'error');
-        setTimeout(() => navigate('/ventes'), 1500);
+        showNotification('Devis non trouvé', 'error');
+        setTimeout(() => navigate('/devis'), 1500);
       } else {
-        showNotification(`Erreur: ${error.response?.data?.detail || error.message || 'Erreur inconnue'}`, 'error');
+        showNotification('Erreur de chargement', 'error');
       }
     } finally {
       setLoading(false);
@@ -67,12 +58,12 @@ const VenteDetail = () => {
 
   useEffect(() => {
     if (id) {
-      fetchVente();
+      fetchDevis();
     }
   }, [id]);
 
   const handleUpdateStatus = async (status) => {
-    if (!vente) return;
+    if (!devis) return;
     
     setActionLoading(true);
     try {
@@ -83,12 +74,12 @@ const VenteDetail = () => {
       }
 
       await AxiosInstance.post(
-        `/sales/${id}/update_status/`,
+        `/devis/${id}/update_status/`,
         { status },
         { headers: { 'Authorization': `Token ${token}` } }
       );
       showNotification(`Statut mis à jour: ${status}`, 'success');
-      await fetchVente();
+      await fetchDevis();
     } catch (error) {
       console.error('Erreur mise à jour statut:', error);
       showNotification('Erreur lors de la mise à jour', 'error');
@@ -97,61 +88,59 @@ const VenteDetail = () => {
     }
   };
 
-  const handleAddPayment = () => {
-    navigate(`/ventes/${id}/paiement`);
+  const handleConvertToSale = async () => {
+    if (!devis) return;
+    
+    setActionLoading(true);
+    try {
+      const token = getToken();
+      if (!token) {
+        showNotification('Session expirée', 'error');
+        return;
+      }
+
+      const response = await AxiosInstance.post(
+        `/devis/${id}/convert_to_sale/`,
+        {},
+        { headers: { 'Authorization': `Token ${token}` } }
+      );
+      
+      showNotification('Devis converti en vente avec succès', 'success');
+      
+      // Rediriger vers la vente créée
+      if (response.data.sale) {
+        setTimeout(() => navigate(`/ventes/${response.data.sale.id}`), 1500);
+      } else {
+        await fetchDevis();
+      }
+    } catch (error) {
+      console.error('Erreur conversion:', error);
+      showNotification('Erreur lors de la conversion', 'error');
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   const handleDownloadPdf = () => {
-    window.open(`/ventes/${id}/pdf/`, '_blank');
-  };
-
-  const handlePrintTicket = async () => {
-    if (!vente) return;
-    
-    setPrinting(true);
-    try {
-      await TicketPOS(vente, {
-        companyName: 'ETABLISSEMENTS BAH SOULEYMANE ET FILS',
-        companySlogan: 'E.B.S.F',
-        companyPhone: '+224 626 53 32 53',
-        companyEmail: 'ebsfservices@gmail.com',
-        companyAddress: 'Pita Centre – Grand Marché, Guinée'
-      });
-      showNotification('Ticket imprimé avec succès', 'success');
-    } catch (error) {
-      console.error('Erreur impression ticket:', error);
-      showNotification('Erreur lors de l\'impression du ticket', 'error');
-    } finally {
-      setPrinting(false);
-    }
+    window.open(`/devis/${id}/pdf/`, '_blank');
   };
 
   const getStatusBadge = (status) => {
     const configs = {
       draft: { label: 'Brouillon', className: 'badge-ghost', icon: FileText },
-      confirmed: { label: 'Confirmée', className: 'badge-info', icon: CheckCircle },
-      paid: { label: 'Payée', className: 'badge-success', icon: CreditCard },
-      delivered: { label: 'Livrée', className: 'badge-primary', icon: Truck },
-      cancelled: { label: 'Annulée', className: 'badge-error', icon: Ban },
-      returned: { label: 'Retournée', className: 'badge-warning', icon: AlertCircle }
+      sent: { label: 'Envoyé', className: 'badge-info', icon: Send },
+      accepted: { label: 'Accepté', className: 'badge-success', icon: CheckCircle },
+      refused: { label: 'Refusé', className: 'badge-error', icon: FileX },
+      expired: { label: 'Expiré', className: 'badge-warning', icon: Clock },
+      converted: { label: 'Converti en vente', className: 'badge-primary', icon: FileCheck }
     };
-    const config = configs[status] || { label: status || 'Inconnu', className: 'badge-ghost', icon: FileText };
+    const config = configs[status] || { label: status, className: 'badge-ghost', icon: FileText };
     const Icon = config.icon;
     return (
       <span className={`badge ${config.className} gap-1 text-sm`}>
         <Icon className="w-4 h-4" /> {config.label}
       </span>
     );
-  };
-
-  const getPaymentBadge = (status) => {
-    const configs = {
-      paid: { label: 'Payé', className: 'badge-success' },
-      partial: { label: 'Partiel', className: 'badge-warning' },
-      pending: { label: 'En attente', className: 'badge-error' }
-    };
-    const config = configs[status] || { label: status || 'Inconnu', className: 'badge-ghost' };
-    return <span className={`badge ${config.className}`}>{config.label}</span>;
   };
 
   const formatCurrency = (amount) => {
@@ -178,27 +167,32 @@ const VenteDetail = () => {
     }
   };
 
-  // État de chargement
+  const isExpired = () => {
+    if (!devis?.valid_until) return false;
+    const validUntil = new Date(devis.valid_until);
+    const today = new Date();
+    return validUntil < today && devis.status !== 'accepted' && devis.status !== 'converted';
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[calc(100vh-200px)] bg-gray-50">
         <div className="text-center space-y-4">
           <Loader2 className="animate-spin text-primary w-12 h-12 mx-auto" />
-          <p className="text-base font-medium text-gray-500">Chargement de la vente...</p>
+          <p className="text-base font-medium text-gray-500">Chargement du devis...</p>
         </div>
       </div>
     );
   }
 
-  // Vente non trouvée
-  if (!vente) {
+  if (!devis) {
     return (
       <div className="flex items-center justify-center min-h-[calc(100vh-200px)] bg-gray-50">
         <div className="text-center max-w-md p-6 bg-white rounded-xl shadow-lg">
           <AlertCircle className="w-20 h-20 text-error mx-auto mb-4" />
-          <h2 className="text-xl font-semibold text-gray-700 mb-2">Vente non trouvée</h2>
-          <p className="text-gray-500 mb-6">La vente que vous recherchez n'existe pas ou a été supprimée.</p>
-          <button onClick={() => navigate('/ventes')} className="btn btn-primary">
+          <h2 className="text-xl font-semibold text-gray-700 mb-2">Devis non trouvé</h2>
+          <p className="text-gray-500 mb-6">Le devis que vous recherchez n'existe pas ou a été supprimé.</p>
+          <button onClick={() => navigate('/devis')} className="btn btn-primary">
             Retour à la liste
           </button>
         </div>
@@ -228,85 +222,75 @@ const VenteDetail = () => {
         <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
             <div className="flex items-center gap-4">
-              <button onClick={() => navigate('/ventes')} className="btn btn-ghost btn-sm gap-2">
+              <button onClick={() => navigate('/devis')} className="btn btn-ghost btn-sm gap-2">
                 <ArrowLeft className="w-4 h-4" /> Retour
               </button>
               <div className="flex items-center gap-3">
                 <div className="p-2.5 bg-primary/15 rounded-xl">
-                  <ShoppingCart className="w-6 h-6 text-primary" />
+                  <FileText className="w-6 h-6 text-primary" />
                 </div>
                 <div>
                   <h1 className="text-2xl font-bold text-gray-800">
-                    Vente {vente.invoice_number || 'N/A'}
+                    Devis {devis.devis_number}
                   </h1>
-                  <p className="text-sm text-gray-500">{vente.client_name || 'Client inconnu'}</p>
+                  <p className="text-sm text-gray-500">{devis.client_name}</p>
                 </div>
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              {/* PDF */}
               <button onClick={handleDownloadPdf} className="btn btn-primary btn-sm gap-2">
                 <Download className="w-4 h-4" /> PDF
               </button>
-
-              {/* Ticket POS */}
-              <button 
-                onClick={handlePrintTicket} 
-                className="btn btn-secondary btn-sm gap-2"
-                disabled={printing}
-              >
-                {printing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Printer className="w-4 h-4" />}
-                Ticket
-              </button>
-
-              {/* Actions selon statut */}
-              {vente.status === 'draft' && (
+              
+              {devis.status === 'draft' && (
                 <>
-                  <button onClick={() => navigate(`/ventes/${id}/modifier`)} className="btn btn-outline btn-sm gap-2">
+                  <button onClick={() => navigate(`/devis/${id}/modifier`)} className="btn btn-outline btn-sm gap-2">
                     <Edit className="w-4 h-4" /> Modifier
                   </button>
                   <button 
-                    onClick={() => handleUpdateStatus('confirmed')} 
+                    onClick={() => handleUpdateStatus('sent')} 
+                    className="btn btn-info btn-sm gap-2" 
+                    disabled={actionLoading}
+                  >
+                    {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                    Envoyer
+                  </button>
+                </>
+              )}
+
+              {devis.status === 'sent' && (
+                <>
+                  <button 
+                    onClick={() => handleUpdateStatus('accepted')} 
                     className="btn btn-success btn-sm gap-2" 
                     disabled={actionLoading}
                   >
                     {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
-                    Confirmer
+                    Accepter
                   </button>
-                </>
-              )}
-
-              {vente.status === 'confirmed' && (
-                <>
                   <button 
-                    onClick={() => handleUpdateStatus('paid')} 
-                    className="btn btn-success btn-sm gap-2" 
+                    onClick={() => handleUpdateStatus('refused')} 
+                    className="btn btn-error btn-sm gap-2" 
                     disabled={actionLoading}
                   >
-                    {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CreditCard className="w-4 h-4" />}
-                    Marquer payée
-                  </button>
-                  <button 
-                    onClick={handleAddPayment} 
-                    className="btn btn-info btn-sm gap-2"
-                  >
-                    <DollarSign className="w-4 h-4" /> Paiement
+                    {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileX className="w-4 h-4" />}
+                    Refuser
                   </button>
                 </>
               )}
 
-              {vente.status !== 'cancelled' && vente.status !== 'paid' && (
+              {devis.status === 'accepted' && (
                 <button 
-                  onClick={() => handleUpdateStatus('cancelled')} 
-                  className="btn btn-error btn-sm gap-2" 
+                  onClick={handleConvertToSale} 
+                  className="btn btn-success btn-sm gap-2" 
                   disabled={actionLoading}
                 >
-                  {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Ban className="w-4 h-4" />}
-                  Annuler
+                  {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileCheck className="w-4 h-4" />}
+                  Convertir en vente
                 </button>
               )}
 
-              <button onClick={fetchVente} className="btn btn-ghost btn-sm btn-circle" title="Actualiser">
+              <button onClick={fetchDevis} className="btn btn-ghost btn-sm btn-circle" title="Actualiser">
                 <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
               </button>
             </div>
@@ -324,8 +308,8 @@ const VenteDetail = () => {
                 <FileText className="w-5 h-5 text-primary" />
               </div>
               <div>
-                <p className="text-xs text-gray-500">N° Facture</p>
-                <p className="font-semibold font-mono">{vente.invoice_number || '-'}</p>
+                <p className="text-xs text-gray-500">N° Devis</p>
+                <p className="font-semibold font-mono">{devis.devis_number}</p>
               </div>
             </div>
           </div>
@@ -335,8 +319,8 @@ const VenteDetail = () => {
                 <DollarSign className="w-5 h-5 text-success" />
               </div>
               <div>
-                <p className="text-xs text-gray-500">Total</p>
-                <p className="font-bold text-lg text-primary">{formatCurrency(vente.total)}</p>
+                <p className="text-xs text-gray-500">Montant</p>
+                <p className="font-bold text-lg text-primary">{formatCurrency(devis.total)}</p>
               </div>
             </div>
           </div>
@@ -347,25 +331,27 @@ const VenteDetail = () => {
               </div>
               <div>
                 <p className="text-xs text-gray-500">Statut</p>
-                {getStatusBadge(vente.status)}
+                {getStatusBadge(devis.status)}
               </div>
             </div>
           </div>
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
             <div className="flex items-center gap-3">
               <div className="p-2 bg-warning/10 rounded-lg">
-                <CreditCard className="w-5 h-5 text-warning" />
+                <Calendar className="w-5 h-5 text-warning" />
               </div>
               <div>
-                <p className="text-xs text-gray-500">Paiement</p>
-                {getPaymentBadge(vente.payment_status)}
-                <p className="text-xs text-gray-400">Dû: {formatCurrency(vente.amount_due)}</p>
+                <p className="text-xs text-gray-500">Valable jusqu'au</p>
+                <p className="font-semibold">{formatDate(devis.valid_until)}</p>
+                {isExpired() && (
+                  <p className="text-xs text-error">⚠️ Expiré</p>
+                )}
               </div>
             </div>
           </div>
         </div>
 
-        {/* Détails - Grille 2/3 + 1/3 */}
+        {/* Détails */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
           {/* Tableau des produits - 2/3 */}
           <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
@@ -386,14 +372,14 @@ const VenteDetail = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {vente.lines && vente.lines.length > 0 ? (
-                    vente.lines.map((line, index) => (
+                  {devis.lignes && devis.lignes.length > 0 ? (
+                    devis.lignes.map((line, index) => (
                       <tr key={index} className="border-b hover:bg-gray-50">
                         <td className="px-4 py-3">
-                          <p className="font-medium">{line.product_name || line.product?.name || 'Produit'}</p>
-                          <p className="text-xs text-gray-400">{line.product_code || line.product?.code || ''}</p>
+                          <p className="font-medium">{line.product_name}</p>
+                          <p className="text-xs text-gray-400">{line.product_code}</p>
                         </td>
-                        <td className="px-4 py-3 text-center">{line.quantity || 0}</td>
+                        <td className="px-4 py-3 text-center">{line.quantity}</td>
                         <td className="px-4 py-3 text-right">{formatCurrency(line.unit_price)}</td>
                         <td className="px-4 py-3 text-right text-error">{formatCurrency(line.discount)}</td>
                         <td className="px-4 py-3 text-right font-semibold">{formatCurrency(line.total)}</td>
@@ -403,7 +389,7 @@ const VenteDetail = () => {
                     <tr>
                       <td colSpan="5" className="px-4 py-8 text-center text-gray-500">
                         <Package className="w-12 h-12 mx-auto text-gray-300 mb-2" />
-                        Aucun produit dans cette vente
+                        Aucun produit dans ce devis
                       </td>
                     </tr>
                   )}
@@ -411,29 +397,29 @@ const VenteDetail = () => {
                 <tfoot className="bg-gray-50 border-t-2 border-gray-200">
                   <tr>
                     <td colSpan="4" className="px-4 py-3 text-right font-semibold">Sous-total</td>
-                    <td className="px-4 py-3 text-right font-semibold">{formatCurrency(vente.subtotal)}</td>
+                    <td className="px-4 py-3 text-right font-semibold">{formatCurrency(devis.subtotal)}</td>
                   </tr>
-                  {(vente.discount_amount || 0) > 0 && (
+                  {(devis.discount_amount || 0) > 0 && (
                     <tr>
                       <td colSpan="4" className="px-4 py-3 text-right text-gray-600">Remise</td>
-                      <td className="px-4 py-3 text-right text-error">-{formatCurrency(vente.discount_amount)}</td>
+                      <td className="px-4 py-3 text-right text-error">-{formatCurrency(devis.discount_amount)}</td>
                     </tr>
                   )}
-                  {(vente.tax_amount || 0) > 0 && (
+                  {(devis.tax_amount || 0) > 0 && (
                     <tr>
-                      <td colSpan="4" className="px-4 py-3 text-right text-gray-600">TVA ({vente.tax_rate || 0}%)</td>
-                      <td className="px-4 py-3 text-right">{formatCurrency(vente.tax_amount)}</td>
+                      <td colSpan="4" className="px-4 py-3 text-right text-gray-600">TVA ({devis.tax_rate || 0}%)</td>
+                      <td className="px-4 py-3 text-right">{formatCurrency(devis.tax_amount)}</td>
                     </tr>
                   )}
-                  {(vente.shipping_fee || 0) > 0 && (
+                  {(devis.shipping_fee || 0) > 0 && (
                     <tr>
                       <td colSpan="4" className="px-4 py-3 text-right text-gray-600">Frais livraison</td>
-                      <td className="px-4 py-3 text-right">{formatCurrency(vente.shipping_fee)}</td>
+                      <td className="px-4 py-3 text-right">{formatCurrency(devis.shipping_fee)}</td>
                     </tr>
                   )}
                   <tr className="border-t-2 border-primary bg-primary/5">
                     <td colSpan="4" className="px-4 py-4 text-right font-bold text-lg">Total TTC</td>
-                    <td className="px-4 py-4 text-right font-bold text-xl text-primary">{formatCurrency(vente.total)}</td>
+                    <td className="px-4 py-4 text-right font-bold text-xl text-primary">{formatCurrency(devis.total)}</td>
                   </tr>
                 </tfoot>
               </table>
@@ -450,77 +436,70 @@ const VenteDetail = () => {
                 </h3>
               </div>
               <div className="p-4 space-y-3">
-                <p className="font-semibold text-base">{vente.client_name || 'Client inconnu'}</p>
-                {vente.client_phone && (
+                <p className="font-semibold text-base">{devis.client_name || 'Client inconnu'}</p>
+                {devis.client_phone && (
                   <div className="flex items-center gap-2 text-sm">
                     <Phone className="w-4 h-4 text-gray-400" />
-                    <span>{vente.client_phone}</span>
+                    <span>{devis.client_phone}</span>
                   </div>
                 )}
-                {vente.client_email && (
+                {devis.client_email && (
                   <div className="flex items-center gap-2 text-sm">
                     <Mail className="w-4 h-4 text-gray-400" />
-                    <span>{vente.client_email}</span>
+                    <span>{devis.client_email}</span>
                   </div>
                 )}
-                {vente.client_address && (
+                {devis.client_address && (
                   <div className="flex items-start gap-2 text-sm">
                     <MapPin className="w-4 h-4 text-gray-400 mt-0.5" />
-                    <span className="line-clamp-2">{vente.client_address}</span>
+                    <span className="line-clamp-2">{devis.client_address}</span>
                   </div>
                 )}
-                {vente.client && vente.client.id && (
+                {devis.client && devis.client.id && (
                   <button 
-                    onClick={() => navigate(`/clients/${vente.client.id}`)} 
+                    onClick={() => navigate(`/clients/${devis.client.id}`)} 
                     className="btn btn-ghost btn-sm w-full mt-2 gap-2"
                   >
-                    <Users className="w-4 h-4" /> Voir le client
+                    <User className="w-4 h-4" /> Voir le client
                   </button>
                 )}
               </div>
             </div>
 
-            {/* Paiements */}
+            {/* Informations */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
               <div className="bg-gray-50 px-6 py-3 border-b">
                 <h3 className="font-semibold flex items-center gap-2">
-                  <CreditCard className="w-4 h-4 text-primary" /> Paiements
+                  <Calendar className="w-4 h-4 text-primary" /> Informations
                 </h3>
               </div>
               <div className="p-4 space-y-2">
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Montant payé</span>
-                  <span className="font-semibold text-success">{formatCurrency(vente.amount_paid)}</span>
+                  <span className="text-gray-500">Date de création</span>
+                  <span className="font-medium">{formatDate(devis.devis_date)}</span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Montant dû</span>
-                  <span className="font-semibold text-error">{formatCurrency(vente.amount_due)}</span>
+                  <span className="text-gray-500">Valable jusqu'au</span>
+                  <span className="font-medium">{formatDate(devis.valid_until)}</span>
                 </div>
-                <div className="flex justify-between text-sm border-t pt-2">
-                  <span className="text-gray-500">Méthode</span>
-                  <span className="font-medium">{vente.payment_method || 'Non défini'}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Échéance</span>
-                  <span className="font-medium">{formatDate(vente.payment_due_date)}</span>
-                </div>
-                {vente.payments && vente.payments.length > 0 && (
-                  <div className="mt-2 border-t pt-2">
-                    <p className="text-xs text-gray-500 mb-1">Historique des paiements</p>
-                    {vente.payments.map((payment, idx) => (
-                      <div key={idx} className="flex justify-between text-xs py-1 border-b border-gray-50">
-                        <span>{formatDate(payment.payment_date)}</span>
-                        <span className="font-semibold text-success">{formatCurrency(payment.amount)}</span>
-                        <span className="text-gray-400">{payment.method}</span>
-                      </div>
-                    ))}
+                {devis.sale && (
+                  <div className="flex justify-between text-sm border-t pt-2">
+                    <span className="text-gray-500">Vente associée</span>
+                    <span className="font-medium text-primary">
+                      <button 
+                        onClick={() => navigate(`/ventes/${devis.sale.id}`)}
+                        className="link link-primary"
+                      >
+                        {devis.sale.invoice_number}
+                      </button>
+                    </span>
                   </div>
                 )}
               </div>
             </div>
 
             {/* Notes */}
-            {vente.notes && (
+            {devis.notes && (
               <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
                 <div className="bg-gray-50 px-6 py-3 border-b">
                   <h3 className="font-semibold flex items-center gap-2">
@@ -528,13 +507,13 @@ const VenteDetail = () => {
                   </h3>
                 </div>
                 <div className="p-4">
-                  <p className="text-sm text-gray-600 whitespace-pre-line">{vente.notes}</p>
+                  <p className="text-sm text-gray-600 whitespace-pre-line">{devis.notes}</p>
                 </div>
               </div>
             )}
 
             {/* QR Code */}
-            {vente.qr_code_url && (
+            {devis.qr_code_url && (
               <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
                 <div className="bg-gray-50 px-6 py-3 border-b">
                   <h3 className="font-semibold flex items-center gap-2">
@@ -551,8 +530,8 @@ const VenteDetail = () => {
                 </div>
                 <div className="p-4 flex justify-center">
                   <img 
-                    src={vente.qr_code_url} 
-                    alt="QR Code de la vente" 
+                    src={devis.qr_code_url} 
+                    alt="QR Code du devis" 
                     className="w-32 h-32 object-contain"
                     onError={(e) => {
                       e.target.style.display = 'none';
@@ -569,4 +548,4 @@ const VenteDetail = () => {
   );
 };
 
-export default VenteDetail;
+export default DevisDetail;

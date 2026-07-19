@@ -95,7 +95,10 @@ import RapportFinancierForm from './components/finances/RapportFinancierForm';
 import RapportFinancierDetail from './components/finances/RapportFinancierDetail';
 import RapportPdf from './components/finances/RapportPdf';
 
-
+import DevisList from './components/ventesclients/DevisList';
+import DevisForm from './components/ventesclients/DevisForm';
+import DevisDetail from './components/ventesclients/DevisDetail';
+import DevisPdf from './components/ventesclients/DevisPdf';
 // Modules Audit
 
 
@@ -179,6 +182,11 @@ function App() {
                   <Route path="/ventes/:id/modifier" element={<VenteForm />} />
                   <Route path="/ventes/:id/pdf" element={<VentePdf />} />
                 
+           <Route path="/devis" element={<DevisList />} />
+            <Route path="/devis/nouveau" element={<DevisForm />} />
+            <Route path="/devis/:id" element={<DevisDetail />} />
+            <Route path="/devis/:id/modifier" element={<DevisForm />} />
+            <Route path="/devis/:id/pdf" element={<DevisPdf />} />
                 
                 <Route path="/factures" element={<FacturesList />} />
                 <Route path="/factures/nouvelle" element={<FactureForm />} />
