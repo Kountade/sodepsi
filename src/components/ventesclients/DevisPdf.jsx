@@ -16,27 +16,26 @@ export const generateDevisPdf = async (devis, companyInfo = null) => {
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
     const pageWidth = 210;
     const pageHeight = 297;
-    const margins = { left: 12, right: 12, top: 5, bottom: 5 };
+    const margins = { left: 15, right: 15, top: 15, bottom: 15 };
     const contentWidth = pageWidth - margins.left - margins.right;
     let yPosition = margins.top;
 
-    // Informations de la société
+    // ✅ INFORMATIONS DE LA SOCIÉTÉ (CORRIGÉES)
     const defaultCompany = {
-      name: 'ETABLISSEMENTS BAH SOULEYMANE ET FILS',
-      sigle: 'E.B.S.F',
-      address: 'Pita Centre – Grand Marché',
-      address2: 'République de Guinée',
-      phone1: '+224 626 53 32 53',
-      phone2: '+224 612 37 37 47',
-      email: 'ebsfservices@gmail.com',
-      rccm: 'GN.KAL.2018.A.083 913',
-      nif: '051501F',
-      bank_name: 'VISTA BANK GUINÉE S.A',
-      bank_account: '1604533019',
-      bank_currency: 'GNF',
+      name: 'BOUTIQUE STATION SODEPCI DE PARA',
+      address: 'Station SODEPCI, Para',
+      phone1: '07 47 55 71 69',
+      phone2: '07 08 42 96 09',
+      email: '',
+      rccm: '',
+      nif: '',
+      bank_name: '',
+      bank_account: '',
+      bank_currency: 'FCFA',
       ...companyInfo,
     };
 
+    // ✅ FORMATAGE EN FCFA
     const formatCurrency = (amount) => {
       if (!amount) return '0 FCFA';
       return amount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + ' FCFA';
@@ -45,7 +44,11 @@ export const generateDevisPdf = async (devis, companyInfo = null) => {
     const formatDate = (dateString) => {
       if (!dateString) return '-';
       try { 
-        return new Date(dateString).toLocaleDateString('fr-FR'); 
+        return new Date(dateString).toLocaleDateString('fr-FR', {
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric'
+        }); 
       } catch { 
         return '-'; 
       }
@@ -54,10 +57,10 @@ export const generateDevisPdf = async (devis, companyInfo = null) => {
     const getStatusLabel = (status) => {
       const map = {
         draft: 'Brouillon',
-        sent: 'Envoyé',
-        accepted: 'Accepté',
-        refused: 'Refusé',
-        expired: 'Expiré',
+        sent: 'Envoye',
+        accepted: 'Accepte',
+        refused: 'Refuse',
+        expired: 'Expire',
         converted: 'Converti en vente'
       };
       return map[status] || status || '-';
@@ -86,82 +89,103 @@ export const generateDevisPdf = async (devis, companyInfo = null) => {
       // Ignorer l'erreur
     }
 
-    // En-tête
-    const logoWidth = 25;
-    const logoHeight = 12;
+    // ============ EN-TETE ============
+    const logoWidth = 30;
+    const logoHeight = 18;
     
+    // Logo à gauche
     if (logoData) {
-      doc.addImage(logoData, 'PNG', margins.left, yPosition, logoWidth, logoHeight);
+      try {
+        doc.addImage(logoData, 'PNG', margins.left, yPosition, logoWidth, logoHeight);
+      } catch {
+        // Si l'image ne peut pas être ajoutee, on continue sans logo
+      }
     }
 
-    const textStartX = margins.left + (logoData ? logoWidth + 3 : 0);
-    
-    doc.setFontSize(8);
-    doc.setFont('helvetica', 'bold');
-    doc.text(defaultCompany.name, textStartX, yPosition + 2.5);
-    
-    doc.setFontSize(5.5);
-    doc.setFont('helvetica', 'normal');
-    doc.text(`Adresse: ${defaultCompany.address}`, textStartX, yPosition + 6);
-    doc.text(`Tél: ${defaultCompany.phone1}`, textStartX, yPosition + 9);
-    doc.text(`Email: ${defaultCompany.email}`, textStartX, yPosition + 12);
-    doc.text(`RCCM: ${defaultCompany.rccm} | NIF: ${defaultCompany.nif}`, textStartX, yPosition + 15);
-    
-    yPosition += 28;
-
-    // Titre
+    // Informations de la societe
+    const infoX = margins.left + (logoData ? logoWidth + 6 : 0);
     doc.setFontSize(14);
+    doc.setTextColor(0, 0, 0);
     doc.setFont('helvetica', 'bold');
-    doc.text('DEVIS', pageWidth / 2, yPosition, { align: 'center' });
+    doc.text('BOUTIQUE STATION SODEPCI DE PARA', infoX, yPosition + 4);
+    
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(60, 60, 60);
+    doc.text('Tel: 07 47 55 71 69 / 07 08 42 96 09', infoX, yPosition + 11);
+    doc.text('Adresse: Station SODEPCI, Para', infoX, yPosition + 17);
+    
+    yPosition += 24;
+
+    // Ligne de separation
+    doc.setDrawColor(100, 100, 100);
+    doc.line(margins.left, yPosition, pageWidth - margins.right, yPosition);
     yPosition += 5;
-    
-    doc.setFontSize(8);
-    doc.setFont('helvetica', 'normal');
-    doc.text(`N° ${devis.devis_number}`, pageWidth / 2, yPosition, { align: 'center' });
-    yPosition += 8;
 
-    // Informations
-    doc.setFontSize(7);
-    
+    // ============ TITRE ============
+    doc.setFontSize(18);
+    doc.setTextColor(0, 0, 0);
     doc.setFont('helvetica', 'bold');
-    doc.text('Client:', margins.left, yPosition);
-    doc.setFont('helvetica', 'normal');
-    doc.text(devis.client_name || '-', margins.left + 25, yPosition);
+    doc.text('DEVIS', pageWidth / 2, yPosition + 4, { align: 'center' });
     
-    doc.setFont('helvetica', 'bold');
-    doc.text('Date:', margins.left + 90, yPosition);
+    doc.setFontSize(10);
+    doc.setTextColor(80, 80, 80);
     doc.setFont('helvetica', 'normal');
-    doc.text(formatDate(devis.devis_date), margins.left + 110, yPosition);
-    yPosition += 4.5;
+    doc.text('N° ' + (devis.devis_number || '---'), pageWidth / 2, yPosition + 14, { align: 'center' });
     
-    doc.setFont('helvetica', 'bold');
-    doc.text('Adresse:', margins.left, yPosition);
-    doc.setFont('helvetica', 'normal');
-    doc.text(devis.client_address || '-', margins.left + 25, yPosition);
-    
-    doc.setFont('helvetica', 'bold');
-    doc.text('Statut:', margins.left + 90, yPosition);
-    doc.setFont('helvetica', 'normal');
-    doc.text(getStatusLabel(devis.status), margins.left + 110, yPosition);
-    yPosition += 4.5;
-    
-    doc.setFont('helvetica', 'bold');
-    doc.text('Tél:', margins.left, yPosition);
-    doc.setFont('helvetica', 'normal');
-    doc.text(devis.client_phone || '-', margins.left + 25, yPosition);
-    
-    doc.setFont('helvetica', 'bold');
-    doc.text('Valable jusqu\'au:', margins.left + 90, yPosition);
-    doc.setFont('helvetica', 'normal');
-    doc.text(formatDate(devis.valid_until), margins.left + 110, yPosition);
-    
-    yPosition += 8;
+    yPosition += 22;
 
-    // Tableau des produits
+    // ============ INFORMATIONS CLIENT ============
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(0, 0, 0);
+    
+    const colWidth = contentWidth / 2;
+    
+    // Colonne gauche
+    let infoY = yPosition;
+    doc.text('Client:', margins.left, infoY);
+    doc.setFont('helvetica', 'normal');
+    doc.text(devis.client_name || '-', margins.left + 28, infoY);
+    
+    infoY += 6;
+    doc.setFont('helvetica', 'bold');
+    doc.text('Adresse:', margins.left, infoY);
+    doc.setFont('helvetica', 'normal');
+    doc.text(devis.client_address || '-', margins.left + 28, infoY);
+    
+    infoY += 6;
+    doc.setFont('helvetica', 'bold');
+    doc.text('Telephone:', margins.left, infoY);
+    doc.setFont('helvetica', 'normal');
+    doc.text(devis.client_phone || '-', margins.left + 28, infoY);
+    
+    // Colonne droite
+    infoY = yPosition;
+    doc.setFont('helvetica', 'bold');
+    doc.text('Date:', margins.left + colWidth, infoY);
+    doc.setFont('helvetica', 'normal');
+    doc.text(formatDate(devis.devis_date), margins.left + colWidth + 28, infoY);
+    
+    infoY += 6;
+    doc.setFont('helvetica', 'bold');
+    doc.text('Valable jusqu au:', margins.left + colWidth, infoY);
+    doc.setFont('helvetica', 'normal');
+    doc.text(formatDate(devis.valid_until), margins.left + colWidth + 28, infoY);
+    
+    infoY += 6;
+    doc.setFont('helvetica', 'bold');
+    doc.text('Statut:', margins.left + colWidth, infoY);
+    doc.setFont('helvetica', 'normal');
+    doc.text(getStatusLabel(devis.status), margins.left + colWidth + 28, infoY);
+    
+    yPosition += 26;
+
+    // ============ TABLEAU DES PRODUITS ============
     const tableRows = [];
     
     if (devis.lignes && devis.lignes.length > 0) {
-      devis.lignes.forEach(line => {
+      devis.lignes.forEach((line) => {
         tableRows.push([
           line.product_name || '-',
           String(line.quantity || 0),
@@ -172,14 +196,15 @@ export const generateDevisPdf = async (devis, companyInfo = null) => {
       });
     }
 
+    // Lignes de totaux
     tableRows.push(['', '', '', 'Sous-total', formatCurrency(devis.subtotal)]);
     
     if (devis.discount_amount > 0) {
-      tableRows.push(['', '', '', 'Remise', `-${formatCurrency(devis.discount_amount)}`]);
+      tableRows.push(['', '', '', 'Remise', '- ' + formatCurrency(devis.discount_amount)]);
     }
     
     if (devis.tax_amount > 0) {
-      tableRows.push(['', '', '', `TVA (${devis.tax_rate || 0}%)`, formatCurrency(devis.tax_amount)]);
+      tableRows.push(['', '', '', 'TVA (' + (devis.tax_rate || 0) + '%)', formatCurrency(devis.tax_amount)]);
     }
     
     if (devis.shipping_fee > 0) {
@@ -189,20 +214,22 @@ export const generateDevisPdf = async (devis, companyInfo = null) => {
     tableRows.push(['', '', '', 'TOTAL TTC', formatCurrency(devis.total)]);
 
     autoTable(doc, {
-      head: [['Produit', 'Qté', 'Prix unit.', 'Remise', 'Total']],
+      head: [['DESIGNATION', 'QTE', 'PRIX UNITAIRE', 'REMISE', 'TOTAL']],
       body: tableRows,
       startY: yPosition,
       margin: { left: margins.left, right: margins.right },
       tableWidth: contentWidth,
       styles: { 
-        fontSize: 6, 
-        cellPadding: 2,
-        valign: 'middle'
+        fontSize: 8, 
+        cellPadding: 4,
+        valign: 'middle',
+        lineColor: [180, 180, 180],
+        lineWidth: 0.1
       },
       headStyles: { 
-        fillColor: [55, 65, 85], 
+        fillColor: [60, 60, 60], 
         textColor: [255, 255, 255],
-        fontSize: 7,
+        fontSize: 8,
         fontStyle: 'bold',
         halign: 'center'
       },
@@ -210,87 +237,91 @@ export const generateDevisPdf = async (devis, companyInfo = null) => {
       columnStyles: {
         0: { cellWidth: 'auto', halign: 'left' },
         1: { cellWidth: 20, halign: 'center' },
-        2: { cellWidth: 30, halign: 'right' },
-        3: { cellWidth: 30, halign: 'right' },
-        4: { cellWidth: 30, halign: 'right' }
+        2: { cellWidth: 32, halign: 'right' },
+        3: { cellWidth: 32, halign: 'right' },
+        4: { cellWidth: 38, halign: 'right' }
       },
       didParseCell: function(data) {
+        // Surligner la ligne du total
         if (data.row.index === tableRows.length - 1) {
-          data.cell.styles.fillColor = [34, 197, 94];
+          data.cell.styles.fillColor = [60, 60, 60];
           data.cell.styles.textColor = [255, 255, 255];
           data.cell.styles.fontStyle = 'bold';
-          data.cell.styles.fontSize = 7;
+          data.cell.styles.fontSize = 9;
         }
+        // Mettre en gras les libelles des totaux
         if (data.section === 'body' && 
+            data.column.index === 3 && 
             (data.cell.raw === 'Sous-total' || 
              data.cell.raw === 'Remise' || 
-             data.cell.raw === 'TVA' || 
+             data.cell.raw.startsWith('TVA') || 
              data.cell.raw === 'Frais livraison' ||
              data.cell.raw === 'TOTAL TTC')) {
           data.cell.styles.fontStyle = 'bold';
+          data.cell.styles.textColor = [40, 40, 40];
+        }
+        // Aligner les nombres a droite
+        if (data.section === 'body' && data.column.index >= 2) {
+          data.cell.styles.halign = 'right';
         }
       }
     });
 
     yPosition = doc.lastAutoTable.finalY + 8;
 
-    // Notes
+    // ============ NOTES ============
     if (devis.notes) {
-      yPosition += 5;
-      
-      doc.setFontSize(6);
+      doc.setFontSize(7);
+      doc.setTextColor(60, 60, 60);
       doc.setFont('helvetica', 'bold');
       doc.text('Notes:', margins.left, yPosition);
       yPosition += 4;
       
       doc.setFont('helvetica', 'normal');
       const splitNotes = doc.splitTextToSize(devis.notes, contentWidth);
-      splitNotes.forEach(line => {
+      splitNotes.forEach((line) => {
         doc.text(line, margins.left, yPosition);
-        yPosition += 3.5;
+        yPosition += 4.5;
       });
       yPosition += 4;
     }
 
-    // Pied de page
-    if (yPosition < pageHeight - margins.bottom - 22) {
-      yPosition = pageHeight - margins.bottom - 22;
+    // ============ PIED DE PAGE ============
+    // S'assurer que le pied de page est en bas
+    if (yPosition < pageHeight - margins.bottom - 20) {
+      yPosition = pageHeight - margins.bottom - 20;
     }
     
+    // Ligne de separation
     doc.setDrawColor(180, 180, 180);
     doc.line(margins.left, yPosition, pageWidth - margins.right, yPosition);
-    yPosition += 3;
+    yPosition += 4;
     
-    doc.setFontSize(4.5);
+    // Message de remerciement
+    doc.setFontSize(11);
+    doc.setTextColor(0, 0, 0);
     doc.setFont('helvetica', 'bold');
-    doc.text('COORDONNÉES BANCAIRES', pageWidth / 2, yPosition + 1.5, { align: 'center' });
-    yPosition += 4;
+    doc.text('MERCI ET A LA PROCHAINE', pageWidth / 2, yPosition + 2, { align: 'center' });
     
-    doc.setFontSize(4);
-    doc.setFont('helvetica', 'normal');
-    doc.text(
-      `${defaultCompany.bank_name} - Compte: ${defaultCompany.bank_account}`, 
-      pageWidth / 2, 
-      yPosition + 1.5, 
-      { align: 'center' }
-    );
-    yPosition += 4;
-    
-    doc.setFontSize(4);
-    doc.setFont('italic');
-    doc.text('Ce devis est valable 30 jours', pageWidth / 2, yPosition + 1.5, { align: 'center' });
-    yPosition += 4;
+    yPosition += 10;
 
-    doc.save(`Devis_${devis.devis_number}.pdf`);
+    // ============ NUMERO DE PAGE ============
+    doc.setFontSize(7);
+    doc.setTextColor(150, 150, 150);
+    doc.setFont('helvetica', 'normal');
+    doc.text('Page 1/1 - ' + (devis.devis_number || ''), pageWidth / 2, pageHeight - margins.bottom + 2, { align: 'center' });
+
+    // ============ TELECHARGEMENT ============
+    doc.save('Devis_' + (devis.devis_number || 'sans_numero') + '.pdf');
     return true;
     
   } catch (error) {
     console.error('Erreur generateDevisPdf:', error);
-    throw new Error('Génération PDF échouée : ' + error.message);
+    throw new Error('Generation PDF echouee : ' + error.message);
   }
 };
 
-// Composant React
+// ============ COMPOSANT REACT ============
 const DevisPdf = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -310,8 +341,8 @@ const DevisPdf = () => {
 
         setProgress(20);
         
-        const response = await AxiosInstance.get(`/devis/${id}/`, {
-          headers: { Authorization: `Token ${token}` }
+        const response = await AxiosInstance.get('/devis/' + id + '/', {
+          headers: { Authorization: 'Token ' + token }
         });
         
         setProgress(50);
@@ -321,12 +352,12 @@ const DevisPdf = () => {
         setProgress(100);
         
         setTimeout(() => {
-          navigate(`/devis/${id}`);
+          navigate('/devis/' + id);
         }, 1500);
         
       } catch (err) {
         console.error('Erreur:', err);
-        setError(err.message || 'Erreur lors de la génération du PDF');
+        setError(err.message || 'Erreur lors de la generation du PDF');
       } finally {
         setLoading(false);
       }
@@ -345,12 +376,12 @@ const DevisPdf = () => {
           <div className="w-full bg-gray-200 rounded-full h-2.5 mb-2">
             <div 
               className="bg-primary h-2.5 rounded-full transition-all duration-500 ease-out"
-              style={{ width: `${progress}%` }}
+              style={{ width: progress + '%' }}
             ></div>
           </div>
-          <p className="text-gray-500">Génération du PDF en cours...</p>
+          <p className="text-gray-500 font-medium">Generation du PDF en cours...</p>
           <p className="text-sm text-gray-400 mt-2">{progress}%</p>
-          <p className="text-xs text-gray-400 mt-1">Le téléchargement va commencer automatiquement</p>
+          <p className="text-xs text-gray-400 mt-1">Le telechargement va commencer automatiquement</p>
         </div>
       </div>
     );
@@ -363,7 +394,7 @@ const DevisPdf = () => {
           <AlertCircle className="w-20 h-20 text-error mx-auto mb-4" />
           <h2 className="text-xl font-semibold text-gray-700 mb-2">Erreur</h2>
           <p className="text-gray-500 mb-6">{error}</p>
-          <button onClick={() => navigate(`/devis/${id}`)} className="btn btn-primary">
+          <button onClick={() => navigate('/devis/' + id)} className="btn btn-primary">
             Retour au devis
           </button>
         </div>

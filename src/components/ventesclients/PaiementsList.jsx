@@ -76,47 +76,11 @@ const PaiementsList = () => {
         setTimeout(() => navigate('/login'), 2000);
       } else {
         showNotification('Erreur de chargement des paiements', 'error');
-        // Données de test pour le développement
-        setPaiements(getMockPaiements());
       }
     } finally {
       setLoading(false);
     }
   };
-
-  // Données de test
-  const getMockPaiements = () => [
-    {
-      id: 1,
-      sale_invoice_number: 'INV-2024-001',
-      client_name: 'Client Test 1',
-      amount: 150000,
-      method: 'cash',
-      payment_date: new Date().toISOString(),
-      reference: 'REF-001',
-      notes: 'Paiement en espèces'
-    },
-    {
-      id: 2,
-      sale_invoice_number: 'INV-2024-002',
-      client_name: 'Client Test 2',
-      amount: 250000,
-      method: 'transfer',
-      payment_date: new Date().toISOString(),
-      reference: 'TRF-002',
-      notes: 'Virement bancaire'
-    },
-    {
-      id: 3,
-      sale_invoice_number: 'INV-2024-003',
-      client_name: 'Client Test 3',
-      amount: 75000,
-      method: 'mobile_money',
-      payment_date: new Date().toISOString(),
-      reference: 'MM-003',
-      notes: 'Mobile Money'
-    }
-  ];
 
   useEffect(() => {
     fetchPaiements();
@@ -138,35 +102,10 @@ const PaiementsList = () => {
     }
   };
 
-  // ✅ Fonction de téléchargement du PDF du paiement
   const handleDownloadPdf = async (paiementId) => {
     setDownloading(paiementId);
     try {
-      // Rediriger vers la page de génération PDF
-      // Le composant PaiementPdf va générer et télécharger le PDF automatiquement
       navigate(`/paiements/${paiementId}/pdf`);
-      
-      // Note: Si vous voulez télécharger directement sans naviguer,
-      // vous pouvez utiliser cette approche:
-      /*
-      const token = getToken();
-      const response = await AxiosInstance.get(`/payments/${paiementId}/pdf/`, {
-        headers: { 'Authorization': `Token ${token}` },
-        responseType: 'blob'
-      });
-      
-      const blob = new Blob([response.data], { type: 'application/pdf' });
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `recu_paiement_${paiementId}.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
-      
-      showNotification('PDF téléchargé avec succès', 'success');
-      */
     } catch (error) {
       console.error('Erreur téléchargement PDF:', error);
       showNotification('Erreur lors du téléchargement du PDF', 'error');
@@ -186,9 +125,10 @@ const PaiementsList = () => {
   const startIndex = (currentPage - 1) * itemsPerPage;
   const paginatedPaiements = filteredPaiements.slice(startIndex, startIndex + itemsPerPage);
 
+  // ✅ CORRECTION : conversion explicite en nombre pour éviter concaténation de chaînes
   const stats = {
     total: paiements.length,
-    totalAmount: paiements.reduce((sum, p) => sum + (p.amount || 0), 0),
+    totalAmount: paiements.reduce((sum, p) => sum + parseFloat(p.amount || 0), 0),
     cash: paiements.filter(p => p.method === 'cash').length,
     card: paiements.filter(p => p.method === 'card').length,
     transfer: paiements.filter(p => p.method === 'transfer').length,
@@ -208,9 +148,12 @@ const PaiementsList = () => {
     return <span className={`badge ${config.className}`}>{config.label}</span>;
   };
 
+  // ✅ CORRECTION : formatCurrency robuste pour nombres et chaînes
   const formatCurrency = (amount) => {
-    if (!amount) return '0 FCFA';
-    return `${amount.toLocaleString('fr-FR')} FCFA`;
+    if (!amount && amount !== 0) return '0 FCFA';
+    const num = typeof amount === 'string' ? parseFloat(amount) : amount;
+    if (isNaN(num)) return '0 FCFA';
+    return `${num.toLocaleString('fr-FR')} FCFA`;
   };
 
   const formatDate = (dateString) => {
@@ -427,7 +370,7 @@ const PaiementsList = () => {
                           <Eye className="w-4 h-4" />
                         </button>
 
-                        {/* ✅ Télécharger PDF */}
+                        {/* Télécharger PDF */}
                         <button 
                           className={`btn btn-sm btn-circle tooltip ${downloading === paiement.id ? 'btn-primary loading' : 'btn-ghost text-primary'}`}
                           data-tip="Télécharger le reçu PDF"

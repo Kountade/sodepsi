@@ -119,6 +119,7 @@ const FacturesList = () => {
   const startIndex = (currentPage - 1) * itemsPerPage;
   const paginatedFactures = filteredFactures.slice(startIndex, startIndex + itemsPerPage);
 
+  // ✅ CORRECTION : conversion explicite en nombre pour éviter concaténation de chaînes
   const stats = {
     total: factures.length,
     draft: factures.filter(f => f.status === 'draft').length,
@@ -126,7 +127,7 @@ const FacturesList = () => {
     paid: factures.filter(f => f.status === 'paid').length,
     overdue: factures.filter(f => f.status === 'overdue').length,
     cancelled: factures.filter(f => f.status === 'cancelled').length,
-    totalAmount: factures.reduce((sum, f) => sum + (f.total || 0), 0)
+    totalAmount: factures.reduce((sum, f) => sum + parseFloat(f.total || 0), 0)
   };
 
   const getStatusBadge = (status) => {
@@ -141,9 +142,12 @@ const FacturesList = () => {
     return <span className={`badge ${config.className}`}>{config.label}</span>;
   };
 
+  // ✅ CORRECTION : formatCurrency robuste pour nombres et chaînes
   const formatCurrency = (amount) => {
-    if (!amount) return '0 FCFA';
-    return `${amount.toLocaleString('fr-FR')} FCFA`;
+    if (!amount && amount !== 0) return '0 FCFA';
+    const num = typeof amount === 'string' ? parseFloat(amount) : amount;
+    if (isNaN(num)) return '0 FCFA';
+    return `${num.toLocaleString('fr-FR')} FCFA`;
   };
 
   const formatDate = (dateString) => {
