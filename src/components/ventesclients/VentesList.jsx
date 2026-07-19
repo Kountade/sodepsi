@@ -30,6 +30,7 @@ const VentesList = () => {
   const [notification, setNotification] = useState({ show: false, message: '', type: 'success' });
   const [viewMode, setViewMode] = useState('list');
   const [printing, setPrinting] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
 
   const showNotification = (message, type) => {
     setNotification({ show: true, message, type });
@@ -109,16 +110,119 @@ const VentesList = () => {
   };
 
   const handleUpdateStatus = async (id, status) => {
+    setActionLoading(true);
     try {
       const token = getToken();
-      await AxiosInstance.post(`/sales/${id}/update_status/`, 
-        { status },
+      if (!token) {
+        showNotification('Session expirée', 'error');
+        setActionLoading(false);
+        return;
+      }
+
+      let notes = '';
+      if (status === 'cancelled') {
+        const reason = window.prompt('Raison de l\'annulation :', '');
+        if (reason === null) {
+          setActionLoading(false);
+          return;
+        }
+        notes = reason;
+      }
+
+      const payload = { status };
+      if (notes) {
+        payload.notes = notes;
+      }
+
+      const response = await AxiosInstance.post(
+        `/sales/${id}/update_status/`, 
+        payload,
         { headers: { 'Authorization': `Token ${token}` } }
       );
+      
       showNotification(`Statut mis à jour: ${status}`, 'success');
       fetchVentes();
     } catch (error) {
-      showNotification('Erreur lors de la mise à jour', 'error');
+      console.error('Erreur mise à jour statut:', error);
+      let errorMessage = 'Erreur lors de la mise à jour';
+      if (error.response) {
+        if (error.response.data && typeof error.response.data === 'object') {
+          if (error.response.data.error) {
+            errorMessage = error.response.data.error;
+          } else if (error.response.data.details) {
+            errorMessage = error.response.data.details.join(', ');
+          } else if (error.response.data.message) {
+            errorMessage = error.response.data.message;
+          } else if (error.response.data.detail) {
+            errorMessage = error.response.data.detail;
+          }
+        }
+      } else if (error.request) {
+        errorMessage = 'Pas de réponse du serveur';
+      }
+      showNotification(errorMessage, 'error');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleConfirmSale = async (id) => {
+    setActionLoading(true);
+    try {
+      const token = getToken();
+      if (!token) {
+        showNotification('Session expirée', 'error');
+        setActionLoading(false);
+        return;
+      }
+
+      const response = await AxiosInstance.post(
+        `/sales/${id}/confirm/`, 
+        {},
+        { headers: { 'Authorization': `Token ${token}` } }
+      );
+      
+      showNotification('Vente confirmée avec succès', 'success');
+      fetchVentes();
+    } catch (error) {
+      console.error('Erreur confirmation:', error);
+      let errorMessage = 'Erreur lors de la confirmation';
+      if (error.response?.data?.error) {
+        errorMessage = error.response.data.error;
+      }
+      showNotification(errorMessage, 'error');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleMarkPaid = async (id) => {
+    setActionLoading(true);
+    try {
+      const token = getToken();
+      if (!token) {
+        showNotification('Session expirée', 'error');
+        setActionLoading(false);
+        return;
+      }
+
+      const response = await AxiosInstance.post(
+        `/sales/${id}/mark_paid/`, 
+        {},
+        { headers: { 'Authorization': `Token ${token}` } }
+      );
+      
+      showNotification('Vente marquée comme payée', 'success');
+      fetchVentes();
+    } catch (error) {
+      console.error('Erreur paiement:', error);
+      let errorMessage = 'Erreur lors du paiement';
+      if (error.response?.data?.error) {
+        errorMessage = error.response.data.error;
+      }
+      showNotification(errorMessage, 'error');
+    } finally {
+      setActionLoading(false);
     }
   };
 
@@ -156,6 +260,7 @@ const VentesList = () => {
   const startIndex = (currentPage - 1) * itemsPerPage;
   const paginatedVentes = filteredVentes.slice(startIndex, startIndex + itemsPerPage);
 
+  // ✅ CORRECTION : conversion explicite en nombre pour éviter concaténation de chaînes
   const stats = {
     total: ventes.length,
     draft: ventes.filter(v => v.status === 'draft').length,
@@ -163,7 +268,7 @@ const VentesList = () => {
     paid: ventes.filter(v => v.status === 'paid').length,
     delivered: ventes.filter(v => v.status === 'delivered').length,
     cancelled: ventes.filter(v => v.status === 'cancelled').length,
-    totalAmount: ventes.reduce((sum, v) => sum + (v.total || 0), 0)
+    totalAmount: ventes.reduce((sum, v) => sum + parseFloat(v.total || 0), 0)
   };
 
   const getStatusBadge = (status) => {
@@ -189,9 +294,12 @@ const VentesList = () => {
     return <span className={`badge ${config.className}`}>{config.label}</span>;
   };
 
+  // ✅ CORRECTION : formatCurrency robuste pour nombres et chaînes
   const formatCurrency = (amount) => {
-    if (!amount) return '0 FCFA';
-    return `${amount.toLocaleString('fr-FR')} FCFA`;
+    if (!amount && amount !== 0) return '0 FCFA';
+    const num = typeof amount === 'string' ? parseFloat(amount) : amount;
+    if (isNaN(num)) return '0 FCFA';
+    return `${num.toLocaleString('fr-FR')} FCFA`;
   };
 
   const formatDate = (dateString) => {
@@ -421,6 +529,7 @@ const VentesList = () => {
                           onClick={() => navigate(`/ventes/${vente.id}`)} 
                           className="btn btn-ghost btn-sm btn-circle tooltip"
                           data-tip="Voir détails"
+                          disabled={actionLoading}
                         >
                           <Eye className="w-4 h-4" />
                         </button>
@@ -432,15 +541,17 @@ const VentesList = () => {
                               onClick={() => navigate(`/ventes/${vente.id}/modifier`)} 
                               className="btn btn-ghost btn-sm btn-circle tooltip text-warning"
                               data-tip="Modifier"
+                              disabled={actionLoading}
                             >
                               <Edit className="w-4 h-4" />
                             </button>
                             <button 
-                              onClick={() => handleUpdateStatus(vente.id, 'confirmed')} 
+                              onClick={() => handleConfirmSale(vente.id)} 
                               className="btn btn-ghost btn-sm btn-circle tooltip text-success"
                               data-tip="Confirmer"
+                              disabled={actionLoading}
                             >
-                              <CheckCircle className="w-4 h-4" />
+                              {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
                             </button>
                           </>
                         )}
@@ -448,11 +559,12 @@ const VentesList = () => {
                         {/* Marquer payée (seulement confirmée) */}
                         {vente.status === 'confirmed' && (
                           <button 
-                            onClick={() => handleUpdateStatus(vente.id, 'paid')} 
+                            onClick={() => handleMarkPaid(vente.id)} 
                             className="btn btn-ghost btn-sm btn-circle tooltip text-success"
                             data-tip="Marquer payée"
+                            disabled={actionLoading}
                           >
-                            <CreditCard className="w-4 h-4" />
+                            {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CreditCard className="w-4 h-4" />}
                           </button>
                         )}
 
@@ -461,6 +573,7 @@ const VentesList = () => {
                           className="btn btn-ghost btn-sm btn-circle tooltip text-primary"
                           data-tip="Télécharger PDF"
                           onClick={() => handleDownloadPdf(vente.id, vente.invoice_number)}
+                          disabled={actionLoading}
                         >
                           <Download className="w-4 h-4" />
                         </button>
@@ -470,7 +583,7 @@ const VentesList = () => {
                           className="btn btn-ghost btn-sm btn-circle tooltip text-secondary"
                           data-tip="Imprimer ticket"
                           onClick={() => handlePrintTicket(vente)}
-                          disabled={printing}
+                          disabled={printing || actionLoading}
                         >
                           {printing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Printer className="w-4 h-4" />}
                         </button>
@@ -481,8 +594,9 @@ const VentesList = () => {
                             onClick={() => handleUpdateStatus(vente.id, 'cancelled')} 
                             className="btn btn-ghost btn-sm btn-circle tooltip text-error"
                             data-tip="Annuler"
+                            disabled={actionLoading}
                           >
-                            <Ban className="w-4 h-4" />
+                            {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Ban className="w-4 h-4" />}
                           </button>
                         )}
                       </div>

@@ -6,7 +6,7 @@ import {
   ArrowLeft, Plus, Trash2, Save, X, 
   User, Calendar, DollarSign, FileText,
   Loader2, AlertCircle, CheckCircle, Package,
-  Percent, Truck, Receipt
+  Percent, Truck, Receipt, Warehouse
 } from 'lucide-react';
 
 const DevisForm = () => {
@@ -18,10 +18,12 @@ const DevisForm = () => {
   const [saving, setSaving] = useState(false);
   const [clients, setClients] = useState([]);
   const [products, setProducts] = useState([]);
+  const [warehouses, setWarehouses] = useState([]);
   const [notification, setNotification] = useState(null);
 
   const [formData, setFormData] = useState({
     client: '',
+    warehouse: '',
     valid_until: '',
     discount_type: 'percentage',
     discount_value: 0,
@@ -47,7 +49,7 @@ const DevisForm = () => {
     setTimeout(() => setNotification(null), 4000);
   };
 
-  // Charger les clients et produits
+  // Charger les données initiales
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -58,13 +60,15 @@ const DevisForm = () => {
           return;
         }
 
-        const [clientsRes, productsRes] = await Promise.all([
+        const [clientsRes, productsRes, warehousesRes] = await Promise.all([
           AxiosInstance.get('/clients/', { headers: { 'Authorization': `Token ${token}` } }),
-          AxiosInstance.get('/products/', { headers: { 'Authorization': `Token ${token}` } })
+          AxiosInstance.get('/products/', { headers: { 'Authorization': `Token ${token}` } }),
+          AxiosInstance.get('/warehouses/?active=true', { headers: { 'Authorization': `Token ${token}` } })
         ]);
 
         setClients(clientsRes.data);
         setProducts(productsRes.data);
+        setWarehouses(warehousesRes.data);
       } catch (error) {
         console.error('Erreur chargement données:', error);
         showNotification('Erreur de chargement des données', 'error');
@@ -88,6 +92,7 @@ const DevisForm = () => {
           const data = response.data;
           setFormData({
             client: data.client?.id || '',
+            warehouse: data.warehouse || '',
             valid_until: data.valid_until || '',
             discount_type: data.discount_type || 'percentage',
             discount_value: data.discount_value || 0,
@@ -223,6 +228,12 @@ const DevisForm = () => {
         return;
       }
 
+      if (!formData.warehouse) {
+        showNotification('Veuillez sélectionner un entrepôt', 'error');
+        setSaving(false);
+        return;
+      }
+
       if (formData.lines.length === 0) {
         showNotification('Ajoutez au moins un produit', 'error');
         setSaving(false);
@@ -231,6 +242,7 @@ const DevisForm = () => {
 
       const dataToSend = {
         client: formData.client,
+        warehouse: formData.warehouse,
         valid_until: formData.valid_until,
         discount_type: formData.discount_type,
         discount_value: parseFloat(formData.discount_value) || 0,
@@ -349,6 +361,26 @@ const DevisForm = () => {
                 ))}
               </select>
             </div>
+
+            <div className="form-control">
+              <label className="label">
+                <span className="label-text font-medium">Entrepôt <span className="text-error">*</span></span>
+              </label>
+              <select 
+                className="select select-bordered w-full"
+                value={formData.warehouse}
+                onChange={(e) => setFormData({ ...formData, warehouse: e.target.value })}
+                required
+              >
+                <option value="">Sélectionner un entrepôt</option>
+                {warehouses.map(wh => (
+                  <option key={wh.id} value={wh.id}>
+                    {wh.name} - {wh.code}
+                  </option>
+                ))}
+              </select>
+            </div>
+
             <div className="form-control">
               <label className="label">
                 <span className="label-text font-medium">Valable jusqu'au <span className="text-error">*</span></span>
