@@ -100,8 +100,25 @@ import DevisForm from './components/ventesclients/DevisForm';
 import DevisDetail from './components/ventesclients/DevisDetail';
 import DevisPdf from './components/ventesclients/DevisPdf';
 import PosForm from './components/ventesclients/PosForm';
-// Modules Audit
 
+import CaissesForm from './components/tresorerie/CaissesForm';
+import CaissesList from './components/tresorerie/CaissesList';
+import CaissesDetail from './components/tresorerie/CaissesDetail';
+
+import ComptesBancairesList from './components/tresorerie/ComptesBancairesList';
+import CompteBancaireForm from './components/tresorerie/ComptesBancairesForm';
+import CompteBancaireDetail from './components/tresorerie/CompteBancaireDetail';
+
+import MouvementsTresorerieList from './components/tresorerie/MouvementsTresorerieList';
+
+import PrevisionsList from './components/tresorerie/PrevisionsList';
+import PrevisionsForm from './components/tresorerie/PrevisionsForm';
+import PrevisionsDetail from './components/tresorerie/PrevisionsDetail';
+
+
+import FraisList from './components/tresorerie/FraisList';
+import FraisDetail from './components/tresorerie/FraisDetail';
+import FraisForm from './components/tresorerie/FraisForm';
 
 function App() {
   const location = useLocation();
@@ -138,6 +155,31 @@ function App() {
                 <Route path="/categories/nouveau" element={<CategoryForm />} />
                 <Route path="/categories/:id/modifier" element={<CategoryForm />} />
                 <Route path="/categories/:id" element={<CategoryDetails />} />
+
+                <Route path="/caisses" element={<CaissesList/>}/>
+                 <Route path="/caisses/nouveau" element={<CaissesForm/>}/>
+                  <Route path="/caisses/:id/modifier" element={<CaissesForm/>}/>
+                   <Route path="/caisses/:id" element={<CaissesDetail />} />
+
+                <Route path="/comptes-bancaires" element={<ComptesBancairesList />} />
+<Route path="/comptes-bancaires/nouveau" element={<CompteBancaireForm />} />
+<Route path="/comptes-bancaires/:id" element={<CompteBancaireDetail />} />
+<Route path="/comptes-bancaires/modifier/:id" element={<CompteBancaireForm />} />
+
+
+<Route path="/mouvements-tresorerie" element={<MouvementsTresorerieList />} />
+
+<Route path="/previsions" element={<PrevisionsList />} />
+<Route path="/previsions/nouveau" element={<PrevisionsForm />} />
+<Route path="/previsions/:id" element={<PrevisionsDetail />} /> {/* à créer */}
+<Route path="/previsions/modifier/:id" element={<PrevisionsForm />} />
+
+
+ <Route path="/frais" element={<FraisList />} />
+        <Route path="/frais/nouveau" element={<FraisForm />} />
+        <Route path="/frais/:id" element={<FraisDetail />} />
+        <Route path="/frais/modifier/:id" element={<FraisForm />} />
+
 
                 {/* ==================== PRODUITS ==================== */}
                 <Route path="/produits" element={<ProductsList />} />

@@ -1,4 +1,4 @@
-// src/components/Navbar.jsx - Version SODEPCI
+// src/components/Navbar.jsx - Version SODEPCI avec Finances et Trésorerie séparées
 
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
@@ -67,7 +67,26 @@ import {
   Award,
   BarChart3,
   Edit,
-  Eye
+  Eye,
+  // ========== ICÔNES POUR FINANCES & TRÉSORERIE ==========
+  Landmark,        
+  Coins,           
+  ReceiptText,     
+  CalendarDays,    
+  CheckCircle,     
+  ClipboardList,   
+  Gauge,           
+  AlertCircle,     
+  Banknote,        
+  ArrowDownUp,     
+  TrendingDown,    
+  Briefcase,       
+  HandCoins,       
+  ScrollText,      
+  Scale,           
+  Target,          
+  PieChart,        
+  FileSpreadsheet,
 } from 'lucide-react';
 
 import logo from '../assets/logo.svg';
@@ -90,7 +109,8 @@ const ROLE_CONFIG = {
   comptable: { label: 'Comptable', color: 'primary', icon: Calculator, description: 'Gestion financière', level: 80 },
   magasinier: { label: 'Magasinier', color: 'info', icon: Boxes, description: 'Gestion des stocks', level: 70 },
   caissier: { label: 'Caissier', color: 'warning', icon: CreditCard, description: 'Point de vente', level: 60 },
-  livreur: { label: 'Livreur', color: 'neutral', icon: Truck, description: 'Livraisons', level: 50 }
+  livreur: { label: 'Livreur', color: 'neutral', icon: Truck, description: 'Livraisons', level: 50 },
+  tresorier: { label: 'Trésorier', color: 'primary', icon: Wallet, description: 'Gestion de trésorerie', level: 85 }
 };
 
 const Navbar = ({ content, mode, toggleColorMode }) => {
@@ -110,6 +130,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
     'PRODUITS & STOCKS': false,
     'ACHATS & FOURNISSEURS': false,
     'FINANCES': false,
+    'TRÉSORERIE': false,
     'LIVRAISONS': false,
     'PARAMÈTRES': false,
     'MON ESPACE': false
@@ -128,6 +149,12 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
   const [notificationsCount, setNotificationsCount] = useState(0);
   const [alertesStockCount, setAlertesStockCount] = useState(0);
   const [facturesEcheance, setFacturesEcheance] = useState(0);
+  
+  // États pour la Trésorerie
+  const [alertesTresorerieCount, setAlertesTresorerieCount] = useState(0);
+  const [mouvementsEnAttente, setMouvementsEnAttente] = useState(0);
+  const [fraisEnAttente, setFraisEnAttente] = useState(0);
+  const [caissesSousSeuil, setCaissesSousSeuil] = useState(0);
   
   // États des alertes globales
   const [showGlobalAlerts, setShowGlobalAlerts] = useState(false);
@@ -167,47 +194,20 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
   const isMagasinier = role === 'magasinier';
   const isCaissier = role === 'caissier';
   const isLivreur = role === 'livreur';
+  const isTresorier = role === 'tresorier' || isAdmin || isGestionnaire || isComptable;
   
   // Fonctions de permission
-  const canViewSales = () => {
-    return isAdmin || isGestionnaire || isCaissier || isComptable;
-  };
-  
-  const canViewPOS = () => {
-    return isAdmin || isCaissier;
-  };
-  
-  const canViewStock = () => {
-    return isAdmin || isGestionnaire || isMagasinier;
-  };
-  
-  const canViewPurchases = () => {
-    return isAdmin || isGestionnaire;
-  };
-  
-  const canViewFinances = () => {
-    return isAdmin || isGestionnaire || isComptable;
-  };
-  
-  const canViewUsers = () => {
-    return isAdmin;
-  };
-  
-  const canViewDeliveries = () => {
-    return isAdmin || isGestionnaire || isLivreur;
-  };
-  
-  const canViewParameters = () => {
-    return isAdmin || isGestionnaire;
-  };
-  
-  const canViewBackups = () => {
-    return isAdmin;
-  };
-  
-  const canViewAudit = () => {
-    return isAdmin;
-  };
+  const canViewSales = () => isAdmin || isGestionnaire || isCaissier || isComptable;
+  const canViewPOS = () => isAdmin || isCaissier;
+  const canViewStock = () => isAdmin || isGestionnaire || isMagasinier;
+  const canViewPurchases = () => isAdmin || isGestionnaire;
+  const canViewFinances = () => isAdmin || isGestionnaire || isComptable;
+  const canViewTresorerie = () => isAdmin || isGestionnaire || isComptable || isTresorier;
+  const canViewUsers = () => isAdmin;
+  const canViewDeliveries = () => isAdmin || isGestionnaire || isLivreur;
+  const canViewParameters = () => isAdmin || isGestionnaire;
+  const canViewBackups = () => isAdmin;
+  const canViewAudit = () => isAdmin;
 
   // Initiale utilisateur
   useEffect(() => {
@@ -269,6 +269,29 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
             headers: { Authorization: `Token ${token}` }
           }).catch(() => ({ data: [] }));
           setFacturesEcheance(facturesRes.data?.length || 0);
+        }
+
+        // Chargement des données Trésorerie
+        if (canViewTresorerie()) {
+          const alertesRes = await AxiosInstance.get('/tresorerie/alertes/list/', {
+            headers: { Authorization: `Token ${token}` }
+          }).catch(() => ({ data: { alertes: [] } }));
+          setAlertesTresorerieCount(alertesRes.data?.alertes?.length || 0);
+
+          const mouvementsRes = await AxiosInstance.get('/tresorerie/mouvements/?status=en_attente', {
+            headers: { Authorization: `Token ${token}` }
+          }).catch(() => ({ data: [] }));
+          setMouvementsEnAttente(mouvementsRes.data?.length || 0);
+
+          const fraisRes = await AxiosInstance.get('/tresorerie/frais/?status=en_attente', {
+            headers: { Authorization: `Token ${token}` }
+          }).catch(() => ({ data: [] }));
+          setFraisEnAttente(fraisRes.data?.length || 0);
+
+          const caissesRes = await AxiosInstance.get('/tresorerie/caisses/?sous_seuil=true', {
+            headers: { Authorization: `Token ${token}` }
+          }).catch(() => ({ data: [] }));
+          setCaissesSousSeuil(caissesRes.data?.length || 0);
         }
 
       } catch (error) {
@@ -342,13 +365,107 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
       name: 'FINANCES',
       icon: DollarSign,
       items: [
+        // ========== COMPTABILITÉ ==========
         { id: 'comptes', text: 'Plan Comptable', icon: Grid3x3, path: '/comptes-comptables', permission: isAdmin || isGestionnaire || isComptable },
-        { id: 'ecritures', text: 'Écritures', icon: BookOpen, path: '/ecritures-comptables', permission: isAdmin || isGestionnaire || isComptable },
-        { id: 'tresorerie', text: 'Trésorerie', icon: Wallet, path: '/tresorerie', permission: isAdmin || isGestionnaire || isComptable },
-        { id: 'depenses', text: 'Dépenses', icon: FileText, path: '/depenses', permission: isAdmin || isGestionnaire || isComptable },
+        { id: 'ecritures', text: 'Écritures Comptables', icon: BookOpen, path: '/ecritures-comptables', permission: isAdmin || isGestionnaire || isComptable },
+        { id: 'journal', text: 'Journal Comptable', icon: ScrollText, path: '/journal-comptable', permission: isAdmin || isGestionnaire || isComptable },
+        { id: 'grand-livre', text: 'Grand Livre', icon: Scale, path: '/grand-livre', permission: isAdmin || isGestionnaire || isComptable },
+        { id: 'balance', text: 'Balance Générale', icon: Scale, path: '/balance-generale', permission: isAdmin || isGestionnaire || isComptable },
+        
+        // ========== BUDGETS ==========
         { id: 'budgets', text: 'Budgets', icon: PiggyBank, path: '/budgets', permission: isAdmin || isGestionnaire || isComptable },
-        { id: 'sessions-caisse', text: 'Sessions Caisse', icon: Clock, path: '/sessions-caisse', permission: isAdmin || isGestionnaire || isCaissier },
-        { id: 'rapports-financiers', text: 'Rapports', icon: LineChart, path: '/rapports-financiers', permission: isAdmin || isGestionnaire || isComptable }
+        { id: 'depenses', text: 'Dépenses', icon: TrendingDown, path: '/depenses', permission: isAdmin || isGestionnaire || isComptable },
+        
+        // ========== RAPPORTS ==========
+        { id: 'rapports-financiers', text: 'Rapports Financiers', icon: FileSpreadsheet, path: '/rapports-financiers', permission: isAdmin || isGestionnaire || isComptable },
+        { id: 'sessions-caisse', text: 'Sessions Caisse', icon: Clock, path: '/sessions-caisse', permission: isAdmin || isGestionnaire || isCaissier }
+      ]
+    },
+    {
+      name: 'TRÉSORERIE',
+      icon: Wallet,
+      items: [
+        // ========== TABLEAU DE BORD ==========
+        { 
+          id: 'tresorerie-dashboard', 
+          text: 'Tableau de Bord', 
+          icon: Gauge, 
+          path: '/dashboard-tresorerie', 
+          permission: canViewTresorerie(),
+          badge: alertesTresorerieCount > 0 ? alertesTresorerieCount : 0
+        },
+        
+        // ========== CAISSES ET COMPTES ==========
+        { 
+          id: 'caisses', 
+          text: 'Caisses', 
+          icon: Banknote, 
+          path: '/caisses', 
+          permission: canViewTresorerie(),
+          badge: caissesSousSeuil > 0 ? caissesSousSeuil : 0
+        },
+        { 
+          id: 'comptes-bancaires', 
+          text: 'Comptes Bancaires', 
+          icon: Landmark, 
+          path: '/comptes-bancaires', 
+          permission: canViewTresorerie() 
+        },
+        
+        // ========== MOUVEMENTS ==========
+        { 
+          id: 'mouvements-tresorerie', 
+          text: 'Mouvements', 
+          icon: Coins, 
+          path: '/mouvements-tresorerie', 
+          permission: canViewTresorerie(),
+          badge: mouvementsEnAttente > 0 ? mouvementsEnAttente : 0
+        },
+        { 
+          id: 'frais', 
+          text: 'Frais & Dépenses', 
+          icon: ReceiptText, 
+          path: '/frais', 
+          permission: canViewTresorerie(),
+          badge: fraisEnAttente > 0 ? fraisEnAttente : 0
+        },
+        
+        // ========== PRÉVISIONS ==========
+        { 
+          id: 'previsions', 
+          text: 'Prévisions', 
+          icon: CalendarDays, 
+          path: '/previsions', 
+          permission: canViewTresorerie() 
+        },
+        
+        // ========== RAPPROCHEMENT ==========
+        { 
+          id: 'rapprochement', 
+          text: 'Rapprochement Bancaire', 
+          icon: CheckCircle, 
+          path: '/rapprochement-bancaire', 
+          permission: canViewTresorerie() 
+        },
+        
+        // ========== SUIVI JOURNALIER ==========
+        { 
+          id: 'tresorerie-journaliere', 
+          text: 'Trésorerie Journalière', 
+          icon: ClipboardList, 
+          path: '/tresorerie-journaliere', 
+          permission: canViewTresorerie() 
+        },
+        
+        // ========== ALERTES ==========
+        { 
+          id: 'alertes-tresorerie', 
+          text: 'Alertes Trésorerie', 
+          icon: AlertCircle, 
+          path: '/alertes-tresorerie', 
+          permission: canViewTresorerie(),
+          badge: alertesTresorerieCount > 0 ? alertesTresorerieCount : 0
+        }
       ]
     },
     {
@@ -677,6 +794,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                                 {roleConfig.label}
                               </span>
                               {isAdmin && <span className="badge badge-error badge-sm">Admin</span>}
+                              {isTresorier && !isAdmin && <span className="badge badge-primary badge-sm">Trésorier</span>}
                             </div>
                           </div>
                         </div>
@@ -760,6 +878,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                       {roleConfig.label}
                     </span>
                     {isAdmin && <span className="badge badge-error badge-sm">Admin</span>}
+                    {isTresorier && !isAdmin && <span className="badge badge-primary badge-sm">Trésorier</span>}
                   </div>
                 </div>
               )}
@@ -771,6 +890,8 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
             {visibleSections.map((section, idx) => {
               const SectionIcon = section.icon;
               const isOpen = openSections[section.name] || false;
+              const isTresorerieSection = section.name === 'TRÉSORERIE';
+              const isFinancesSection = section.name === 'FINANCES';
               
               return (
                 <div key={idx} className="mb-1">
@@ -780,15 +901,22 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                       w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200
                       ${!sidebarOpen && 'justify-center'}
                       ${isOpen 
-                        ? 'bg-primary/10 text-primary' 
+                        ? isTresorerieSection 
+                          ? 'bg-emerald-500/20 text-emerald-600 dark:bg-emerald-500/30 dark:text-emerald-400' 
+                          : isFinancesSection
+                          ? 'bg-blue-500/20 text-blue-600 dark:bg-blue-500/30 dark:text-blue-400'
+                          : 'bg-primary/10 text-primary'
                         : 'text-base-content/70 hover:bg-primary/5 hover:text-primary'
                       }
                     `}
                   >
-                    <SectionIcon className={`w-5 h-5 ${isOpen ? 'text-primary' : ''}`} />
+                    <SectionIcon className={`w-5 h-5 ${isOpen ? 'text-inherit' : ''}`} />
                     {sidebarOpen && (
                       <>
-                        <span className="flex-1 text-left text-xs font-semibold tracking-wide uppercase">
+                        <span className={`flex-1 text-left text-xs font-semibold tracking-wide uppercase ${
+                          isTresorerieSection ? 'text-emerald-600 dark:text-emerald-400' : 
+                          isFinancesSection ? 'text-blue-600 dark:text-blue-400' : ''
+                        }`}>
                           {section.name}
                         </span>
                         {isOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
@@ -797,10 +925,19 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                   </button>
                   
                   {sidebarOpen && isOpen && (
-                    <div className="ml-6 mt-2 space-y-1 border-l-2 border-primary pl-4">
+                    <div className={`ml-6 mt-2 space-y-1 border-l-2 pl-4 ${
+                      isTresorerieSection 
+                        ? 'border-emerald-400 dark:border-emerald-500' 
+                        : isFinancesSection
+                        ? 'border-blue-400 dark:border-blue-500'
+                        : 'border-primary'
+                    }`}>
                       {section.items.map((item) => {
                         const ItemIcon = item.icon;
                         const isActive = path === item.path;
+                        const isTresorerieItem = item.path?.startsWith('/') && 
+                          ['/caisses', '/comptes-bancaires', '/mouvements-tresorerie', '/frais-tresorerie', '/previsions-tresorerie', '/rapprochement-bancaire', '/tresorerie-journaliere', '/alertes-tresorerie', '/dashboard-tresorerie'].includes(item.path);
+                        
                         return (
                           <Link
                             key={item.id}
@@ -808,12 +945,16 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                             className={`
                               flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all duration-200
                               ${isActive 
-                                ? 'bg-primary text-primary-content shadow-md' 
+                                ? isTresorerieItem
+                                  ? 'bg-emerald-500 text-white shadow-md'
+                                  : 'bg-primary text-primary-content shadow-md'
+                                : isTresorerieItem && !isActive
+                                ? 'text-base-content/60 hover:bg-emerald-500/10 hover:text-emerald-500'
                                 : 'text-base-content/60 hover:bg-primary/10 hover:text-primary'
                               }
                             `}
                           >
-                            <ItemIcon className={`w-4 h-4 ${isActive ? 'text-primary-content' : ''}`} />
+                            <ItemIcon className={`w-4 h-4 ${isActive ? 'text-inherit' : ''}`} />
                             <span className="flex-1">{item.text}</span>
                             {item.badge && item.badge > 0 && (
                               <span className={`badge badge-error badge-xs ${isActive ? 'badge-outline' : ''}`}>
@@ -836,7 +977,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <div className="w-1.5 h-1.5 bg-success rounded-full animate-pulse"></div>
-                  <span className="text-xs text-base-content/50">v2.0.0</span>
+                  <span className="text-xs text-base-content/50">v2.1.0</span>
                 </div>
                 <span className="badge badge-primary badge-sm">SODEPCI 2026</span>
               </div>
@@ -899,25 +1040,52 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
               {visibleSections.map((section, idx) => {
                 const SectionIcon = section.icon;
                 const isOpen = openSections[section.name] || false;
+                const isTresorerieSection = section.name === 'TRÉSORERIE';
+                const isFinancesSection = section.name === 'FINANCES';
                 
                 return (
                   <div key={idx} className="mb-2">
                     <button
                       onClick={() => handleSectionToggle(section.name)}
-                      className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg hover:bg-primary/10 transition-all"
+                      className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg transition-all ${
+                        isTresorerieSection 
+                          ? 'hover:bg-emerald-500/10' 
+                          : isFinancesSection
+                          ? 'hover:bg-blue-500/10'
+                          : 'hover:bg-primary/10'
+                      }`}
                     >
                       <div className="flex items-center gap-3">
-                        <SectionIcon className="w-5 h-5 text-primary" />
-                        <span className="text-xs font-bold uppercase">{section.name}</span>
+                        <SectionIcon className={`w-5 h-5 ${
+                          isTresorerieSection ? 'text-emerald-500' : 
+                          isFinancesSection ? 'text-blue-500' : 
+                          'text-primary'
+                        }`} />
+                        <span className={`text-xs font-bold uppercase ${
+                          isTresorerieSection ? 'text-emerald-600 dark:text-emerald-400' : 
+                          isFinancesSection ? 'text-blue-600 dark:text-blue-400' : 
+                          ''
+                        }`}>
+                          {section.name}
+                        </span>
                       </div>
                       {isOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                     </button>
                     
                     {isOpen && (
-                      <div className="ml-6 mt-2 space-y-1 border-l-2 border-primary pl-4">
+                      <div className={`ml-6 mt-2 space-y-1 border-l-2 pl-4 ${
+                        isTresorerieSection 
+                          ? 'border-emerald-400 dark:border-emerald-500' 
+                          : isFinancesSection
+                          ? 'border-blue-400 dark:border-blue-500'
+                          : 'border-primary'
+                      }`}>
                         {section.items.map((item) => {
                           const ItemIcon = item.icon;
                           const isActive = path === item.path;
+                          const isTresorerieItem = item.path?.startsWith('/') && 
+                            ['/caisses', '/comptes-bancaires', '/mouvements-tresorerie', '/frais-tresorerie', '/previsions-tresorerie', '/rapprochement-bancaire', '/tresorerie-journaliere', '/alertes-tresorerie', '/dashboard-tresorerie'].includes(item.path);
+                          
                           return (
                             <Link
                               key={item.id}
@@ -925,7 +1093,14 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                               onClick={() => setIsMobileMenuOpen(false)}
                               className={`
                                 flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all
-                                ${isActive ? 'bg-primary text-primary-content' : 'hover:bg-primary/10'}
+                                ${isActive 
+                                  ? isTresorerieItem
+                                    ? 'bg-emerald-500 text-white'
+                                    : 'bg-primary text-primary-content'
+                                  : isTresorerieItem
+                                  ? 'hover:bg-emerald-500/10 hover:text-emerald-500'
+                                  : 'hover:bg-primary/10'
+                                }
                               `}
                             >
                               <ItemIcon className="w-4 h-4" />
