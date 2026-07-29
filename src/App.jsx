@@ -120,6 +120,10 @@ import FraisList from './components/tresorerie/FraisList';
 import FraisDetail from './components/tresorerie/FraisDetail';
 import FraisForm from './components/tresorerie/FraisForm';
 
+import Dashboard from './components/dashboard/Dashboard';
+import Statistiques from './components/dashboard/Statistiques';
+import Analyses from './components/dashboard/Analyses';
+
 function App() {
   const location = useLocation();
   
@@ -147,8 +151,11 @@ function App() {
             <Routes>
               {/* Route protégée */}
               <Route element={<ProtectedRoute />}>
-                <Route path="/home" element={<Home />} />
-                <Route path="/dashboard" element={<Home />} />
+               
+           
+               <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/statistiques" element={<Statistiques />} />
+        <Route path="/analyses" element={<Analyses />} />
 
                 {/* ==================== CATÉGORIES ==================== */}
                 <Route path="/categories" element={<Categories />} />
