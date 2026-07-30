@@ -11,7 +11,7 @@ const getBaseUrl = () => {
   
   // Priorité 2 : Détection selon le mode
   if (import.meta.env.PROD) {
-    return 'https://sodepsi-backend.onrender.com'
+    return 'https://sodepci-backend.onrender.com'
   }
   
   // Développement local
@@ -37,7 +37,7 @@ const AxiosInstance = axios.create({
 AxiosInstance.interceptors.request.use(
     (config) => {
         const token = localStorage.getItem('Token')
-        console.log('📤 Making request to:', config.url)
+        console.log('Making request to:', config.url)
         
         if(token){
             config.headers.Authorization = `Token ${token}`
