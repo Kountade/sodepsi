@@ -1,366 +1,440 @@
-// src/components/dashboard/Statistiques.jsx
 import React, { useState, useEffect } from 'react';
-import { 
-  TrendingUp, TrendingDown, RefreshCw, BarChart2, 
-  PieChart as PieChartIcon, CreditCard, Package, DollarSign
+import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js';
+import { Pie } from 'react-chartjs-2';
+import AxiosInstance from '../AxiosInstance';
+import {
+  BarChart3, TrendingUp, TrendingDown, DollarSign, Package,
+  Calendar, RefreshCw, AlertTriangle, Download, Filter,
+  ChevronLeft, ChevronRight
 } from 'lucide-react';
-import { dashboardService } from '../../services/dashboardService';
+
+ChartJS.register(ArcElement, Tooltip, Legend);
 
 const Statistiques = () => {
-  const [period, setPeriod] = useState('month');
-  const [data, setData] = useState(null);
+  const [activeTab, setActiveTab] = useState('sales');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [salesData, setSalesData] = useState(null);
+  const [purchaseData, setPurchaseData] = useState(null);
+  const [cashflowData, setCashflowData] = useState(null);
+  const [inventoryData, setInventoryData] = useState(null);
 
-  const periods = [
-    { value: 'today', label: 'Aujourd\'hui' },
-    { value: 'week', label: 'Cette semaine' },
-    { value: 'month', label: 'Ce mois' },
-    { value: 'quarter', label: 'Ce trimestre' },
-    { value: 'year', label: 'Cette année' }
-  ];
+  const [period, setPeriod] = useState('month');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
 
-  useEffect(() => {
-    loadStatistiques();
-  }, [period]);
+  const handleApiError = (err, defaultMessage) => {
+    console.error(`❌ ${defaultMessage}:`, err);
+    if (err.response) {
+      const data = err.response.data;
+      const msg = data?.error || data?.detail || data?.message || `Erreur ${err.response.status}`;
+      return `Erreur ${err.response.status}: ${msg}`;
+    }
+    return defaultMessage;
+  };
 
-  const loadStatistiques = async () => {
+  const fetchSalesStats = async () => {
+    try {
+      const params = new URLSearchParams();
+      params.append('period', period);
+      if (startDate) params.append('start_date', startDate);
+      if (endDate) params.append('end_date', endDate);
+      const response = await AxiosInstance.get(`/statistique/sales/?${params.toString()}`);
+      setSalesData(response.data);
+    } catch (err) {
+      const msg = handleApiError(err, 'Erreur chargement stats ventes');
+      setError(msg);
+    }
+  };
+
+  const fetchPurchaseStats = async () => {
+    try {
+      const params = new URLSearchParams();
+      params.append('period', period);
+      if (startDate) params.append('start_date', startDate);
+      if (endDate) params.append('end_date', endDate);
+      const response = await AxiosInstance.get(`/statistique/purchases/?${params.toString()}`);
+      setPurchaseData(response.data);
+    } catch (err) {
+      const msg = handleApiError(err, 'Erreur chargement stats achats');
+      setError(msg);
+    }
+  };
+
+  const fetchCashflowStats = async () => {
+    try {
+      const params = new URLSearchParams();
+      params.append('period', period);
+      if (startDate) params.append('start_date', startDate);
+      if (endDate) params.append('end_date', endDate);
+      const response = await AxiosInstance.get(`/statistique/cashflow/?${params.toString()}`);
+      setCashflowData(response.data);
+    } catch (err) {
+      const msg = handleApiError(err, 'Erreur chargement flux de trésorerie');
+      setError(msg);
+    }
+  };
+
+  const fetchInventoryStats = async () => {
+    try {
+      const response = await AxiosInstance.get('/statistique/inventory/');
+      setInventoryData(response.data);
+    } catch (err) {
+      const msg = handleApiError(err, 'Erreur chargement stats inventaire');
+      setError(msg);
+    }
+  };
+
+  const loadAllData = async () => {
     setLoading(true);
     setError(null);
     try {
-      const result = await dashboardService.getStatistiques(period);
-      setData(result);
+      await Promise.all([
+        fetchSalesStats(),
+        fetchPurchaseStats(),
+        fetchCashflowStats(),
+        fetchInventoryStats(),
+      ]);
     } catch (err) {
-      setError('Impossible de charger les statistiques');
-      console.error(err);
+      // les erreurs sont déjà gérées individuellement
     } finally {
       setLoading(false);
     }
   };
 
-  // Trouver la valeur maximale pour les barres
-  const getMaxValue = (data, key) => {
-    if (!data || data.length === 0) return 1;
-    const max = Math.max(...data.map(item => item[key] || 0));
-    return max || 1;
+  useEffect(() => {
+    loadAllData();
+  }, [period, startDate, endDate]);
+
+  const formatCurrency = (num) => {
+    if (num === undefined || num === null) return '0 FCFA';
+    return new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'XOF' })
+      .format(num)
+      .replace('XOF', 'FCFA');
+  };
+
+  const formatNumber = (num) => {
+    if (num === undefined || num === null) return '0';
+    return new Intl.NumberFormat('fr-FR').format(num);
+  };
+
+  // Préparation des données pour le graphique circulaire des ventes par statut
+  const getSalesPieData = () => {
+    if (!salesData || !salesData.by_status || Object.keys(salesData.by_status).length === 0) {
+      return null;
+    }
+    const labels = Object.keys(salesData.by_status);
+    const data = Object.values(salesData.by_status);
+    const colors = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
+    return {
+      labels: labels.map(s => s.charAt(0).toUpperCase() + s.slice(1)),
+      datasets: [
+        {
+          label: 'Ventes par statut',
+          data: data,
+          backgroundColor: colors.slice(0, data.length),
+          borderColor: '#ffffff',
+          borderWidth: 2,
+        },
+      ],
+    };
+  };
+
+  const pieOptions = {
+    plugins: {
+      legend: {
+        position: 'bottom',
+        labels: {
+          color: '#6b7280',
+          font: { size: 12 },
+        },
+      },
+    },
+    maintainAspectRatio: false,
   };
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[calc(100vh-200px)]">
-        <div className="loading loading-spinner loading-lg text-primary w-12 h-12"></div>
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="loading loading-spinner loading-lg text-primary"></div>
+          <p className="mt-4 text-base-content/60">Chargement des statistiques...</p>
+        </div>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)]">
-        <p className="text-lg text-gray-600">{error}</p>
-        <button onClick={loadStatistiques} className="btn btn-primary mt-4">
-          <RefreshCw className="w-4 h-4 mr-2" /> Réessayer
-        </button>
+      <div className="p-6">
+        <div className="alert alert-error shadow-lg">
+          <AlertTriangle className="w-6 h-6" />
+          <span>{error}</span>
+          <button className="btn btn-sm btn-ghost" onClick={loadAllData}>
+            <RefreshCw className="w-4 h-4 mr-2" />
+            Réessayer
+          </button>
+        </div>
       </div>
     );
   }
 
-  if (!data) return null;
-
-  const { charts, top_products, statistics } = data;
-
-  // Préparer les données pour les graphiques CSS
-  const salesData = charts.sales_chart.labels.map((label, index) => ({
-    name: label,
-    ventes: charts.sales_chart.datasets[0]?.data[index] || 0,
-    chiffreAffaires: charts.sales_chart.datasets[1]?.data[index] || 0
-  }));
-
-  const maxSales = getMaxValue(salesData, 'ventes');
-  const maxRevenue = getMaxValue(salesData, 'chiffreAffaires');
-
-  const revenueData = charts.revenue_chart.labels.map((label, index) => ({
-    name: label,
-    revenus: charts.revenue_chart.datasets[0]?.data[index] || 0,
-    depenses: charts.revenue_chart.datasets[1]?.data[index] || 0,
-    benefice: charts.revenue_chart.datasets[2]?.data[index] || 0
-  }));
-
-  const maxRevenueData = getMaxValue(revenueData, 'revenus');
-  const maxExpensesData = getMaxValue(revenueData, 'depenses');
-  const maxTotal = Math.max(maxRevenueData, maxExpensesData) || 1;
-
   return (
-    <div className="w-full min-h-screen bg-gray-50">
-      <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
-        {/* En-tête */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-          <div>
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-primary/10 rounded-xl">
-                <BarChart2 className="w-6 h-6 text-primary" />
-              </div>
-              <h1 className="text-2xl font-bold">Statistiques</h1>
-            </div>
-            <p className="text-sm text-gray-500 mt-1">
-              Graphiques et distributions détaillées
-            </p>
-          </div>
-          <div className="flex items-center gap-3">
+    <div className="p-4 md:p-6 bg-base-200 min-h-screen">
+      {/* En-tête */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
+        <div>
+          <h1 className="text-3xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
+            Statistiques
+          </h1>
+          <p className="text-base-content/60 text-sm mt-1">
+            Analyse détaillée des performances
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2">
+            <Calendar className="w-4 h-4 text-base-content/60" />
             <select
+              className="select select-bordered select-sm"
               value={period}
               onChange={(e) => setPeriod(e.target.value)}
-              className="select select-bordered select-sm"
             >
-              {periods.map(p => (
-                <option key={p.value} value={p.value}>{p.label}</option>
-              ))}
+              <option value="day">Jour</option>
+              <option value="week">Semaine</option>
+              <option value="month">Mois</option>
+              <option value="year">Année</option>
             </select>
-            <button onClick={loadStatistiques} className="btn btn-ghost btn-sm btn-square">
-              <RefreshCw className="w-4 h-4" />
-            </button>
           </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="date"
+              className="input input-bordered input-sm"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+            />
+            <span className="text-xs">à</span>
+            <input
+              type="date"
+              className="input input-bordered input-sm"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+            />
+          </div>
+          <button onClick={loadAllData} className="btn btn-primary btn-sm gap-2">
+            <RefreshCw className="w-4 h-4" />
+            Actualiser
+          </button>
         </div>
+      </div>
 
-        {/* Période */}
-        <div className="text-sm text-gray-500 mb-6">
-          <span className="font-medium">Période:</span> {data.date_range.start} - {data.date_range.end}
-        </div>
+      {/* Onglets */}
+      <div className="tabs tabs-boxed bg-base-100 shadow-md mb-6">
+        <button
+          className={`tab ${activeTab === 'sales' ? 'tab-active' : ''}`}
+          onClick={() => setActiveTab('sales')}
+        >
+          <TrendingUp className="w-4 h-4 mr-2" />
+          Ventes
+        </button>
+        <button
+          className={`tab ${activeTab === 'purchases' ? 'tab-active' : ''}`}
+          onClick={() => setActiveTab('purchases')}
+        >
+          <TrendingDown className="w-4 h-4 mr-2" />
+          Achats
+        </button>
+        <button
+          className={`tab ${activeTab === 'cashflow' ? 'tab-active' : ''}`}
+          onClick={() => setActiveTab('cashflow')}
+        >
+          <DollarSign className="w-4 h-4 mr-2" />
+          Trésorerie
+        </button>
+        <button
+          className={`tab ${activeTab === 'inventory' ? 'tab-active' : ''}`}
+          onClick={() => setActiveTab('inventory')}
+        >
+          <Package className="w-4 h-4 mr-2" />
+          Inventaire
+        </button>
+      </div>
 
-        {/* Statistiques rapides */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-          <div className="bg-white rounded-xl shadow border border-gray-200 p-4">
-            <p className="text-xs text-gray-500">Total ventes</p>
-            <p className="text-2xl font-bold">{statistics.total}</p>
-          </div>
-          <div className="bg-white rounded-xl shadow border border-gray-200 p-4">
-            <p className="text-xs text-gray-500">Montant total</p>
-            <p className="text-2xl font-bold">{statistics.total_amount.toLocaleString()} F</p>
-          </div>
-          <div className="bg-white rounded-xl shadow border border-gray-200 p-4">
-            <p className="text-xs text-gray-500">Moyenne</p>
-            <p className="text-2xl font-bold">{statistics.average_amount.toLocaleString()} F</p>
-          </div>
-          <div className="bg-white rounded-xl shadow border border-gray-200 p-4">
-            <p className="text-xs text-gray-500">Min / Max</p>
-            <p className="text-lg font-bold">
-              {statistics.min_amount.toLocaleString()} - {statistics.max_amount.toLocaleString()} F
-            </p>
-          </div>
-        </div>
-
-        {/* Graphique des ventes - CSS */}
-        <div className="bg-white rounded-2xl shadow-xl border border-gray-200 p-6 mb-6">
-          <h3 className="font-semibold flex items-center gap-2 mb-4">
-            <TrendingUp className="w-4 h-4 text-primary" /> Évolution des ventes
-          </h3>
-          <div className="space-y-3">
-            {/* Barres pour les ventes */}
-            <div className="space-y-1">
-              <p className="text-sm text-gray-500 font-medium">Nombre de ventes</p>
-              <div className="flex items-end gap-1 h-32">
-                {salesData.map((item, index) => {
-                  const height = (item.ventes / maxSales) * 100;
-                  return (
-                    <div key={index} className="flex-1 flex flex-col items-center">
-                      <div 
-                        className="w-full bg-primary rounded-t transition-all duration-500 hover:bg-primary/80"
-                        style={{ height: `${height || 2}%` }}
-                      />
-                      <p className="text-xs text-gray-500 mt-1 truncate w-full text-center">
-                        {item.name}
-                      </p>
-                    </div>
-                  );
-                })}
+      {/* Contenu des onglets */}
+      <div className="card bg-base-100 shadow-md">
+        <div className="card-body p-5">
+          {activeTab === 'sales' && salesData && (
+            <div>
+              <h3 className="text-lg font-semibold mb-4">Statistiques des ventes</h3>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                <div className="stat bg-primary/5 rounded-lg p-3">
+                  <div className="stat-title text-xs">Période</div>
+                  <div className="stat-value text-sm">{salesData.period}</div>
+                </div>
+                <div className="stat bg-success/5 rounded-lg p-3">
+                  <div className="stat-title text-xs">Total ventes</div>
+                  <div className="stat-value text-lg font-bold">{formatNumber(salesData.total_sales)}</div>
+                </div>
+                <div className="stat bg-success/5 rounded-lg p-3">
+                  <div className="stat-title text-xs">Montant total</div>
+                  <div className="stat-value text-lg font-bold text-success">{formatCurrency(salesData.total_amount)}</div>
+                </div>
+                <div className="stat bg-info/5 rounded-lg p-3">
+                  <div className="stat-title text-xs">Panier moyen</div>
+                  <div className="stat-value text-lg font-bold text-info">{formatCurrency(salesData.average_order)}</div>
+                </div>
               </div>
-            </div>
 
-            {/* Barres pour le CA */}
-            <div className="space-y-1 pt-4 border-t">
-              <p className="text-sm text-gray-500 font-medium">Chiffre d'affaires (FCFA)</p>
-              <div className="flex items-end gap-1 h-32">
-                {salesData.map((item, index) => {
-                  const height = (item.chiffreAffaires / maxRevenue) * 100;
-                  return (
-                    <div key={index} className="flex-1 flex flex-col items-center">
-                      <div 
-                        className="w-full bg-secondary rounded-t transition-all duration-500 hover:bg-secondary/80"
-                        style={{ height: `${height || 2}%` }}
-                      />
-                      <p className="text-xs text-gray-500 mt-1 truncate w-full text-center">
-                        {item.name}
-                      </p>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        </div>
+              {/* Graphique circulaire des ventes par statut */}
+              {getSalesPieData() && (
+                <div className="mt-4 mb-4">
+                  <h4 className="text-md font-medium mb-2">Répartition par statut</h4>
+                  <div className="h-64 max-w-md mx-auto">
+                    <Pie data={getSalesPieData()} options={pieOptions} />
+                  </div>
+                </div>
+              )}
 
-        {/* Revenus vs Dépenses - CSS */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-          <div className="bg-white rounded-2xl shadow-xl border border-gray-200 p-6">
-            <h3 className="font-semibold flex items-center gap-2 mb-4">
-              <DollarSign className="w-4 h-4 text-primary" /> Revenus vs Dépenses
-            </h3>
-            <div className="space-y-3">
-              {revenueData.map((item, index) => {
-                const revenueHeight = (item.revenus / maxTotal) * 100;
-                const expenseHeight = (item.depenses / maxTotal) * 100;
-                return (
-                  <div key={index} className="space-y-1">
-                    <div className="flex justify-between text-xs">
-                      <span className="font-medium">{item.name}</span>
-                      <span className="text-gray-500">
-                        {item.revenus.toLocaleString()} / {item.depenses.toLocaleString()} F
+              {salesData.by_status && Object.keys(salesData.by_status).length > 0 && (
+                <div>
+                  <p className="font-medium text-sm text-base-content/60 mb-2">Détail par statut</p>
+                  <div className="flex flex-wrap gap-3">
+                    {Object.entries(salesData.by_status).map(([status, count]) => (
+                      <span key={status} className="badge badge-ghost gap-1">
+                        {status}: {count}
                       </span>
-                    </div>
-                    <div className="flex gap-1 h-6">
-                      <div 
-                        className="bg-primary rounded-l transition-all duration-500"
-                        style={{ width: `${Math.max(revenueHeight, 2)}%` }}
-                      />
-                      <div 
-                        className="bg-error rounded-r transition-all duration-500"
-                        style={{ width: `${Math.max(expenseHeight, 2)}%` }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            <div className="flex gap-4 mt-3 text-xs">
-              <span className="flex items-center gap-1">
-                <span className="w-3 h-3 bg-primary rounded" /> Revenus
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="w-3 h-3 bg-error rounded" /> Dépenses
-              </span>
-            </div>
-          </div>
-
-          {/* Top produits */}
-          <div className="bg-white rounded-2xl shadow-xl border border-gray-200 p-6">
-            <h3 className="font-semibold flex items-center gap-2 mb-4">
-              <Package className="w-4 h-4 text-primary" /> Top produits
-            </h3>
-            <div className="space-y-3">
-              {top_products.map((product, index) => (
-                <div key={index} className="flex items-center justify-between p-2 hover:bg-gray-50 rounded-lg transition">
-                  <div className="flex items-center gap-3">
-                    <div className="badge badge-primary badge-lg">{index + 1}</div>
-                    <div>
-                      <p className="font-medium text-sm">{product.name}</p>
-                      <p className="text-xs text-gray-500">{product.code}</p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-bold text-sm">{product.revenue.toLocaleString()} F</p>
-                    <p className="text-xs text-gray-500">{product.quantity_sold} vendus</p>
+                    ))}
                   </div>
                 </div>
-              ))}
-              {top_products.length === 0 && (
-                <p className="text-center text-gray-500 py-4">Aucun produit vendu</p>
               )}
             </div>
-          </div>
-        </div>
+          )}
 
-        {/* Distribution par catégorie - CSS */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="bg-white rounded-2xl shadow-xl border border-gray-200 p-6">
-            <h3 className="font-semibold flex items-center gap-2 mb-4">
-              <PieChartIcon className="w-4 h-4 text-primary" /> Ventes par catégorie
-            </h3>
-            <div className="space-y-2">
-              {charts.category_distribution.length > 0 ? (
-                charts.category_distribution.map((item, index) => (
-                  <div key={index} className="space-y-1">
-                    <div className="flex justify-between text-sm">
-                      <span className="font-medium">{item.label}</span>
-                      <span className="text-gray-500">{item.value.toLocaleString()} F ({item.percentage}%)</span>
-                    </div>
-                    <div className="w-full bg-gray-200 rounded-full h-3">
-                      <div 
-                        className="h-3 rounded-full transition-all duration-500"
-                        style={{ 
-                          width: `${item.percentage}%`,
-                          backgroundColor: item.color || `hsl(${index * 45}, 70%, 50%)`
-                        }}
-                      />
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <p className="text-gray-500 text-sm">Aucune donnée disponible</p>
-              )}
-            </div>
-          </div>
-
-          {/* Distribution des paiements - CSS */}
-          <div className="bg-white rounded-2xl shadow-xl border border-gray-200 p-6">
-            <h3 className="font-semibold flex items-center gap-2 mb-4">
-              <CreditCard className="w-4 h-4 text-primary" /> Modes de paiement
-            </h3>
-            <div className="space-y-2">
-              {charts.payment_distribution.length > 0 ? (
-                charts.payment_distribution.map((item, index) => (
-                  <div key={index} className="space-y-1">
-                    <div className="flex justify-between text-sm">
-                      <span className="font-medium">{item.label}</span>
-                      <span className="text-gray-500">{item.value.toLocaleString()} F ({item.percentage}%)</span>
-                    </div>
-                    <div className="w-full bg-gray-200 rounded-full h-3">
-                      <div 
-                        className="h-3 rounded-full transition-all duration-500"
-                        style={{ 
-                          width: `${item.percentage}%`,
-                          backgroundColor: item.color || `hsl(${index * 60 + 120}, 70%, 50%)`
-                        }}
-                      />
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <p className="text-gray-500 text-sm">Aucune donnée disponible</p>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Statistiques détaillées */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
-          <div className="bg-white rounded-2xl shadow-xl border border-gray-200 p-6">
-            <h3 className="font-semibold mb-3">Par statut</h3>
-            <div className="space-y-2">
-              {Object.entries(statistics.by_status || {}).map(([key, value]) => (
-                <div key={key} className="flex justify-between items-center p-2 bg-gray-50 rounded-lg">
-                  <span className="capitalize">{key}</span>
-                  <span className="font-semibold">{value}</span>
+          {activeTab === 'purchases' && purchaseData && (
+            <div>
+              <h3 className="text-lg font-semibold mb-4">Statistiques des achats</h3>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
+                <div className="stat bg-primary/5 rounded-lg p-3">
+                  <div className="stat-title text-xs">Période</div>
+                  <div className="stat-value text-sm">{purchaseData.period}</div>
                 </div>
-              ))}
-              {Object.keys(statistics.by_status || {}).length === 0 && (
-                <p className="text-gray-500 text-sm">Aucune donnée</p>
-              )}
-            </div>
-          </div>
-
-          <div className="bg-white rounded-2xl shadow-xl border border-gray-200 p-6">
-            <h3 className="font-semibold mb-3">Par statut de paiement</h3>
-            <div className="space-y-2">
-              {Object.entries(statistics.by_payment_status || {}).map(([key, value]) => (
-                <div key={key} className="flex justify-between items-center p-2 bg-gray-50 rounded-lg">
-                  <span className="capitalize">{key.replace('_', ' ')}</span>
-                  <span className="font-semibold">{value}</span>
+                <div className="stat bg-info/5 rounded-lg p-3">
+                  <div className="stat-title text-xs">Commandes</div>
+                  <div className="stat-value text-lg font-bold">{formatNumber(purchaseData.total_orders)}</div>
                 </div>
-              ))}
-              {Object.keys(statistics.by_payment_status || {}).length === 0 && (
-                <p className="text-gray-500 text-sm">Aucune donnée</p>
+                <div className="stat bg-info/5 rounded-lg p-3">
+                  <div className="stat-title text-xs">Montant total</div>
+                  <div className="stat-value text-lg font-bold text-info">{formatCurrency(purchaseData.total_amount)}</div>
+                </div>
+              </div>
+
+              {purchaseData.top_suppliers && purchaseData.top_suppliers.length > 0 && (
+                <div>
+                  <p className="font-medium text-sm text-base-content/60 mb-2">Top fournisseurs</p>
+                  <div className="overflow-x-auto">
+                    <table className="table table-sm">
+                      <thead>
+                        <tr>
+                          <th>Fournisseur</th>
+                          <th className="text-right">Montant</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {purchaseData.top_suppliers.map((s, idx) => (
+                          <tr key={idx}>
+                            <td>{s.supplier__name}</td>
+                            <td className="text-right font-semibold">{formatCurrency(s.total)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               )}
             </div>
-          </div>
+          )}
+
+          {activeTab === 'cashflow' && cashflowData && (
+            <div>
+              <h3 className="text-lg font-semibold mb-4">Flux de trésorerie</h3>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                <div className="stat bg-primary/5 rounded-lg p-3">
+                  <div className="stat-title text-xs">Période</div>
+                  <div className="stat-value text-sm">{cashflowData.period}</div>
+                </div>
+                <div className="stat bg-success/5 rounded-lg p-3">
+                  <div className="stat-title text-xs">Entrées</div>
+                  <div className="stat-value text-lg font-bold text-success">{formatCurrency(cashflowData.total_entries)}</div>
+                </div>
+                <div className="stat bg-error/5 rounded-lg p-3">
+                  <div className="stat-title text-xs">Sorties</div>
+                  <div className="stat-value text-lg font-bold text-error">{formatCurrency(cashflowData.total_exits)}</div>
+                </div>
+                <div className={`stat ${cashflowData.net_flow >= 0 ? 'bg-success/5' : 'bg-error/5'} rounded-lg p-3`}>
+                  <div className="stat-title text-xs">Solde net</div>
+                  <div className={`stat-value text-lg font-bold ${cashflowData.net_flow >= 0 ? 'text-success' : 'text-error'}`}>
+                    {formatCurrency(cashflowData.net_flow)}
+                  </div>
+                </div>
+              </div>
+
+              {cashflowData.daily && cashflowData.daily.length > 0 && (
+                <div>
+                  <p className="font-medium text-sm text-base-content/60 mb-2">Évolution journalière</p>
+                  <div className="overflow-x-auto">
+                    <table className="table table-sm">
+                      <thead>
+                        <tr>
+                          <th>Date</th>
+                          <th className="text-right">Entrées</th>
+                          <th className="text-right">Sorties</th>
+                          <th className="text-right">Solde</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {cashflowData.daily.map((day, idx) => (
+                          <tr key={idx}>
+                            <td>{new Date(day.date).toLocaleDateString('fr-FR')}</td>
+                            <td className="text-right text-success">{formatCurrency(day.entries)}</td>
+                            <td className="text-right text-error">{formatCurrency(day.exits)}</td>
+                            <td className={`text-right font-semibold ${day.balance >= 0 ? 'text-success' : 'text-error'}`}>
+                              {formatCurrency(day.balance)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'inventory' && inventoryData && (
+            <div>
+              <h3 className="text-lg font-semibold mb-4">Statistiques d'inventaire</h3>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="stat bg-primary/5 rounded-lg p-3">
+                  <div className="stat-title text-xs">Produits actifs</div>
+                  <div className="stat-value text-lg font-bold">{formatNumber(inventoryData.total_products)}</div>
+                </div>
+                <div className="stat bg-success/5 rounded-lg p-3">
+                  <div className="stat-title text-xs">Valeur du stock</div>
+                  <div className="stat-value text-lg font-bold text-success">{formatCurrency(inventoryData.total_stock_value)}</div>
+                </div>
+                <div className="stat bg-warning/5 rounded-lg p-3">
+                  <div className="stat-title text-xs">Stock faible</div>
+                  <div className="stat-value text-lg font-bold text-warning">{formatNumber(inventoryData.low_stock_items)}</div>
+                </div>
+                <div className="stat bg-error/5 rounded-lg p-3">
+                  <div className="stat-title text-xs">Rupture</div>
+                  <div className="stat-value text-lg font-bold text-error">{formatNumber(inventoryData.out_of_stock_items)}</div>
+                </div>
+              </div>
+              <div className="mt-4 text-sm text-base-content/60">
+                Entrepôts: {formatNumber(inventoryData.warehouses_count)}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

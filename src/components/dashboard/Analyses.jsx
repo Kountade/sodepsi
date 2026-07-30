@@ -1,331 +1,507 @@
-// src/components/dashboard/Analyses.jsx
 import React, { useState, useEffect } from 'react';
-import { 
-  TrendingUp, TrendingDown, RefreshCw, BarChart2, 
-  PieChart as PieChartIcon, Users, Truck, Package,
-  DollarSign, Building, CreditCard, AlertTriangle,
-  ArrowUp, ArrowDown, ChevronRight, Target
+import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js';
+import { Pie } from 'react-chartjs-2';
+import AxiosInstance from '../AxiosInstance';
+import {
+  BarChart3, TrendingUp, TrendingDown, DollarSign, Package,
+  Users, Truck, Calendar, RefreshCw, AlertTriangle, Download,
+  Award, Star, Crown, Filter
 } from 'lucide-react';
-import { dashboardService } from '../../services/dashboardService';
+
+ChartJS.register(ArcElement, Tooltip, Legend);
 
 const Analyses = () => {
-  const [period, setPeriod] = useState('month');
-  const [data, setData] = useState(null);
+  const [activeTab, setActiveTab] = useState('top-products');
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [errors, setErrors] = useState({});
 
-  const periods = [
-    { value: 'today', label: 'Aujourd\'hui' },
-    { value: 'week', label: 'Cette semaine' },
-    { value: 'month', label: 'Ce mois' },
-    { value: 'quarter', label: 'Ce trimestre' },
-    { value: 'year', label: 'Cette année' }
-  ];
+  const [topProducts, setTopProducts] = useState([]);
+  const [topClients, setTopClients] = useState([]);
+  const [topSuppliers, setTopSuppliers] = useState([]);
+  const [trends, setTrends] = useState([]);
+  const [financialHealth, setFinancialHealth] = useState(null);
 
-  useEffect(() => {
-    loadAnalyses();
-  }, [period]);
+  const [limit, setLimit] = useState(10);
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
 
-  const loadAnalyses = async () => {
-    setLoading(true);
-    setError(null);
+  const handleApiError = (err, key, defaultMessage) => {
+    console.error(`❌ ${defaultMessage}:`, err);
+    let msg = defaultMessage;
+    if (err.response) {
+      const data = err.response.data;
+      if (data && typeof data === 'object') {
+        msg = data.error || data.detail || data.message || `Erreur ${err.response.status}`;
+      } else if (typeof data === 'string') {
+        msg = data;
+      }
+    } else if (err.request) {
+      msg = 'Aucune réponse du serveur. Vérifiez votre connexion.';
+    } else {
+      msg = err.message;
+    }
+    setErrors(prev => ({ ...prev, [key]: msg }));
+    return msg;
+  };
+
+  const fetchTopProducts = async () => {
     try {
-      const result = await dashboardService.getAnalyses(period);
-      setData(result);
+      const params = new URLSearchParams();
+      params.append('limit', limit);
+      if (startDate) params.append('start_date', startDate);
+      if (endDate) params.append('end_date', endDate);
+      const response = await AxiosInstance.get(`/analyse/top-products/?${params.toString()}`);
+      setTopProducts(response.data);
+      setErrors(prev => ({ ...prev, topProducts: null }));
     } catch (err) {
-      setError('Impossible de charger les analyses');
-      console.error(err);
+      handleApiError(err, 'topProducts', 'Erreur chargement top produits');
+    }
+  };
+
+  const fetchTopClients = async () => {
+    try {
+      const params = new URLSearchParams();
+      params.append('limit', limit);
+      if (startDate) params.append('start_date', startDate);
+      if (endDate) params.append('end_date', endDate);
+      const response = await AxiosInstance.get(`/analyse/top-clients/?${params.toString()}`);
+      setTopClients(response.data);
+      setErrors(prev => ({ ...prev, topClients: null }));
+    } catch (err) {
+      handleApiError(err, 'topClients', 'Erreur chargement top clients');
+    }
+  };
+
+  const fetchTopSuppliers = async () => {
+    try {
+      const params = new URLSearchParams();
+      params.append('limit', limit);
+      if (startDate) params.append('start_date', startDate);
+      if (endDate) params.append('end_date', endDate);
+      const response = await AxiosInstance.get(`/analyse/top-suppliers/?${params.toString()}`);
+      setTopSuppliers(response.data);
+      setErrors(prev => ({ ...prev, topSuppliers: null }));
+    } catch (err) {
+      handleApiError(err, 'topSuppliers', 'Erreur chargement top fournisseurs');
+    }
+  };
+
+  const fetchTrends = async () => {
+    try {
+      const response = await AxiosInstance.get('/analyse/trends/');
+      setTrends(response.data);
+      setErrors(prev => ({ ...prev, trends: null }));
+    } catch (err) {
+      handleApiError(err, 'trends', 'Erreur chargement tendances');
+    }
+  };
+
+  const fetchFinancialHealth = async () => {
+    try {
+      const response = await AxiosInstance.get('/analyse/financial-health/');
+      setFinancialHealth(response.data);
+      setErrors(prev => ({ ...prev, financialHealth: null }));
+    } catch (err) {
+      handleApiError(err, 'financialHealth', 'Erreur chargement santé financière');
+    }
+  };
+
+  const loadAllData = async () => {
+    setLoading(true);
+    setErrors({});
+    try {
+      await Promise.all([
+        fetchTopProducts(),
+        fetchTopClients(),
+        fetchTopSuppliers(),
+        fetchTrends(),
+        fetchFinancialHealth(),
+      ]);
+    } catch (err) {
+      // les erreurs sont déjà gérées individuellement
     } finally {
       setLoading(false);
     }
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[calc(100vh-200px)]">
-        <div className="loading loading-spinner loading-lg text-primary w-12 h-12"></div>
-      </div>
-    );
-  }
+  useEffect(() => {
+    loadAllData();
+  }, [limit, startDate, endDate]);
 
-  if (error) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)]">
-        <p className="text-lg text-gray-600">{error}</p>
-        <button onClick={loadAnalyses} className="btn btn-primary mt-4">
-          <RefreshCw className="w-4 h-4 mr-2" /> Réessayer
-        </button>
-      </div>
-    );
-  }
-
-  if (!data) return null;
-
-  const { 
-    margin_analysis, 
-    monthly_trend, 
-    cash_flow, 
-    client_analysis, 
-    supplier_analysis, 
-    stock_analysis,
-    period_comparison 
-  } = data;
-
-  // Couleurs pour les variations
-  const getChangeColor = (value) => {
-    if (value > 0) return 'text-success';
-    if (value < 0) return 'text-error';
-    return 'text-gray-500';
+  const formatCurrency = (num) => {
+    if (num === undefined || num === null) return '0 FCFA';
+    return new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'XOF' })
+      .format(num)
+      .replace('XOF', 'FCFA');
   };
 
+  const formatNumber = (num) => {
+    if (num === undefined || num === null) return '0';
+    return new Intl.NumberFormat('fr-FR').format(num);
+  };
+
+  const getRankIcon = (index) => {
+    if (index === 0) return <Crown className="w-4 h-4 text-yellow-500" />;
+    if (index === 1) return <Award className="w-4 h-4 text-gray-400" />;
+    if (index === 2) return <Star className="w-4 h-4 text-amber-600" />;
+    return <span className="text-xs text-base-content/40">{index + 1}</span>;
+  };
+
+  // Données pour le graphique des top produits (quantités)
+  const getTopProductsPieData = () => {
+    if (!topProducts || topProducts.length === 0) return null;
+    const labels = topProducts.map(p => p.product_name);
+    const data = topProducts.map(p => p.quantity_sold);
+    const colors = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#6366f1', '#84cc16'];
+    return {
+      labels: labels,
+      datasets: [
+        {
+          label: 'Quantités vendues',
+          data: data,
+          backgroundColor: colors.slice(0, data.length),
+          borderColor: '#ffffff',
+          borderWidth: 2,
+        },
+      ],
+    };
+  };
+
+  // Données pour le graphique des top clients (montants)
+  const getTopClientsPieData = () => {
+    if (!topClients || topClients.length === 0) return null;
+    const labels = topClients.map(c => c.client_name);
+    const data = topClients.map(c => c.total_purchases);
+    const colors = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#6366f1', '#84cc16'];
+    return {
+      labels: labels,
+      datasets: [
+        {
+          label: 'Montant total',
+          data: data,
+          backgroundColor: colors.slice(0, data.length),
+          borderColor: '#ffffff',
+          borderWidth: 2,
+        },
+      ],
+    };
+  };
+
+  const pieOptions = {
+    plugins: {
+      legend: {
+        position: 'bottom',
+        labels: {
+          color: '#6b7280',
+          font: { size: 11 },
+        },
+      },
+    },
+    maintainAspectRatio: false,
+  };
+
+  const getActiveTabError = () => {
+    switch (activeTab) {
+      case 'top-products': return errors.topProducts;
+      case 'top-clients': return errors.topClients;
+      case 'top-suppliers': return errors.topSuppliers;
+      case 'trends': return errors.trends;
+      case 'financial-health': return errors.financialHealth;
+      default: return null;
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="loading loading-spinner loading-lg text-primary"></div>
+          <p className="mt-4 text-base-content/60">Chargement des analyses...</p>
+        </div>
+      </div>
+    );
+  }
+
+  const activeError = getActiveTabError();
+  if (activeError) {
+    return (
+      <div className="p-6">
+        <div className="alert alert-warning shadow-lg">
+          <AlertTriangle className="w-6 h-6" />
+          <span>{activeError}</span>
+          <button className="btn btn-sm btn-ghost" onClick={loadAllData}>
+            <RefreshCw className="w-4 h-4 mr-2" />
+            Réessayer
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="w-full min-h-screen bg-gray-50">
-      <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
-        {/* En-tête */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-          <div>
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-primary/10 rounded-xl">
-                <Target className="w-6 h-6 text-primary" />
-              </div>
-              <h1 className="text-2xl font-bold">Analyses</h1>
-            </div>
-            <p className="text-sm text-gray-500 mt-1">
-              Analyses approfondies et comparaisons
-            </p>
-          </div>
-          <div className="flex items-center gap-3">
+    <div className="p-4 md:p-6 bg-base-200 min-h-screen">
+      {/* En-tête */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
+        <div>
+          <h1 className="text-3xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
+            Analyses avancées
+          </h1>
+          <p className="text-base-content/60 text-sm mt-1">
+            Performances, tendances et indicateurs clés
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2">
+            <label className="text-sm">Top</label>
             <select
-              value={period}
-              onChange={(e) => setPeriod(e.target.value)}
               className="select select-bordered select-sm"
+              value={limit}
+              onChange={(e) => setLimit(Number(e.target.value))}
             >
-              {periods.map(p => (
-                <option key={p.value} value={p.value}>{p.label}</option>
-              ))}
+              <option value="5">5</option>
+              <option value="10">10</option>
+              <option value="20">20</option>
+              <option value="50">50</option>
             </select>
-            <button onClick={loadAnalyses} className="btn btn-ghost btn-sm btn-square">
-              <RefreshCw className="w-4 h-4" />
-            </button>
           </div>
+          <input
+            type="date"
+            className="input input-bordered input-sm"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+          />
+          <input
+            type="date"
+            className="input input-bordered input-sm"
+            value={endDate}
+            onChange={(e) => setEndDate(e.target.value)}
+          />
+          <button onClick={loadAllData} className="btn btn-primary btn-sm gap-2">
+            <RefreshCw className="w-4 h-4" />
+            Actualiser
+          </button>
         </div>
+      </div>
 
-        {/* Période */}
-        <div className="text-sm text-gray-500 mb-6">
-          <span className="font-medium">Période:</span> {data.date_range.start} - {data.date_range.end}
-        </div>
+      {/* Onglets */}
+      <div className="tabs tabs-boxed bg-base-100 shadow-md mb-6">
+        <button
+          className={`tab ${activeTab === 'top-products' ? 'tab-active' : ''}`}
+          onClick={() => setActiveTab('top-products')}
+        >
+          <Package className="w-4 h-4 mr-2" />
+          Top produits
+        </button>
+        <button
+          className={`tab ${activeTab === 'top-clients' ? 'tab-active' : ''}`}
+          onClick={() => setActiveTab('top-clients')}
+        >
+          <Users className="w-4 h-4 mr-2" />
+          Top clients
+        </button>
+        <button
+          className={`tab ${activeTab === 'top-suppliers' ? 'tab-active' : ''}`}
+          onClick={() => setActiveTab('top-suppliers')}
+        >
+          <Truck className="w-4 h-4 mr-2" />
+          Top fournisseurs
+        </button>
+        <button
+          className={`tab ${activeTab === 'trends' ? 'tab-active' : ''}`}
+          onClick={() => setActiveTab('trends')}
+        >
+          <TrendingUp className="w-4 h-4 mr-2" />
+          Tendances
+        </button>
+        <button
+          className={`tab ${activeTab === 'financial-health' ? 'tab-active' : ''}`}
+          onClick={() => setActiveTab('financial-health')}
+        >
+          <DollarSign className="w-4 h-4 mr-2" />
+          Santé financière
+        </button>
+      </div>
 
-        {/* Analyse de la marge */}
-        <div className="bg-white rounded-2xl shadow-xl border border-gray-200 p-6 mb-6">
-          <h3 className="font-semibold flex items-center gap-2 mb-4">
-            <DollarSign className="w-4 h-4 text-primary" /> Analyse de la marge
-          </h3>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="bg-gray-50 rounded-xl p-4">
-              <p className="text-sm text-gray-500">Chiffre d'affaires</p>
-              <p className="text-xl font-bold text-primary">{margin_analysis.revenue.toLocaleString()} F</p>
-            </div>
-            <div className="bg-gray-50 rounded-xl p-4">
-              <p className="text-sm text-gray-500">Coût</p>
-              <p className="text-xl font-bold text-error">{margin_analysis.cost.toLocaleString()} F</p>
-            </div>
-            <div className="bg-gray-50 rounded-xl p-4">
-              <p className="text-sm text-gray-500">Marge brute</p>
-              <p className={`text-xl font-bold ${margin_analysis.gross_margin >= 0 ? 'text-success' : 'text-error'}`}>
-                {margin_analysis.gross_margin.toLocaleString()} F
-              </p>
-            </div>
-            <div className="bg-gray-50 rounded-xl p-4">
-              <p className="text-sm text-gray-500">Taux de marge</p>
-              <p className={`text-xl font-bold ${margin_analysis.margin_rate >= 20 ? 'text-success' : margin_analysis.margin_rate >= 10 ? 'text-warning' : 'text-error'}`}>
-                {margin_analysis.margin_rate}%
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Tendance mensuelle */}
-        <div className="bg-white rounded-2xl shadow-xl border border-gray-200 p-6 mb-6">
-          <h3 className="font-semibold flex items-center gap-2 mb-4">
-            <TrendingUp className="w-4 h-4 text-primary" /> Tendance mensuelle
-          </h3>
-          <div className="overflow-x-auto">
-            <table className="table w-full">
-              <thead>
-                <tr className="bg-gray-50">
-                  <th>Mois</th>
-                  <th className="text-right">Ventes</th>
-                  <th className="text-right">Nb ventes</th>
-                  <th className="text-right">Achats</th>
-                  <th className="text-right">Bénéfice</th>
-                </tr>
-              </thead>
-              <tbody>
-                {monthly_trend.map((item, index) => (
-                  <tr key={index} className={item.profit >= 0 ? 'hover:bg-success/5' : 'hover:bg-error/5'}>
-                    <td className="font-medium">{item.month}</td>
-                    <td className="text-right">{item.sales_amount.toLocaleString()} F</td>
-                    <td className="text-right">{item.sales_count}</td>
-                    <td className="text-right">{item.purchases_amount.toLocaleString()} F</td>
-                    <td className={`text-right font-bold ${item.profit >= 0 ? 'text-success' : 'text-error'}`}>
-                      {item.profit.toLocaleString()} F
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {/* Flux de trésorerie */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-          <div className="bg-white rounded-2xl shadow-xl border border-gray-200 p-6">
-            <h3 className="font-semibold flex items-center gap-2 mb-2">
-              <TrendingUp className="w-4 h-4 text-success" /> Entrées
-            </h3>
-            <p className="text-3xl font-bold text-success">{cash_flow.inflows.toLocaleString()} F</p>
-          </div>
-          <div className="bg-white rounded-2xl shadow-xl border border-gray-200 p-6">
-            <h3 className="font-semibold flex items-center gap-2 mb-2">
-              <TrendingDown className="w-4 h-4 text-error" /> Sorties
-            </h3>
-            <p className="text-3xl font-bold text-error">{cash_flow.outflows.toLocaleString()} F</p>
-          </div>
-          <div className="bg-white rounded-2xl shadow-xl border border-gray-200 p-6">
-            <h3 className="font-semibold flex items-center gap-2 mb-2">
-              <DollarSign className="w-4 h-4 text-primary" /> Solde
-            </h3>
-            <p className={`text-3xl font-bold ${cash_flow.balance >= 0 ? 'text-success' : 'text-error'}`}>
-              {cash_flow.balance.toLocaleString()} F
-            </p>
-          </div>
-        </div>
-
-        {/* Analyse clients et fournisseurs */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-          {/* Analyse clients */}
-          <div className="bg-white rounded-2xl shadow-xl border border-gray-200 p-6">
-            <h3 className="font-semibold flex items-center gap-2 mb-4">
-              <Users className="w-4 h-4 text-primary" /> Analyse clients
-            </h3>
-            <div className="grid grid-cols-3 gap-3 mb-4">
-              <div className="bg-gray-50 rounded-lg p-3 text-center">
-                <p className="text-sm text-gray-500">Total</p>
-                <p className="text-xl font-bold">{client_analysis.total_clients}</p>
-              </div>
-              <div className="bg-gray-50 rounded-lg p-3 text-center">
-                <p className="text-sm text-gray-500">Actifs</p>
-                <p className="text-xl font-bold text-success">{client_analysis.active_clients}</p>
-              </div>
-              <div className="bg-gray-50 rounded-lg p-3 text-center">
-                <p className="text-sm text-gray-500">Nouveaux</p>
-                <p className="text-xl font-bold text-info">{client_analysis.new_clients}</p>
-              </div>
-            </div>
-            <h4 className="font-medium text-sm text-gray-500 mb-2">Top clients</h4>
-            <div className="space-y-2">
-              {client_analysis.top_clients.map((client, index) => (
-                <div key={index} className="flex items-center justify-between p-2 hover:bg-gray-50 rounded-lg transition">
-                  <div className="flex items-center gap-2">
-                    <span className="badge badge-primary badge-sm">{index + 1}</span>
-                    <span className="font-medium text-sm">{client.name}</span>
+      {/* Contenu */}
+      <div className="card bg-base-100 shadow-md">
+        <div className="card-body p-5">
+          {activeTab === 'top-products' && (
+            <div>
+              <h3 className="text-lg font-semibold mb-4">Produits les plus vendus</h3>
+              {topProducts && topProducts.length > 0 ? (
+                <>
+                  {/* Graphique circulaire */}
+                  <div className="h-64 max-w-md mx-auto mb-6">
+                    <Pie data={getTopProductsPieData()} options={pieOptions} />
                   </div>
-                  <div className="text-right">
-                    <p className="text-sm font-semibold">{client.purchases.toLocaleString()} F</p>
-                    <p className="text-xs text-gray-500">{client.orders} commandes</p>
+                  <div className="overflow-x-auto">
+                    <table className="table table-zebra">
+                      <thead>
+                        <tr>
+                          <th>#</th>
+                          <th>Produit</th>
+                          <th className="text-right">Quantité</th>
+                          <th className="text-right">Montant</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {topProducts.map((item, idx) => (
+                          <tr key={item.product_id}>
+                            <td>{getRankIcon(idx)}</td>
+                            <td className="font-medium">{item.product_name}</td>
+                            <td className="text-right font-semibold">{formatNumber(item.quantity_sold)}</td>
+                            <td className="text-right text-success font-semibold">{formatCurrency(item.total_amount)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
-                </div>
-              ))}
-              {client_analysis.top_clients.length === 0 && (
-                <p className="text-gray-500 text-sm">Aucun client</p>
+                </>
+              ) : (
+                <p className="text-center text-base-content/40 py-4">Aucune donnée</p>
               )}
             </div>
-          </div>
+          )}
 
-          {/* Analyse fournisseurs */}
-          <div className="bg-white rounded-2xl shadow-xl border border-gray-200 p-6">
-            <h3 className="font-semibold flex items-center gap-2 mb-4">
-              <Truck className="w-4 h-4 text-primary" /> Analyse fournisseurs
-            </h3>
-            <div className="mb-4">
-              <div className="bg-gray-50 rounded-lg p-3 text-center">
-                <p className="text-sm text-gray-500">Total fournisseurs</p>
-                <p className="text-2xl font-bold">{supplier_analysis.total_suppliers}</p>
-              </div>
-            </div>
-            <h4 className="font-medium text-sm text-gray-500 mb-2">Top fournisseurs</h4>
-            <div className="space-y-2">
-              {supplier_analysis.top_suppliers.map((supplier, index) => (
-                <div key={index} className="flex items-center justify-between p-2 hover:bg-gray-50 rounded-lg transition">
-                  <div className="flex items-center gap-2">
-                    <span className="badge badge-primary badge-sm">{index + 1}</span>
-                    <span className="font-medium text-sm">{supplier.name}</span>
+          {activeTab === 'top-clients' && (
+            <div>
+              <h3 className="text-lg font-semibold mb-4">Meilleurs clients</h3>
+              {topClients && topClients.length > 0 ? (
+                <>
+                  {/* Graphique circulaire */}
+                  <div className="h-64 max-w-md mx-auto mb-6">
+                    <Pie data={getTopClientsPieData()} options={pieOptions} />
                   </div>
-                  <div className="text-right">
-                    <p className="text-sm font-semibold">{supplier.purchases.toLocaleString()} F</p>
-                    <p className="text-xs text-gray-500">{supplier.orders} commandes</p>
+                  <div className="overflow-x-auto">
+                    <table className="table table-zebra">
+                      <thead>
+                        <tr>
+                          <th>#</th>
+                          <th>Client</th>
+                          <th className="text-right">Commandes</th>
+                          <th className="text-right">Total</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {topClients.map((item, idx) => (
+                          <tr key={item.client_id}>
+                            <td>{getRankIcon(idx)}</td>
+                            <td className="font-medium">{item.client_name}</td>
+                            <td className="text-right">{formatNumber(item.total_orders)}</td>
+                            <td className="text-right text-success font-semibold">{formatCurrency(item.total_purchases)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
-                </div>
-              ))}
-              {supplier_analysis.top_suppliers.length === 0 && (
-                <p className="text-gray-500 text-sm">Aucun fournisseur</p>
+                </>
+              ) : (
+                <p className="text-center text-base-content/40 py-4">Aucune donnée</p>
               )}
             </div>
-          </div>
-        </div>
+          )}
 
-        {/* Analyse du stock */}
-        <div className="bg-white rounded-2xl shadow-xl border border-gray-200 p-6 mb-6">
-          <h3 className="font-semibold flex items-center gap-2 mb-4">
-            <Package className="w-4 h-4 text-primary" /> Analyse du stock
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-            <div className="bg-gray-50 rounded-xl p-4">
-              <p className="text-sm text-gray-500">Total produits</p>
-              <p className="text-xl font-bold">{stock_analysis.total_products}</p>
-            </div>
-            <div className="bg-gray-50 rounded-xl p-4">
-              <p className="text-sm text-gray-500">Valeur totale</p>
-              <p className="text-xl font-bold text-primary">{stock_analysis.total_value.toLocaleString()} F</p>
-            </div>
-          </div>
-          <h4 className="font-medium text-sm text-gray-500 mb-2">Valeur par catégorie</h4>
-          <div className="flex flex-wrap gap-2">
-            {Object.entries(stock_analysis.by_category || {}).map(([category, value]) => (
-              <div key={category} className="badge badge-lg p-3 bg-gray-50">
-                {category}: {value.toLocaleString()} F
-              </div>
-            ))}
-            {Object.keys(stock_analysis.by_category || {}).length === 0 && (
-              <p className="text-gray-500 text-sm">Aucune catégorie</p>
-            )}
-          </div>
-        </div>
-
-        {/* Comparaison des périodes */}
-        <div className="bg-white rounded-2xl shadow-xl border border-gray-200 p-6">
-          <h3 className="font-semibold flex items-center gap-2 mb-4">
-            <BarChart2 className="w-4 h-4 text-primary" /> Comparaison des périodes
-          </h3>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-            {Object.entries(period_comparison).map(([key, value]) => {
-              const labels = {
-                today: 'Aujourd\'hui',
-                this_week: 'Cette semaine',
-                this_month: 'Ce mois',
-                last_month: 'Mois dernier',
-                this_quarter: 'Ce trimestre',
-                this_year: 'Cette année'
-              };
-              return (
-                <div key={key} className="bg-gray-50 rounded-xl p-4 text-center">
-                  <p className="text-sm font-medium text-gray-600">{labels[key] || key}</p>
-                  <p className="text-lg font-bold text-primary">{value.revenue.toLocaleString()} F</p>
-                  <p className="text-xs text-gray-500">{value.count} ventes</p>
+          {activeTab === 'top-suppliers' && (
+            <div>
+              <h3 className="text-lg font-semibold mb-4">Meilleurs fournisseurs</h3>
+              {topSuppliers && topSuppliers.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="table table-zebra">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>Fournisseur</th>
+                        <th className="text-right">Commandes</th>
+                        <th className="text-right">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {topSuppliers.map((item, idx) => (
+                        <tr key={idx}>
+                          <td>{getRankIcon(idx)}</td>
+                          <td className="font-medium">{item.supplier__name}</td>
+                          <td className="text-right">{formatNumber(item.total_orders)}</td>
+                          <td className="text-right text-info font-semibold">{formatCurrency(item.total_amount)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-              );
-            })}
-          </div>
+              ) : (
+                <p className="text-center text-base-content/40 py-4">Aucune donnée</p>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'trends' && (
+            <div>
+              <h3 className="text-lg font-semibold mb-4">Tendances mensuelles</h3>
+              {trends && trends.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="table table-zebra">
+                    <thead>
+                      <tr>
+                        <th>Mois</th>
+                        <th className="text-right">Ventes (montant)</th>
+                        <th className="text-right">Ventes (nb)</th>
+                        <th className="text-right">Achats</th>
+                        <th className="text-right">Flux de trésorerie</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {trends.map((item, idx) => (
+                        <tr key={idx}>
+                          <td className="font-medium">{item.month}</td>
+                          <td className="text-right text-success">{formatCurrency(item.sales_amount)}</td>
+                          <td className="text-right">{formatNumber(item.sales_count)}</td>
+                          <td className="text-right text-info">{formatCurrency(item.purchase_amount)}</td>
+                          <td className={`text-right font-semibold ${item.cash_flow >= 0 ? 'text-success' : 'text-error'}`}>
+                            {formatCurrency(item.cash_flow)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="text-center text-base-content/40 py-4">Aucune donnée</p>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'financial-health' && financialHealth && (
+            <div>
+              <h3 className="text-lg font-semibold mb-4">Indicateurs de santé financière</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="stat bg-primary/5 rounded-lg p-4">
+                  <div className="stat-title text-sm">Ventes du mois</div>
+                  <div className="stat-value text-xl text-success">{formatCurrency(financialHealth.monthly_sales)}</div>
+                </div>
+                <div className="stat bg-info/5 rounded-lg p-4">
+                  <div className="stat-title text-sm">Achats du mois</div>
+                  <div className="stat-value text-xl text-info">{formatCurrency(financialHealth.monthly_purchases)}</div>
+                </div>
+                <div className="stat bg-success/5 rounded-lg p-4">
+                  <div className="stat-title text-sm">Trésorerie disponible</div>
+                  <div className="stat-value text-xl text-success">{formatCurrency(financialHealth.cash_balance)}</div>
+                </div>
+                <div className="stat bg-warning/5 rounded-lg p-4">
+                  <div className="stat-title text-sm">Créances clients</div>
+                  <div className="stat-value text-xl text-warning">{formatCurrency(financialHealth.receivables)}</div>
+                </div>
+                <div className="stat bg-error/5 rounded-lg p-4">
+                  <div className="stat-title text-sm">Dettes fournisseurs</div>
+                  <div className="stat-value text-xl text-error">{formatCurrency(financialHealth.payables)}</div>
+                </div>
+                <div className={`stat ${financialHealth.net_cash_position >= 0 ? 'bg-success/10' : 'bg-error/10'} rounded-lg p-4`}>
+                  <div className="stat-title text-sm">Position nette</div>
+                  <div className={`stat-value text-xl ${financialHealth.net_cash_position >= 0 ? 'text-success' : 'text-error'}`}>
+                    {formatCurrency(financialHealth.net_cash_position)}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -10,68 +10,42 @@ import {
 
 const Stocks = () => {
   const navigate = useNavigate()
-  const [warehouseStocks, setWarehouseStocks] = useState([])
-  const [warehouses, setWarehouses] = useState([])
-  const [products, setProducts] = useState([])
+  const [stocks, setStocks] = useState([])          // Données de stock (depuis /stocks/)
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedWarehouse, setSelectedWarehouse] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
-  const [itemsPerPage] = useState(10)
+  const itemsPerPage = 10
 
-  const fetchData = async () => {
+  // Récupération des stocks depuis l'API
+  const fetchStocks = async () => {
     setLoading(true)
     try {
-      const [stocksRes, warehousesRes, productsRes] = await Promise.all([
-        AxiosInstance.get('/warehouse-stocks/'),
-        AxiosInstance.get('/warehouses/'),
-        AxiosInstance.get('/products/')
-      ])
-      
-      setWarehouseStocks(stocksRes.data || [])
-      setWarehouses(warehousesRes.data || [])
-      setProducts(productsRes.data || [])
+      const response = await AxiosInstance.get('/stocks/')
+      setStocks(response.data || [])
     } catch (error) {
-      console.error('Erreur:', error)
+      console.error('Erreur lors du chargement des stocks :', error)
     } finally {
       setLoading(false)
     }
   }
 
-  useEffect(() => { fetchData() }, [])
+  useEffect(() => {
+    fetchStocks()
+  }, [])
 
-  const getProductName = (productId) => {
-    const product = products.find(p => p.id === productId)
-    return product?.name || 'Produit inconnu'
-  }
+  // Statistiques (calculées directement depuis stocks)
+  const totalQuantity = stocks.reduce((sum, s) => sum + (s.quantity || 0), 0)
+  const lowStockCount = stocks.filter(s => s.quantity > 0 && s.quantity <= (s.min_stock || 5)).length
+  const outStockCount = stocks.filter(s => s.quantity === 0).length
 
-  const getProductRef = (productId) => {
-    const product = products.find(p => p.id === productId)
-    return product?.reference || '-'
-  }
-
-  const getWarehouseName = (warehouseId) => {
-    const warehouse = warehouses.find(w => w.id === warehouseId)
-    return warehouse?.name || 'Entrepôt inconnu'
-  }
-
-  const getAgenceName = (warehouseId) => {
-    const warehouse = warehouses.find(w => w.id === warehouseId)
-    return warehouse?.agence_nom || '-'
-  }
-
-  const getStockStatus = (quantity, minStock) => {
-    if (quantity === 0) return { label: 'Rupture', color: 'text-error', bg: 'bg-error/10', icon: <XCircle className="w-4 h-4" /> }
-    if (quantity <= (minStock || 5)) return { label: 'Stock faible', color: 'text-warning', bg: 'bg-warning/10', icon: <AlertTriangle className="w-4 h-4" /> }
-    return { label: 'Normal', color: 'text-success', bg: 'bg-success/10', icon: <CheckCircle className="w-4 h-4" /> }
-  }
-
-  // Filtrage
-  const filteredStocks = warehouseStocks.filter(stock => {
-    const productName = getProductName(stock.product).toLowerCase()
-    const productRef = getProductRef(stock.product).toLowerCase()
-    const warehouseName = getWarehouseName(stock.warehouse).toLowerCase()
-    const matchesSearch = productName.includes(searchTerm.toLowerCase()) || productRef.includes(searchTerm.toLowerCase())
+  // Filtrage (recherche + entrepôt)
+  const filteredStocks = stocks.filter(stock => {
+    const productName = (stock.product_name || '').toLowerCase()
+    const productCode = (stock.product_code || '').toLowerCase()
+    const warehouseName = (stock.warehouse_name || '').toLowerCase()
+    const matchesSearch = productName.includes(searchTerm.toLowerCase()) ||
+                          productCode.includes(searchTerm.toLowerCase())
     const matchesWarehouse = !selectedWarehouse || stock.warehouse === parseInt(selectedWarehouse)
     return matchesSearch && matchesWarehouse
   })
@@ -83,13 +57,27 @@ const Stocks = () => {
     currentPage * itemsPerPage
   )
 
-  // Statistiques
-  const totalQuantity = warehouseStocks.reduce((sum, s) => sum + (s.quantity || 0), 0)
-  const lowStockCount = warehouseStocks.filter(s => s.quantity > 0 && s.quantity <= (s.minimum_stock || 5)).length
-  const outStockCount = warehouseStocks.filter(s => s.quantity === 0).length
+  // Détermination du statut d'un stock
+  const getStockStatus = (quantity, minStock) => {
+    if (quantity === 0) {
+      return { label: 'Rupture', color: 'text-error', bg: 'bg-error/10', icon: <XCircle className="w-4 h-4" /> }
+    }
+    if (quantity <= (minStock || 5)) {
+      return { label: 'Stock faible', color: 'text-warning', bg: 'bg-warning/10', icon: <AlertTriangle className="w-4 h-4" /> }
+    }
+    return { label: 'Normal', color: 'text-success', bg: 'bg-success/10', icon: <CheckCircle className="w-4 h-4" /> }
+  }
 
+  // Formatage des nombres
   const formatNumber = (num) => {
     return new Intl.NumberFormat('fr-FR').format(num || 0)
+  }
+
+  // Réinitialisation des filtres et de la page
+  const resetFilters = () => {
+    setSearchTerm('')
+    setSelectedWarehouse('')
+    setCurrentPage(1)
   }
 
   if (loading) {
@@ -119,7 +107,7 @@ const Stocks = () => {
             </div>
             <div className="flex gap-3">
               <button 
-                onClick={fetchData}
+                onClick={fetchStocks}
                 className="btn btn-outline gap-2"
               >
                 <RefreshCw className="w-4 h-4" />
@@ -188,7 +176,10 @@ const Stocks = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-base-content/60 text-sm">Entrepôts</p>
-                  <p className="text-2xl font-bold">{warehouses.length}</p>
+                  <p className="text-2xl font-bold">{
+                    // On compte les entrepôts uniques présents dans les stocks
+                    new Set(stocks.map(s => s.warehouse)).size
+                  }</p>
                   <p className="text-xs text-base-content/50 mt-1">actifs</p>
                 </div>
                 <div className="w-12 h-12 rounded-full bg-secondary/10 flex items-center justify-center">
@@ -225,10 +216,21 @@ const Stocks = () => {
                 }}
               >
                 <option value="">Tous les entrepôts</option>
-                {warehouses.map(w => (
-                  <option key={w.id} value={w.id}>{w.name}</option>
-                ))}
+                {[...new Set(stocks.map(s => s.warehouse))].map(warehouseId => {
+                  // Récupérer le nom depuis les données (le premier stock de cet entrepôt)
+                  const warehouse = stocks.find(s => s.warehouse === warehouseId)
+                  return warehouse ? (
+                    <option key={warehouseId} value={warehouseId}>
+                      {warehouse.warehouse_name}
+                    </option>
+                  ) : null
+                })}
               </select>
+              {(searchTerm || selectedWarehouse) && (
+                <button onClick={resetFilters} className="btn btn-ghost">
+                  Réinitialiser
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -263,21 +265,19 @@ const Stocks = () => {
                       <th className="py-4">Produit</th>
                       <th>Référence</th>
                       <th>Entrepôt</th>
-                      <th>Agence</th>
                       <th className="text-center">Stock</th>
                       <th>Statut</th>
                       <th className="text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {paginatedStocks.map((stock, idx) => {
-                      const status = getStockStatus(stock.quantity, stock.minimum_stock)
+                    {paginatedStocks.map((stock) => {
+                      const status = getStockStatus(stock.quantity, stock.min_stock)
                       return (
-                        <tr key={idx} className="hover:bg-base-200/50 transition-colors">
-                          <td className="font-medium">{getProductName(stock.product)}</td>
-                          <td className="font-mono text-sm">{getProductRef(stock.product)}</td>
-                          <td>{getWarehouseName(stock.warehouse)}</td>
-                          <td>{getAgenceName(stock.warehouse)}</td>
+                        <tr key={stock.id} className="hover:bg-base-200/50 transition-colors">
+                          <td className="font-medium">{stock.product_name}</td>
+                          <td className="font-mono text-sm">{stock.product_code}</td>
+                          <td>{stock.warehouse_name}</td>
                           <td className="text-center">
                             <span className="text-lg font-bold">{formatNumber(stock.quantity)}</span>
                           </td>
@@ -288,7 +288,10 @@ const Stocks = () => {
                             </div>
                           </td>
                           <td className="text-right">
-                            <button className="btn btn-ghost btn-sm gap-2">
+                            <button 
+                              className="btn btn-ghost btn-sm gap-2"
+                              onClick={() => navigate(`/stocks/${stock.id}/ajuster`)}
+                            >
                               <Edit className="w-4 h-4" />
                               Ajuster
                             </button>

@@ -155,6 +155,9 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
   const [mouvementsEnAttente, setMouvementsEnAttente] = useState(0);
   const [fraisEnAttente, setFraisEnAttente] = useState(0);
   const [caissesSousSeuil, setCaissesSousSeuil] = useState(0);
+
+  // Nouvel état pour les alertes de péremption
+  const [alertesPeremptionCount, setAlertesPeremptionCount] = useState(0);
   
   // États des alertes globales
   const [showGlobalAlerts, setShowGlobalAlerts] = useState(false);
@@ -257,6 +260,12 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
             headers: { Authorization: `Token ${token}` }
           }).catch(() => ({ data: [] }));
           setAlertesStockCount(alertesRes.data?.length || 0);
+
+          // Récupération des alertes de péremption (expiry-alerts)
+          const peremptionRes = await AxiosInstance.get('/expiry-alerts/?is_active=true', {
+            headers: { Authorization: `Token ${token}` }
+          }).catch(() => ({ data: [] }));
+          setAlertesPeremptionCount(peremptionRes.data?.length || 0);
         }
 
         if (isAdmin || isComptable || isCaissier) {
@@ -342,12 +351,21 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
       name: 'PRODUITS & STOCKS',
       icon: Package,
       items: [
+        // === ITEMS EXISTANTS ===
         { id: 'categories', text: 'Catégories', icon: Tags, path: '/categories', permission: isAdmin || isGestionnaire || isMagasinier },
+        // NOUVEAU : Unités de mesure
+        { id: 'unites-mesure', text: 'Unités de mesure', icon: Ruler, path: '/unites-mesure', permission: isAdmin || isGestionnaire || isMagasinier },
         { id: 'produits', text: 'Produits', icon: Package, path: '/produits', permission: isAdmin || isGestionnaire || isMagasinier },
+        // NOUVEAU : Lots
+        { id: 'lots', text: 'Lots', icon: Layers, path: '/lots', permission: isAdmin || isGestionnaire || isMagasinier },
         { id: 'stocks', text: 'Stocks', icon: Boxes, path: '/stocks', permission: isAdmin || isGestionnaire || isMagasinier, badge: stocksFaibles > 0 ? stocksFaibles : 0 },
         { id: 'entrepots', text: 'Entrepôts', icon: Warehouse, path: '/entrepots', permission: isAdmin || isGestionnaire },
         { id: 'mouvements', text: 'Mouvements', icon: TrendingUp, path: '/mouvements-stock', permission: isAdmin || isGestionnaire || isMagasinier },
+        // NOUVEAU : Transferts
+        { id: 'transferts', text: 'Transferts', icon: MoveHorizontal, path: '/transferts', permission: isAdmin || isGestionnaire || isMagasinier },
         { id: 'inventaire', text: 'Inventaire', icon: ClipboardCheck, path: '/inventaire', permission: isAdmin || isGestionnaire },
+        // NOUVEAU : Alertes péremption
+        { id: 'alertes-peremption', text: 'Alertes péremption', icon: AlertCircle, path: '/alertes-peremption', permission: isAdmin || isGestionnaire || isMagasinier, badge: alertesPeremptionCount > 0 ? alertesPeremptionCount : 0 },
         { id: 'alertes-stock', text: 'Alertes Stock', icon: AlertOctagon, path: '/alertes-stock', permission: isAdmin || isGestionnaire || isMagasinier, badge: alertesStockCount > 0 ? alertesStockCount : 0 }
       ]
     },

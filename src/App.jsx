@@ -153,7 +153,7 @@ function App() {
               <Route element={<ProtectedRoute />}>
                
            
-               <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/statistiques" element={<Statistiques />} />
         <Route path="/analyses" element={<Analyses />} />
 
