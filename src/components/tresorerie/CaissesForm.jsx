@@ -16,7 +16,9 @@ const CaissesForm = () => {
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [loadingWarehouses, setLoadingWarehouses] = useState(false);
+  const [loadingUsers, setLoadingUsers] = useState(false);
   const [warehouses, setWarehouses] = useState([]);
+  const [users, setUsers] = useState([]);
   const [notification, setNotification] = useState(null);
   const [formData, setFormData] = useState({
     code: '',
@@ -24,9 +26,9 @@ const CaissesForm = () => {
     type_caisse: 'principale',
     warehouse: '',
     responsable: '',
-    solde_initial: '0',
-    seuil_min: '0',
-    seuil_max: '0',
+    solde_initial: 0,
+    seuil_min: 0,
+    seuil_max: 0,
     devise: 'XOF',
     is_active: true,
     is_default: false,
@@ -35,10 +37,48 @@ const CaissesForm = () => {
   const [errors, setErrors] = useState({});
 
   const getToken = () => localStorage.getItem('Token');
+  const getUser = () => {
+    try {
+      const userStr = localStorage.getItem('user');
+      return userStr ? JSON.parse(userStr) : null;
+    } catch {
+      return null;
+    }
+  };
 
   const showNotification = (message, type) => {
     setNotification({ message, type });
     setTimeout(() => setNotification(null), 4000);
+  };
+
+  // Charger les utilisateurs avec gestion d'erreur
+  const fetchUsers = async () => {
+    setLoadingUsers(true);
+    try {
+      const token = getToken();
+      // Essayer plusieurs endpoints possibles
+      let response;
+      try {
+        response = await AxiosInstance.get('/users/?is_active=true', {
+          headers: { 'Authorization': `Token ${token}` }
+        });
+        setUsers(response.data || []);
+      } catch (e) {
+        console.warn('Endpoint /users/ non disponible, utilisation de l\'utilisateur connecté');
+        // Fallback: utiliser l'utilisateur connecté uniquement
+        const user = getUser();
+        if (user) {
+          setUsers([user]);
+        } else {
+          setUsers([]);
+        }
+      }
+    } catch (error) {
+      console.error('Erreur chargement utilisateurs:', error);
+      setUsers([]);
+    } finally {
+      setLoadingUsers(false);
+    }
   };
 
   // Charger les entrepôts
@@ -95,9 +135,9 @@ const CaissesForm = () => {
         type_caisse: data.type_caisse || 'principale',
         warehouse: data.warehouse || '',
         responsable: data.responsable || '',
-        solde_initial: data.solde_initial || '0',
-        seuil_min: data.seuil_min || '0',
-        seuil_max: data.seuil_max || '0',
+        solde_initial: data.solde_initial || 0,
+        seuil_min: data.seuil_min || 0,
+        seuil_max: data.seuil_max || 0,
         devise: data.devise || 'XOF',
         is_active: data.is_active !== undefined ? data.is_active : true,
         is_default: data.is_default || false,
@@ -114,14 +154,17 @@ const CaissesForm = () => {
 
   useEffect(() => {
     fetchWarehouses();
+    fetchUsers();
     fetchCaisse();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
     setFormData(prev => ({
       ...prev,
-      [name]: type === 'checkbox' ? checked : value
+      [name]: type === 'checkbox' ? checked : 
+              type === 'number' ? (value === '' ? '' : parseFloat(value) || 0) : value
     }));
     if (errors[name]) {
       setErrors(prev => ({ ...prev, [name]: '' }));
@@ -130,15 +173,32 @@ const CaissesForm = () => {
 
   const validate = () => {
     const newErrors = {};
-    if (!formData.code.trim()) newErrors.code = 'Le code est requis';
-    if (!formData.nom.trim()) newErrors.nom = 'Le nom est requis';
-    if (!formData.warehouse) newErrors.warehouse = "L'entrepôt est requis";
+    
+    if (!formData.code || !formData.code.trim()) {
+      newErrors.code = 'Le code est requis';
+    }
+    
+    if (!formData.nom || !formData.nom.trim()) {
+      newErrors.nom = 'Le nom est requis';
+    }
+    
+    if (!formData.warehouse) {
+      newErrors.warehouse = "L'entrepôt est requis";
+    }
 
     const soldeInitial = parseFloat(formData.solde_initial) || 0;
-    if (soldeInitial < 0) newErrors.solde_initial = 'Le solde initial ne peut pas être négatif';
+    if (soldeInitial < 0) {
+      newErrors.solde_initial = 'Le solde initial ne peut pas être négatif';
+    }
 
     const seuilMin = parseFloat(formData.seuil_min) || 0;
     const seuilMax = parseFloat(formData.seuil_max) || 0;
+    if (seuilMin < 0) {
+      newErrors.seuil_min = 'Le seuil minimum ne peut pas être négatif';
+    }
+    if (seuilMax < 0) {
+      newErrors.seuil_max = 'Le seuil maximum ne peut pas être négatif';
+    }
     if (seuilMin > seuilMax && seuilMax > 0) {
       newErrors.seuil_min = 'Le seuil minimum ne peut pas être supérieur au maximum';
     }
@@ -158,13 +218,30 @@ const CaissesForm = () => {
     setSubmitting(true);
     try {
       const token = getToken();
+      const user = getUser();
+      
+      // Préparer les données à envoyer
       const dataToSend = {
-        ...formData,
+        code: formData.code.trim(),
+        nom: formData.nom.trim(),
+        type_caisse: formData.type_caisse,
+        warehouse: parseInt(formData.warehouse),
+        responsable: formData.responsable ? parseInt(formData.responsable) : null,
         solde_initial: parseFloat(formData.solde_initial) || 0,
         seuil_min: parseFloat(formData.seuil_min) || 0,
         seuil_max: parseFloat(formData.seuil_max) || 0,
-        responsable: formData.responsable || null
+        devise: formData.devise,
+        is_active: formData.is_active,
+        is_default: formData.is_default,
+        description: formData.description || '',
       };
+
+      // Ajouter created_by si disponible
+      if (user && user.id) {
+        dataToSend.created_by = user.id;
+      }
+
+      console.log('Données envoyées:', dataToSend);
 
       const url = isEdit ? `/caisses/${id}/` : '/caisses/';
       const method = isEdit ? 'put' : 'post';
@@ -183,19 +260,45 @@ const CaissesForm = () => {
       }, 1500);
 
     } catch (error) {
-      console.error('Erreur:', error);
+      console.error('Erreur complète:', error);
+      console.error('Response data:', error.response?.data);
+      
       if (error.response?.data) {
         const backendErrors = error.response.data;
         const newErrors = {};
-        Object.keys(backendErrors).forEach(key => {
-          newErrors[key] = Array.isArray(backendErrors[key])
-            ? backendErrors[key][0]
-            : backendErrors[key];
-        });
+        
+        if (typeof backendErrors === 'string') {
+          showNotification(backendErrors, 'error');
+        } else if (Array.isArray(backendErrors)) {
+          backendErrors.forEach(err => {
+            if (typeof err === 'string') {
+              showNotification(err, 'error');
+            }
+          });
+        } else {
+          Object.keys(backendErrors).forEach(key => {
+            const value = backendErrors[key];
+            if (Array.isArray(value)) {
+              newErrors[key] = value[0];
+            } else if (typeof value === 'string') {
+              newErrors[key] = value;
+            } else if (typeof value === 'object' && value !== null) {
+              Object.keys(value).forEach(subKey => {
+                const subValue = value[subKey];
+                if (Array.isArray(subValue)) {
+                  newErrors[`${key}.${subKey}`] = subValue[0];
+                } else if (typeof subValue === 'string') {
+                  newErrors[`${key}.${subKey}`] = subValue;
+                }
+              });
+            }
+          });
+        }
+        
         setErrors(newErrors);
         showNotification('Erreur lors de l\'enregistrement', 'error');
       } else {
-        showNotification('Erreur réseau', 'error');
+        showNotification('Erreur de connexion au serveur', 'error');
       }
     } finally {
       setSubmitting(false);
@@ -207,6 +310,12 @@ const CaissesForm = () => {
     { value: 'secondaire', label: 'Secondaire' },
     { value: 'mobile', label: 'Mobile' },
     { value: 'virtuelle', label: 'Virtuelle' }
+  ];
+
+  const deviseOptions = [
+    { value: 'XOF', label: 'FCFA (XOF)' },
+    { value: 'EUR', label: 'Euro (EUR)' },
+    { value: 'USD', label: 'Dollar (USD)' }
   ];
 
   if (loading) {
@@ -242,7 +351,11 @@ const CaissesForm = () => {
         <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
             <div className="flex items-center gap-4">
-              <button onClick={() => navigate('/caisses')} className="btn btn-ghost btn-sm gap-2">
+              <button 
+                onClick={() => navigate('/caisses')} 
+                className="btn btn-ghost btn-sm gap-2"
+                disabled={submitting}
+              >
                 <ArrowLeft className="w-4 h-4" /> Retour
               </button>
               <div className="flex items-center gap-3">
@@ -263,13 +376,11 @@ const CaissesForm = () => {
         </div>
       </div>
 
-      {/* Formulaire - 3 colonnes */}
+      {/* Formulaire */}
       <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
         <form onSubmit={handleSubmit} className="space-y-6">
 
-          {/* ============================================ */}
           {/* SECTION : Informations générales */}
-          {/* ============================================ */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
             <div className="bg-gray-50 px-6 py-3 border-b">
               <h3 className="font-semibold flex items-center gap-2">
@@ -290,6 +401,7 @@ const CaissesForm = () => {
                     onChange={handleChange}
                     className={`input input-bordered w-full ${errors.code ? 'input-error' : ''}`}
                     readOnly={isEdit}
+                    disabled={submitting}
                   />
                   {errors.code && <p className="text-error text-xs mt-1">{errors.code}</p>}
                 </div>
@@ -305,6 +417,8 @@ const CaissesForm = () => {
                     value={formData.nom}
                     onChange={handleChange}
                     className={`input input-bordered w-full ${errors.nom ? 'input-error' : ''}`}
+                    disabled={submitting}
+                    placeholder="Nom de la caisse"
                   />
                   {errors.nom && <p className="text-error text-xs mt-1">{errors.nom}</p>}
                 </div>
@@ -319,6 +433,7 @@ const CaissesForm = () => {
                     value={formData.type_caisse}
                     onChange={handleChange}
                     className="select select-bordered w-full"
+                    disabled={submitting}
                   >
                     {typeOptions.map(opt => (
                       <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -336,7 +451,7 @@ const CaissesForm = () => {
                     value={formData.warehouse}
                     onChange={handleChange}
                     className={`select select-bordered w-full ${errors.warehouse ? 'select-error' : ''}`}
-                    disabled={loadingWarehouses}
+                    disabled={loadingWarehouses || submitting}
                   >
                     <option value="">Sélectionner un entrepôt</option>
                     {warehouses.map(w => (
@@ -351,19 +466,21 @@ const CaissesForm = () => {
                   <label className="label text-sm font-medium text-gray-700">
                     Responsable
                   </label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
-                      <User className="w-4 h-4" />
-                    </span>
-                    <input
-                      type="text"
-                      name="responsable"
-                      value={formData.responsable}
-                      onChange={handleChange}
-                      className="input input-bordered w-full pl-9"
-                      placeholder="Nom du responsable"
-                    />
-                  </div>
+                  <select
+                    name="responsable"
+                    value={formData.responsable}
+                    onChange={handleChange}
+                    className="select select-bordered w-full"
+                    disabled={loadingUsers || submitting}
+                  >
+                    <option value="">Sélectionner un responsable</option>
+                    {users.map(user => (
+                      <option key={user.id} value={user.id}>
+                        {user.username} {user.first_name && `(${user.first_name} ${user.last_name})`}
+                      </option>
+                    ))}
+                  </select>
+                  {errors.responsable && <p className="text-error text-xs mt-1">{errors.responsable}</p>}
                 </div>
 
                 {/* Devise */}
@@ -376,19 +493,18 @@ const CaissesForm = () => {
                     value={formData.devise}
                     onChange={handleChange}
                     className="select select-bordered w-full"
+                    disabled={submitting}
                   >
-                    <option value="XOF">FCFA (XOF)</option>
-                    <option value="EUR">Euro (EUR)</option>
-                    <option value="USD">Dollar (USD)</option>
+                    {deviseOptions.map(opt => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
                   </select>
                 </div>
               </div>
             </div>
           </div>
 
-          {/* ============================================ */}
           {/* SECTION : Paramètres financiers */}
-          {/* ============================================ */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
             <div className="bg-gray-50 px-6 py-3 border-b">
               <h3 className="font-semibold flex items-center gap-2">
@@ -402,15 +518,22 @@ const CaissesForm = () => {
                   <label className="label text-sm font-medium text-gray-700">
                     Solde initial
                   </label>
-                  <input
-                    type="number"
-                    name="solde_initial"
-                    value={formData.solde_initial}
-                    onChange={handleChange}
-                    className={`input input-bordered w-full ${errors.solde_initial ? 'input-error' : ''}`}
-                    placeholder="0"
-                    step="100"
-                  />
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+                      <DollarSign className="w-4 h-4" />
+                    </span>
+                    <input
+                      type="number"
+                      name="solde_initial"
+                      value={formData.solde_initial}
+                      onChange={handleChange}
+                      className={`input input-bordered w-full pl-9 ${errors.solde_initial ? 'input-error' : ''}`}
+                      placeholder="0"
+                      step="100"
+                      min="0"
+                      disabled={submitting}
+                    />
+                  </div>
                   {errors.solde_initial && <p className="text-error text-xs mt-1">{errors.solde_initial}</p>}
                 </div>
 
@@ -431,6 +554,8 @@ const CaissesForm = () => {
                       className={`input input-bordered w-full pl-9 ${errors.seuil_min ? 'input-error' : ''}`}
                       placeholder="0"
                       step="100"
+                      min="0"
+                      disabled={submitting}
                     />
                   </div>
                   {errors.seuil_min && <p className="text-error text-xs mt-1">{errors.seuil_min}</p>}
@@ -453,6 +578,8 @@ const CaissesForm = () => {
                       className={`input input-bordered w-full pl-9 ${errors.seuil_max ? 'input-error' : ''}`}
                       placeholder="0"
                       step="100"
+                      min="0"
+                      disabled={submitting}
                     />
                   </div>
                   {errors.seuil_max && <p className="text-error text-xs mt-1">{errors.seuil_max}</p>}
@@ -461,9 +588,7 @@ const CaissesForm = () => {
             </div>
           </div>
 
-          {/* ============================================ */}
           {/* SECTION : Options et description */}
-          {/* ============================================ */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
             <div className="bg-gray-50 px-6 py-3 border-b">
               <h3 className="font-semibold flex items-center gap-2">
@@ -479,6 +604,7 @@ const CaissesForm = () => {
                     checked={formData.is_active}
                     onChange={handleChange}
                     className="checkbox checkbox-primary"
+                    disabled={submitting}
                   />
                   <label className="text-sm font-medium text-gray-700">Caisse active</label>
                 </div>
@@ -489,6 +615,7 @@ const CaissesForm = () => {
                     checked={formData.is_default}
                     onChange={handleChange}
                     className="checkbox checkbox-primary"
+                    disabled={submitting}
                   />
                   <label className="text-sm font-medium text-gray-700">Caisse par défaut</label>
                 </div>
@@ -504,14 +631,13 @@ const CaissesForm = () => {
                   onChange={handleChange}
                   className="textarea textarea-bordered w-full min-h-[80px]"
                   placeholder="Description de la caisse..."
+                  disabled={submitting}
                 />
               </div>
             </div>
           </div>
 
-          {/* ============================================ */}
           {/* Boutons d'action */}
-          {/* ============================================ */}
           <div className="flex flex-col sm:flex-row gap-3 justify-end">
             <button
               type="button"
@@ -523,15 +649,20 @@ const CaissesForm = () => {
             </button>
             <button
               type="submit"
-              className="btn btn-primary gap-2"
+              className="btn btn-primary gap-2 min-w-[120px]"
               disabled={submitting}
             >
               {submitting ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Enregistrement...
+                </>
               ) : (
-                <Save className="w-4 h-4" />
+                <>
+                  <Save className="w-4 h-4" />
+                  {isEdit ? 'Modifier' : 'Créer'}
+                </>
               )}
-              {isEdit ? 'Modifier' : 'Créer'}
             </button>
           </div>
 

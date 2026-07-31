@@ -1,20 +1,21 @@
-// src/components/tresorerie/PrevisionsDetail.jsx
+// src/components/tresorerie/RapprochementBancaireDetail.jsx
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import AxiosInstance from '../AxiosInstance';
 import {
-  ArrowLeft, Calendar, DollarSign, TrendingUp, TrendingDown,
-  RefreshCw, Edit, Trash2, AlertCircle, CheckCircle, X,
-  BarChart3, Clock, Tag, Percent, FileText, Building2
+  ArrowLeft, Building2, Calendar, DollarSign, FileText,
+  RefreshCw, CheckCircle, AlertCircle, X, Edit, Trash2,
+  Printer, Download, TrendingUp, TrendingDown, Clock
 } from 'lucide-react';
 
-const PrevisionsDetail = () => {
+const RapprochementBancaireDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const [prevision, setPrevision] = useState(null);
+  const [rapprochement, setRapprochement] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [warehouseName, setWarehouseName] = useState('');
+  const [compteName, setCompteName] = useState('');
   const [notification, setNotification] = useState({ show: false, message: '', type: 'success' });
 
   const getToken = () => localStorage.getItem('Token');
@@ -29,23 +30,30 @@ const PrevisionsDetail = () => {
     setError(null);
     try {
       const token = getToken();
-      const response = await AxiosInstance.get(`/previsions/${id}/`, {
+      const response = await AxiosInstance.get(`/rapprochements/${id}/`, {
         headers: { 'Authorization': `Token ${token}` }
       });
-      setPrevision(response.data);
+      setRapprochement(response.data);
 
-      // Récupérer le nom de l'entrepôt
+      // Récupérer les noms de l'entrepôt et du compte
       try {
-        const whRes = await AxiosInstance.get(`/warehouses/${response.data.warehouse}/`, {
-          headers: { 'Authorization': `Token ${token}` }
-        });
+        const [whRes, cptRes] = await Promise.all([
+          AxiosInstance.get(`/warehouses/${response.data.warehouse}/`, {
+            headers: { 'Authorization': `Token ${token}` }
+          }),
+          AxiosInstance.get(`/comptes-bancaires/${response.data.compte_bancaire}/`, {
+            headers: { 'Authorization': `Token ${token}` }
+          })
+        ]);
         setWarehouseName(whRes.data.name);
+        setCompteName(`${cptRes.data.banque} - ${cptRes.data.nom} (${cptRes.data.numero_compte})`);
       } catch {
         setWarehouseName(response.data.warehouse);
+        setCompteName(response.data.compte_bancaire);
       }
     } catch (error) {
       console.error('Erreur:', error);
-      setError('Impossible de charger les détails de cette prévision.');
+      setError('Impossible de charger les détails de ce rapprochement.');
       showNotification('Erreur de chargement', 'error');
     } finally {
       setLoading(false);
@@ -58,15 +66,31 @@ const PrevisionsDetail = () => {
     }
   }, [id]);
 
-  const handleDelete = async () => {
-    if (!window.confirm('Voulez-vous vraiment supprimer cette prévision ?')) return;
+  // Valider le rapprochement
+  const handleValider = async () => {
+    if (!window.confirm('Voulez-vous valider ce rapprochement ?')) return;
     try {
       const token = getToken();
-      await AxiosInstance.delete(`/previsions/${id}/`, {
+      await AxiosInstance.post(`/rapprochements/${id}/valider_rapprochement/`, {}, {
         headers: { 'Authorization': `Token ${token}` }
       });
-      showNotification('Prévision supprimée avec succès', 'success');
-      setTimeout(() => navigate('/previsions'), 1500);
+      showNotification('Rapprochement validé avec succès', 'success');
+      fetchDetail();
+    } catch (error) {
+      showNotification('Erreur lors de la validation', 'error');
+    }
+  };
+
+  // Supprimer
+  const handleDelete = async () => {
+    if (!window.confirm('Voulez-vous vraiment supprimer ce rapprochement ?')) return;
+    try {
+      const token = getToken();
+      await AxiosInstance.delete(`/rapprochements/${id}/`, {
+        headers: { 'Authorization': `Token ${token}` }
+      });
+      showNotification('Rapprochement supprimé avec succès', 'success');
+      setTimeout(() => navigate('/rapprochement-bancaire'), 1500);
     } catch (error) {
       showNotification('Erreur lors de la suppression', 'error');
     }
@@ -79,37 +103,20 @@ const PrevisionsDetail = () => {
 
   const formatCurrency = (num) => `${formatNumber(num)} FCFA`;
 
-  const getTypeBadge = (type) => {
-    const map = {
-      'entree': { label: 'Entrée prévue', color: 'badge-success' },
-      'sortie': { label: 'Sortie prévue', color: 'badge-error' }
-    };
-    const info = map[type] || { label: type, color: 'badge-ghost' };
-    return <span className={`badge ${info.color} text-sm py-2 px-4`}>{info.label}</span>;
-  };
-
-  const getPeriodeLabel = (periode) => {
-    const map = {
-      'journalier': 'Journalier',
-      'hebdomadaire': 'Hebdomadaire',
-      'mensuel': 'Mensuel',
-      'trimestriel': 'Trimestriel',
-      'annuel': 'Annuel'
-    };
-    return map[periode] || periode;
-  };
-
   const getStatusBadge = (status) => {
     const map = {
       'brouillon': { label: 'Brouillon', color: 'badge-ghost' },
       'en_cours': { label: 'En cours', color: 'badge-warning' },
-      'valide': { label: 'Validée', color: 'badge-info' },
-      'realise': { label: 'Réalisé', color: 'badge-success' },
-      'annule': { label: 'Annulé', color: 'badge-error' },
-      'ecart': { label: 'Écart constaté', color: 'badge-error' }
+      'partiel': { label: 'Partiel', color: 'badge-info' },
+      'complete': { label: 'Complet', color: 'badge-success' },
+      'ecart': { label: 'Écart', color: 'badge-error' },
     };
     const info = map[status] || { label: status, color: 'badge-ghost' };
     return <span className={`badge ${info.color} text-sm py-2 px-4`}>{info.label}</span>;
+  };
+
+  const isRapproche = (item) => {
+    return Math.abs(parseFloat(item?.ecart || 0)) < 1;
   };
 
   if (loading) {
@@ -123,22 +130,19 @@ const PrevisionsDetail = () => {
     );
   }
 
-  if (error || !prevision) {
+  if (error || !rapprochement) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)]">
         <div className="text-center space-y-4">
           <AlertCircle className="w-16 h-16 text-error" />
-          <p className="text-xl font-semibold text-gray-700">{error || 'Prévision non trouvée'}</p>
-          <button onClick={() => navigate('/previsions')} className="btn btn-primary gap-2">
+          <p className="text-xl font-semibold text-gray-700">{error || 'Rapprochement non trouvé'}</p>
+          <button onClick={() => navigate('/rapprochement-bancaire')} className="btn btn-primary gap-2">
             <ArrowLeft className="w-4 h-4" /> Retour à la liste
           </button>
         </div>
       </div>
     );
   }
-
-  const isEcart = parseFloat(prevision.ecart || 0) !== 0;
-  const ecartPositive = parseFloat(prevision.ecart || 0) > 0;
 
   return (
     <div className="space-y-4 sm:space-y-6 p-4 sm:p-6 bg-gray-50 min-h-screen">
@@ -161,17 +165,17 @@ const PrevisionsDetail = () => {
       <div className="relative overflow-hidden bg-gradient-to-r from-primary/10 via-primary/5 to-transparent rounded-2xl p-5">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <button onClick={() => navigate('/previsions')} className="btn btn-ghost btn-sm gap-2 mb-2">
+            <button onClick={() => navigate('/rapprochement-bancaire')} className="btn btn-ghost btn-sm gap-2 mb-2">
               <ArrowLeft className="w-4 h-4" /> Retour
             </button>
             <div className="flex items-center gap-3">
               <div className="p-2 bg-primary/10 rounded-xl">
-                <BarChart3 className="w-7 h-7 text-primary" />
+                <FileText className="w-7 h-7 text-primary" />
               </div>
               <div>
-                <h1 className="text-2xl sm:text-3xl font-black text-primary">Prévision de trésorerie</h1>
+                <h1 className="text-2xl sm:text-3xl font-black text-primary">Rapprochement bancaire</h1>
                 <p className="text-sm text-gray-500">
-                  {prevision.reference} – {prevision.titre}
+                  {rapprochement.reference} – {compteName}
                 </p>
               </div>
             </div>
@@ -180,7 +184,12 @@ const PrevisionsDetail = () => {
             <button onClick={fetchDetail} className="btn btn-sm sm:btn-md btn-outline gap-2">
               <RefreshCw className="w-4 h-4" /> Actualiser
             </button>
-            <button onClick={() => navigate(`/previsions/modifier/${id}`)} className="btn btn-sm sm:btn-md btn-warning gap-2">
+            {rapprochement.status !== 'complete' && (
+              <button onClick={handleValider} className="btn btn-sm sm:btn-md btn-success gap-2">
+                <CheckCircle className="w-4 h-4" /> Valider
+              </button>
+            )}
+            <button onClick={() => navigate(`/rapprochement-bancaire/modifier/${id}`)} className="btn btn-sm sm:btn-md btn-warning gap-2">
               <Edit className="w-4 h-4" /> Modifier
             </button>
             <button onClick={handleDelete} className="btn btn-sm sm:btn-md btn-error gap-2">
@@ -195,8 +204,8 @@ const PrevisionsDetail = () => {
         <div className="bg-white shadow-md rounded-xl p-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs text-gray-500">Montant prévu</p>
-              <p className="text-2xl font-bold">{formatCurrency(prevision.montant_prevu)}</p>
+              <p className="text-xs text-gray-500">Solde comptable</p>
+              <p className="text-2xl font-bold">{formatCurrency(rapprochement.solde_comptable)}</p>
             </div>
             <DollarSign className="w-8 h-8 text-primary/20" />
           </div>
@@ -204,8 +213,8 @@ const PrevisionsDetail = () => {
         <div className="bg-white shadow-md rounded-xl p-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs text-gray-500">Montant réel</p>
-              <p className="text-2xl font-bold">{formatCurrency(prevision.montant_reel)}</p>
+              <p className="text-xs text-gray-500">Solde bancaire</p>
+              <p className="text-2xl font-bold">{formatCurrency(rapprochement.solde_bancaire)}</p>
             </div>
             <DollarSign className="w-8 h-8 text-primary/20" />
           </div>
@@ -214,29 +223,30 @@ const PrevisionsDetail = () => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-xs text-gray-500">Écart</p>
-              <p className={`text-2xl font-bold ${isEcart ? (ecartPositive ? 'text-success' : 'text-error') : 'text-gray-500'}`}>
-                {formatCurrency(prevision.ecart)}
+              <p className={`text-2xl font-bold ${isRapproche(rapprochement) ? 'text-success' : 'text-error'}`}>
+                {formatCurrency(rapprochement.ecart)}
+                {!isRapproche(rapprochement) && <span className="text-sm ml-1">⚠️</span>}
               </p>
             </div>
-            {isEcart ? (
-              ecartPositive ? <TrendingUp className="w-8 h-8 text-success/20" /> : <TrendingDown className="w-8 h-8 text-error/20" />
+            {isRapproche(rapprochement) ? (
+              <CheckCircle className="w-8 h-8 text-success/20" />
             ) : (
-              <CheckCircle className="w-8 h-8 text-gray-300" />
+              <AlertCircle className="w-8 h-8 text-error/20" />
             )}
           </div>
         </div>
         <div className="bg-white shadow-md rounded-xl p-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs text-gray-500">Probabilité</p>
-              <p className="text-2xl font-bold">{prevision.probabilite || 0}%</p>
+              <p className="text-xs text-gray-500">Statut</p>
+              <div className="mt-1">{getStatusBadge(rapprochement.status)}</div>
             </div>
-            <Percent className="w-8 h-8 text-primary/20" />
+            <Clock className="w-8 h-8 text-primary/20" />
           </div>
         </div>
       </div>
 
-      {/* Détails */}
+      {/* Détails du rapprochement */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Informations générales */}
         <div className="bg-white shadow-md rounded-xl p-5">
@@ -246,126 +256,95 @@ const PrevisionsDetail = () => {
           <div className="space-y-3">
             <div className="flex justify-between items-center border-b pb-2">
               <span className="text-gray-600">Référence</span>
-              <span className="font-mono font-bold">{prevision.reference}</span>
-            </div>
-            <div className="flex justify-between items-center border-b pb-2">
-              <span className="text-gray-600">Titre</span>
-              <span className="font-bold">{prevision.titre}</span>
+              <span className="font-mono font-bold">{rapprochement.reference}</span>
             </div>
             <div className="flex justify-between items-center border-b pb-2">
               <span className="text-gray-600">Entrepôt</span>
               <span>{warehouseName}</span>
             </div>
             <div className="flex justify-between items-center border-b pb-2">
-              <span className="text-gray-600">Type</span>
-              <span>{getTypeBadge(prevision.type_prevision)}</span>
+              <span className="text-gray-600">Compte bancaire</span>
+              <span>{compteName}</span>
             </div>
             <div className="flex justify-between items-center border-b pb-2">
               <span className="text-gray-600">Période</span>
-              <span>{getPeriodeLabel(prevision.periode)}</span>
+              <span>{rapprochement.date_debut} → {rapprochement.date_fin}</span>
             </div>
-            <div className="flex justify-between items-center border-b pb-2">
+            <div className="flex justify-between items-center">
               <span className="text-gray-600">Statut</span>
-              <span>{getStatusBadge(prevision.statut)}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-gray-600">Probabilité</span>
-              <span>{prevision.probabilite || 0}%</span>
+              <span>{getStatusBadge(rapprochement.status)}</span>
             </div>
           </div>
         </div>
 
-        {/* Période et écarts */}
+        {/* Détails des écarts */}
         <div className="bg-white shadow-md rounded-xl p-5">
           <h2 className="text-lg font-bold text-primary mb-4 flex items-center gap-2">
-            <Calendar className="w-5 h-5" /> Période & écarts
+            <TrendingUp className="w-5 h-5" /> Détail des écarts
           </h2>
           <div className="space-y-3">
             <div className="flex justify-between items-center border-b pb-2">
-              <span className="text-gray-600">Date début</span>
-              <span>{prevision.date_debut}</span>
+              <span className="text-gray-600">Solde comptable</span>
+              <span className="font-bold">{formatCurrency(rapprochement.solde_comptable)}</span>
             </div>
             <div className="flex justify-between items-center border-b pb-2">
-              <span className="text-gray-600">Date fin</span>
-              <span>{prevision.date_fin}</span>
+              <span className="text-gray-600">Solde bancaire</span>
+              <span className="font-bold">{formatCurrency(rapprochement.solde_bancaire)}</span>
             </div>
             <div className="flex justify-between items-center border-b pb-2">
-              <span className="text-gray-600">Montant prévu</span>
-              <span className="font-bold">{formatCurrency(prevision.montant_prevu)}</span>
+              <span className="text-gray-600">En-cours d'émission</span>
+              <span>{formatCurrency(rapprochement.encours_emission)}</span>
             </div>
             <div className="flex justify-between items-center border-b pb-2">
-              <span className="text-gray-600">Montant réel</span>
-              <span className="font-bold">{formatCurrency(prevision.montant_reel)}</span>
+              <span className="text-gray-600">En-cours d'encaissement</span>
+              <span>{formatCurrency(rapprochement.encours_encaissement)}</span>
             </div>
             <div className="flex justify-between items-center border-b pb-2">
-              <span className="text-gray-600">Écart</span>
-              <span className={`font-bold ${isEcart ? (ecartPositive ? 'text-success' : 'text-error') : 'text-gray-500'}`}>
-                {formatCurrency(prevision.ecart)}
+              <span className="text-gray-600">Commissions bancaires</span>
+              <span>{formatCurrency(rapprochement.commissions)}</span>
+            </div>
+            <div className="flex justify-between items-center border-b pb-2">
+              <span className="text-gray-600">Autres écarts</span>
+              <span>{formatCurrency(rapprochement.autres_ecarts)}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-gray-600 font-bold">Écart</span>
+              <span className={`font-bold ${isRapproche(rapprochement) ? 'text-success' : 'text-error'}`}>
+                {formatCurrency(rapprochement.ecart)}
               </span>
             </div>
-            <div className="flex justify-between items-center">
-              <span className="text-gray-600">% Écart</span>
-              <span className={`font-bold ${isEcart ? (ecartPositive ? 'text-success' : 'text-error') : 'text-gray-500'}`}>
-                {prevision.pourcentage_ecart ? `${Number(prevision.pourcentage_ecart).toFixed(2)}%` : '0%'}
-              </span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Catégorie et source */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white shadow-md rounded-xl p-5">
-          <h2 className="text-lg font-bold text-primary mb-4 flex items-center gap-2">
-            <Tag className="w-5 h-5" /> Catégorisation
-          </h2>
-          <div className="space-y-3">
-            <div className="flex justify-between items-center border-b pb-2">
-              <span className="text-gray-600">Catégorie</span>
-              <span>{prevision.categorie || '-'}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-gray-600">Sous-catégorie</span>
-              <span>{prevision.sous_categorie || '-'}</span>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white shadow-md rounded-xl p-5">
-          <h2 className="text-lg font-bold text-primary mb-4 flex items-center gap-2">
-            <Building2 className="w-5 h-5" /> Source
-          </h2>
-          <div className="space-y-3">
-            <div className="flex justify-between items-center border-b pb-2">
-              <span className="text-gray-600">Type source</span>
-              <span>{prevision.source_type || '-'}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-gray-600">ID source</span>
-              <span>{prevision.source_id || '-'}</span>
+            <div className="flex justify-between items-center mt-2 pt-2 border-t">
+              <span className="text-gray-600 font-bold">Solde rapproché</span>
+              <span className="font-bold text-primary">{formatCurrency(rapprochement.solde_rapproche)}</span>
             </div>
           </div>
         </div>
       </div>
 
       {/* Notes */}
-      {prevision.notes && (
+      {rapprochement.notes && (
         <div className="bg-white shadow-md rounded-xl p-5">
           <h2 className="text-lg font-bold text-primary mb-2">Notes</h2>
-          <p className="text-gray-700 whitespace-pre-wrap">{prevision.notes}</p>
+          <p className="text-gray-700 whitespace-pre-wrap">{rapprochement.notes}</p>
         </div>
       )}
 
       {/* Métadonnées */}
       <div className="bg-white shadow-md rounded-xl p-5 text-sm text-gray-500">
         <div className="grid grid-cols-2 gap-4">
-          <div><span className="font-semibold">Créé le :</span> {new Date(prevision.created_at).toLocaleString()}</div>
-          <div><span className="font-semibold">Mis à jour :</span> {new Date(prevision.updated_at).toLocaleString()}</div>
-          <div><span className="font-semibold">Créé par :</span> {prevision.created_by || '-'}</div>
-          <div><span className="font-semibold">ID :</span> {prevision.id}</div>
+          <div><span className="font-semibold">Créé le :</span> {new Date(rapprochement.created_at).toLocaleString()}</div>
+          <div><span className="font-semibold">Mis à jour :</span> {new Date(rapprochement.updated_at).toLocaleString()}</div>
+          {rapprochement.date_validation && (
+            <div><span className="font-semibold">Validé le :</span> {new Date(rapprochement.date_validation).toLocaleString()}</div>
+          )}
+          {rapprochement.valide_par && (
+            <div><span className="font-semibold">Validé par :</span> {rapprochement.valide_par}</div>
+          )}
+          <div><span className="font-semibold">ID :</span> {rapprochement.id}</div>
         </div>
       </div>
     </div>
   );
 };
 
-export default PrevisionsDetail;
+export default RapprochementBancaireDetail;

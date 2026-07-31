@@ -110,11 +110,20 @@ import CompteBancaireForm from './components/tresorerie/ComptesBancairesForm';
 import CompteBancaireDetail from './components/tresorerie/CompteBancaireDetail';
 
 import MouvementsTresorerieList from './components/tresorerie/MouvementsTresorerieList';
+import MouvementTresorerieDetail from './components/tresorerie/MouvementTresorerieDetail';
 
 import PrevisionsList from './components/tresorerie/PrevisionsList';
 import PrevisionsForm from './components/tresorerie/PrevisionsForm';
 import PrevisionsDetail from './components/tresorerie/PrevisionsDetail';
+import TresorerieJournaliere from './components/tresorerie/TresorerieJournaliere';
+import TresorerieJournaliereDetail from './components/tresorerie/TresorerieJournaliereDetail';
+import RapprochementBancaireList from './components/tresorerie/RapprochementBancaireList';
+import RapprochementBancaireForm from './components/tresorerie/RapprochementBancaireForm';
+import RapprochementBancaireDetail from './components/tresorerie/RapprochementBancaireDetail';
 
+import DashboardTresorerie from './components/tresorerie/DashboardTresorerie';
+
+import AlertesTresorerie from './components/tresorerie/AlertesTresorerie';
 
 import FraisList from './components/tresorerie/FraisList';
 import FraisDetail from './components/tresorerie/FraisDetail';
@@ -173,13 +182,28 @@ function App() {
 <Route path="/comptes-bancaires/:id" element={<CompteBancaireDetail />} />
 <Route path="/comptes-bancaires/modifier/:id" element={<CompteBancaireForm />} />
 
+<Route path="/dashboard-tresorerie" element={<DashboardTresorerie />} />
+
+
+<Route path="/rapprochement-bancaire" element={<RapprochementBancaireList />} />
+<Route path="/rapprochement-bancaire/nouveau" element={<RapprochementBancaireForm isEdit={false} />} />
+<Route path="/rapprochement-bancaire/modifier/:id" element={<RapprochementBancaireForm isEdit={true} />} />
+<Route path="/rapprochement-bancaire/:id" element={<RapprochementBancaireDetail />} />
 
 <Route path="/mouvements-tresorerie" element={<MouvementsTresorerieList />} />
+<Route path="/mouvements-tresorerie/:id" element={<MouvementTresorerieDetail />} /> {/* à créer */}
+
+
+<Route path="/tresorerie-journaliere/:id" element={<TresorerieJournaliereDetail />} />
+<Route path="/tresorerie-journaliere" element={<TresorerieJournaliere />} />
+
 
 <Route path="/previsions" element={<PrevisionsList />} />
 <Route path="/previsions/nouveau" element={<PrevisionsForm />} />
 <Route path="/previsions/:id" element={<PrevisionsDetail />} /> {/* à créer */}
 <Route path="/previsions/modifier/:id" element={<PrevisionsForm />} />
+
+<Route path="/alertes-tresorerie" element={<AlertesTresorerie />} />
 
 
  <Route path="/frais" element={<FraisList />} />
