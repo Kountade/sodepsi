@@ -1,450 +1,477 @@
-// src/components/users/UtilisateurDetail.jsx
-import React, { useEffect, useState } from 'react'
-import { useNavigate, useParams, Link } from 'react-router-dom'
-import AxiosInstance from '../AxiosInstance'
-import { 
-  User, Mail, Phone, MapPin, Calendar, Building2, Shield, 
-  Edit, ArrowLeft, CheckCircle, XCircle, Briefcase, 
-  CreditCard, IdCard, Store, Crown, AlertCircle, 
-  UserCheck, UserX, Package, ShoppingCart, Clock, X,
-  Users, HardDrive, Award, Sparkles, Trophy
-} from 'lucide-react'
+// pages/utilisateurs/UtilisateurDetails.jsx
+import React, { useState, useEffect } from 'react';
+import { useParams, useNavigate, Link } from 'react-router-dom';
+import {
+  ArrowLeft, User, Mail, Phone, Calendar, MapPin,
+  Shield, UserCog, Edit, Trash2, Loader2,
+  AlertCircle, CheckCircle, XCircle, UserCheck,
+  UserX, Clock, Activity, Key, Home
+} from 'lucide-react';
+import AxiosInstance from '../AxiosInstance';
 
-const UtilisateurDetail = () => {
-  const navigate = useNavigate()
-  const { id } = useParams()
-  
-  const [utilisateur, setUtilisateur] = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
-  const [openStatusDialog, setOpenStatusDialog] = useState(false)
-  const [statusLoading, setStatusLoading] = useState(false)
-  const [snackbar, setSnackbar] = useState({ open: false, message: '', type: 'success' })
-
-  // Configuration des rôles
-  const roleConfig = {
-    pdg: { label: 'PDG', icon: Crown, color: 'error', bgColor: 'bg-error/10', textColor: 'text-error', description: 'Accès total à toutes les agences' },
-    drh: { label: 'DRH', icon: Shield, color: 'secondary', bgColor: 'bg-secondary/10', textColor: 'text-secondary', description: 'Gestion RH toutes agences' },
-    chef_agence: { label: "Chef d'agence", icon: Store, color: 'primary', bgColor: 'bg-primary/10', textColor: 'text-primary', description: 'Gestion complète de l\'agence' },
-    gestionnaire_stock: { label: 'Gestionnaire stock', icon: HardDrive, color: 'info', bgColor: 'bg-info/10', textColor: 'text-info', description: 'Gestion des stocks et logistique' },
-    commercial: { label: 'Commercial', icon: ShoppingCart, color: 'warning', bgColor: 'bg-warning/10', textColor: 'text-warning', description: 'Force de vente' },
-    autre: { label: 'Utilisateur', icon: User, color: 'neutral', bgColor: 'bg-base-200', textColor: 'text-base-content/70', description: 'Compte standard' }
-  }
-
-  const formatDate = (dateString) => {
-    if (!dateString) return 'Non renseigné'
-    try {
-      return new Date(dateString).toLocaleDateString('fr-FR', {
-        day: '2-digit',
-        month: 'long',
-        year: 'numeric'
-      })
-    } catch {
-      return 'Non renseigné'
-    }
-  }
-
-  const formatDateTime = (dateString) => {
-    if (!dateString) return 'Non renseigné'
-    try {
-      return new Date(dateString).toLocaleDateString('fr-FR', {
-        day: '2-digit',
-        month: 'long',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-      })
-    } catch {
-      return 'Non renseigné'
-    }
-  }
-
-  const fetchUserData = async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const response = await AxiosInstance.get(`/users/${id}/`)
-      setUtilisateur(response.data)
-    } catch (error) {
-      console.error('Erreur chargement utilisateur:', error)
-      if (error.response?.status === 404) {
-        setError('Utilisateur non trouvé')
-      } else {
-        setError('Erreur lors du chargement des données')
-      }
-    } finally {
-      setLoading(false)
-    }
-  }
+const UtilisateurDetails = () => {
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const [utilisateur, setUtilisateur] = useState(null);
+  const [chargement, setChargement] = useState(true);
+  const [erreur, setErreur] = useState(null);
+  const [showModalSuppression, setShowModalSuppression] = useState(false);
+  const [showModalStatut, setShowModalStatut] = useState(false);
+  const [chargementAction, setChargementAction] = useState(false);
 
   useEffect(() => {
-    if (id) {
-      fetchUserData()
-    }
-  }, [id])
+    chargerUtilisateur();
+  }, [id]);
 
-  const handleToggleStatus = async () => {
-    if (!utilisateur) return
-    setStatusLoading(true)
+  const chargerUtilisateur = async () => {
+    setChargement(true);
+    setErreur(null);
     try {
-      await AxiosInstance.patch(`/users/${utilisateur.id}/`, {
-        is_active: !utilisateur.is_active
-      })
-      setSnackbar({ 
-        open: true, 
-        message: `Utilisateur ${utilisateur.is_active ? 'désactivé' : 'activé'} avec succès`, 
-        type: 'success' 
-      })
-      fetchUserData()
-      setOpenStatusDialog(false)
-    } catch (error) {
-      console.error('Erreur:', error)
-      setSnackbar({ open: true, message: 'Erreur lors de la modification', type: 'error' })
+      const response = await AxiosInstance.get(`/users/${id}/`);
+      setUtilisateur(response.data);
+    } catch (err) {
+      console.error('Erreur:', err);
+      setErreur(err.response?.data?.error || 'Impossible de charger l\'utilisateur');
+      if (err.response?.status === 404) {
+        setErreur('Utilisateur non trouvé');
+      }
     } finally {
-      setStatusLoading(false)
+      setChargement(false);
     }
-  }
+  };
 
-  if (loading) {
+  const basculerStatut = async () => {
+    if (!utilisateur) return;
+    setChargementAction(true);
+    try {
+      const nouveauStatut = !utilisateur.is_active;
+      await AxiosInstance.patch(`/users/${id}/`, { is_active: nouveauStatut });
+      setUtilisateur({ ...utilisateur, is_active: nouveauStatut });
+      setShowModalStatut(false);
+    } catch (err) {
+      console.error('Erreur:', err);
+      alert(err.response?.data?.error || 'Erreur lors du changement de statut');
+    } finally {
+      setChargementAction(false);
+    }
+  };
+
+  const supprimerUtilisateur = async () => {
+    setChargementAction(true);
+    try {
+      await AxiosInstance.delete(`/users/${id}/`);
+      navigate('/utilisateurs');
+    } catch (err) {
+      console.error('Erreur:', err);
+      alert(err.response?.data?.error || 'Erreur lors de la suppression');
+      setShowModalSuppression(false);
+    } finally {
+      setChargementAction(false);
+    }
+  };
+
+  const formaterDate = (dateStr) => {
+    if (!dateStr) return 'N/A';
+    return new Date(dateStr).toLocaleDateString('fr-FR', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric'
+    });
+  };
+
+  const formaterDateHeure = (dateStr) => {
+    if (!dateStr) return 'N/A';
+    return new Date(dateStr).toLocaleString('fr-FR', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  const getBadgeRole = (role) => {
+    const roles = {
+      admin: { label: 'Administrateur', couleur: 'error', icone: Shield },
+      vendeur: { label: 'Vendeur', couleur: 'primary', icone: UserCog }
+    };
+    const info = roles[role] || { label: role, couleur: 'gray', icone: User };
+    const Icone = info.icone;
     return (
-      <div className="min-h-screen flex items-center justify-center bg-base-200">
-        <div className="text-center">
-          <div className="loading loading-spinner loading-lg text-primary"></div>
-          <p className="mt-4 text-base-content/60">Chargement des informations...</p>
-        </div>
+      <span className={`badge badge-${info.couleur} gap-2 text-sm py-3 px-4`}>
+        <Icone className="w-4 h-4" />
+        {info.label}
+      </span>
+    );
+  };
+
+  const getBadgeStatut = (estActif) => {
+    return estActif ? (
+      <span className="badge badge-success gap-2 text-sm py-3 px-4">
+        <CheckCircle className="w-4 h-4" />
+        Actif
+      </span>
+    ) : (
+      <span className="badge badge-error gap-2 text-sm py-3 px-4">
+        <XCircle className="w-4 h-4" />
+        Inactif
+      </span>
+    );
+  };
+
+  if (chargement) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="w-12 h-12 animate-spin text-primary" />
       </div>
-    )
+    );
   }
 
-  if (error || !utilisateur) {
+  if (erreur) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-base-200">
-        <div className="text-center">
-          <AlertCircle className="h-16 w-16 text-error mx-auto mb-4" />
-          <h2 className="text-xl font-bold text-base-content mb-2">{error || 'Utilisateur non trouvé'}</h2>
-          <p className="text-base-content/60 mb-4">L'utilisateur que vous recherchez n'existe pas ou a été supprimé.</p>
-          <button onClick={() => navigate('/utilisateurs')} className="btn btn-primary gap-2">
-            <ArrowLeft className="w-4 h-4" />
-            Retour à la liste
+      <div className="text-center py-20">
+        <AlertCircle className="w-20 h-20 text-error mx-auto mb-4" />
+        <p className="text-xl text-base-content/70">{erreur}</p>
+        <button onClick={chargerUtilisateur} className="btn btn-primary mt-4">
+          Réessayer
+        </button>
+      </div>
+    );
+  }
+
+  if (!utilisateur) return null;
+
+  return (
+    <div className="w-full max-w-5xl mx-auto">
+      <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+        <div className="flex items-center gap-4">
+          <button 
+            onClick={() => navigate('/utilisateurs')} 
+            className="btn btn-ghost btn-circle"
+          >
+            <ArrowLeft className="w-6 h-6" />
+          </button>
+          <div>
+            <h1 className="text-3xl font-bold flex items-center gap-3">
+              {utilisateur.username || utilisateur.email}
+            </h1>
+            <p className="text-base-content/60">
+              ID: {utilisateur.id} • Inscrit le {formaterDate(utilisateur.created_at)}
+            </p>
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setShowModalStatut(true)}
+            className={`btn ${utilisateur.is_active ? 'btn-warning' : 'btn-success'} gap-2`}
+          >
+            {utilisateur.is_active ? <UserX className="w-4 h-4" /> : <UserCheck className="w-4 h-4" />}
+            {utilisateur.is_active ? 'Désactiver' : 'Activer'}
+          </button>
+          <Link
+            to={`/utilisateurs/${id}/modifier`}
+            className="btn btn-primary gap-2"
+          >
+            <Edit className="w-4 h-4" />
+            Modifier
+          </Link>
+          <button
+            onClick={() => setShowModalSuppression(true)}
+            className="btn btn-error gap-2"
+          >
+            <Trash2 className="w-4 h-4" />
+            Supprimer
           </button>
         </div>
       </div>
-    )
-  }
 
-  const roleInfo = roleConfig[utilisateur.role_global] || roleConfig.autre
-  const RoleIcon = roleInfo.icon
-  const nomComplet = `${utilisateur.first_name || ''} ${utilisateur.last_name || ''}`.trim() || utilisateur.email?.split('@')[0] || 'Utilisateur'
-
-  return (
-    <div className="min-h-screen bg-base-200 py-6 px-4">
-      <div className="w-full max-w-6xl mx-auto">
-        
-        {/* Snackbar */}
-        {snackbar.open && (
-          <div className="fixed bottom-4 right-4 z-50 animate-slide-in">
-            <div className={`alert shadow-xl ${snackbar.type === 'success' ? 'alert-success' : 'alert-error'}`}>
-              <div className="flex items-center gap-2">
-                {snackbar.type === 'success' ? <CheckCircle className="h-5 w-5" /> : <AlertCircle className="h-5 w-5" />}
-                <span>{snackbar.message}</span>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2">
+          <div className="card bg-base-100 shadow-xl">
+            <div className="card-body">
+              <h3 className="card-title text-lg flex items-center gap-2">
+                <User className="w-5 h-5 text-primary" />
+                Informations personnelles
+              </h3>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                <div>
+                  <label className="text-sm text-base-content/40">Email</label>
+                  <p className="font-medium flex items-center gap-2">
+                    <Mail className="w-4 h-4 text-base-content/40" />
+                    {utilisateur.email}
+                  </p>
+                </div>
+                <div>
+                  <label className="text-sm text-base-content/40">Rôle</label>
+                  <p>{getBadgeRole(utilisateur.role)}</p>
+                </div>
+                <div>
+                  <label className="text-sm text-base-content/40">Nom d'utilisateur</label>
+                  <p className="font-medium">{utilisateur.username || 'Non défini'}</p>
+                </div>
+                <div>
+                  <label className="text-sm text-base-content/40">Statut</label>
+                  <p>{getBadgeStatut(utilisateur.is_active)}</p>
+                </div>
+                {utilisateur.first_name && (
+                  <div>
+                    <label className="text-sm text-base-content/40">Prénom</label>
+                    <p className="font-medium">{utilisateur.first_name}</p>
+                  </div>
+                )}
+                {utilisateur.last_name && (
+                  <div>
+                    <label className="text-sm text-base-content/40">Nom</label>
+                    <p className="font-medium">{utilisateur.last_name}</p>
+                  </div>
+                )}
+                {utilisateur.birthday && (
+                  <div>
+                    <label className="text-sm text-base-content/40">Date de naissance</label>
+                    <p className="font-medium flex items-center gap-2">
+                      <Calendar className="w-4 h-4 text-base-content/40" />
+                      {formaterDate(utilisateur.birthday)}
+                    </p>
+                  </div>
+                )}
+                {utilisateur.phone_number && (
+                  <div>
+                    <label className="text-sm text-base-content/40">Téléphone</label>
+                    <p className="font-medium flex items-center gap-2">
+                      <Phone className="w-4 h-4 text-base-content/40" />
+                      {utilisateur.phone_number}
+                    </p>
+                  </div>
+                )}
               </div>
-              <button onClick={() => setSnackbar({ ...snackbar, open: false })} className="btn btn-sm btn-ghost">✕</button>
+
+              {utilisateur.address && (
+                <div className="mt-4 pt-4 border-t border-base-200">
+                  <label className="text-sm text-base-content/40">Adresse</label>
+                  <p className="font-medium flex items-start gap-2">
+                    <MapPin className="w-4 h-4 text-base-content/40 mt-1" />
+                    {utilisateur.address}
+                  </p>
+                </div>
+              )}
             </div>
           </div>
-        )}
 
-        {/* Bouton retour */}
-        <div className="mb-4">
-          <Link
-            to="/utilisateurs"
-            className="btn btn-ghost btn-sm gap-2 text-base-content/70 hover:text-primary transition-colors"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            Retour à la liste
-          </Link>
+          <div className="card bg-base-100 shadow-xl mt-6">
+            <div className="card-body">
+              <h3 className="card-title text-lg flex items-center gap-2">
+                <Activity className="w-5 h-5 text-info" />
+                Informations système
+              </h3>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                <div>
+                  <label className="text-sm text-base-content/40">Date d'inscription</label>
+                  <p className="font-medium flex items-center gap-2">
+                    <Calendar className="w-4 h-4 text-base-content/40" />
+                    {formaterDateHeure(utilisateur.created_at)}
+                  </p>
+                </div>
+                <div>
+                  <label className="text-sm text-base-content/40">Dernière mise à jour</label>
+                  <p className="font-medium flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-base-content/40" />
+                    {formaterDateHeure(utilisateur.updated_at)}
+                  </p>
+                </div>
+                {utilisateur.last_login && (
+                  <div>
+                    <label className="text-sm text-base-content/40">Dernière connexion</label>
+                    <p className="font-medium flex items-center gap-2">
+                      <Clock className="w-4 h-4 text-base-content/40" />
+                      {formaterDateHeure(utilisateur.last_login)}
+                    </p>
+                  </div>
+                )}
+                {utilisateur.last_login_ip && (
+                  <div>
+                    <label className="text-sm text-base-content/40">Dernière IP</label>
+                    <p className="font-medium font-mono">{utilisateur.last_login_ip}</p>
+                  </div>
+                )}
+                <div>
+                  <label className="text-sm text-base-content/40">Statut en ligne</label>
+                  <p>
+                    {utilisateur.is_online ? (
+                      <span className="badge badge-success gap-1">
+                        <span className="w-2 h-2 rounded-full bg-success animate-pulse"></span>
+                        En ligne
+                      </span>
+                    ) : (
+                      <span className="badge badge-ghost">Hors ligne</span>
+                    )}
+                  </p>
+                </div>
+                <div>
+                  <label className="text-sm text-base-content/40">Staff</label>
+                  <p>{utilisateur.is_staff ? 'Oui' : 'Non'}</p>
+                </div>
+                <div>
+                  <label className="text-sm text-base-content/40">Superutilisateur</label>
+                  <p>{utilisateur.is_superuser ? 'Oui' : 'Non'}</p>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
-        {/* En-tête */}
-        <div className="bg-gradient-to-r from-primary to-primary/80 rounded-2xl shadow-lg mb-6 overflow-hidden">
-          <div className="p-6 md:p-8">
-            <div className="flex flex-col md:flex-row items-start md:items-center gap-6">
-              {/* Avatar */}
-              <div className="relative">
-                <div className="w-24 h-24 rounded-2xl bg-white/10 flex items-center justify-center shadow-lg border-2 border-white/20">
-                  <span className="text-4xl font-bold text-white">
-                    {nomComplet.charAt(0).toUpperCase()}
+        <div className="lg:col-span-1">
+          <div className="card bg-base-100 shadow-xl">
+            <div className="card-body text-center">
+              <div className="avatar placeholder">
+                <div className={`w-24 h-24 rounded-full mx-auto ${utilisateur.is_active ? 'bg-primary/20' : 'bg-base-300'}`}>
+                  <span className={`text-4xl font-bold ${utilisateur.is_active ? 'text-primary' : 'text-base-content/40'}`}>
+                    {(utilisateur.username || utilisateur.email).charAt(0).toUpperCase()}
                   </span>
                 </div>
-                <div className={`absolute -bottom-2 -right-2 w-6 h-6 rounded-full ${utilisateur.is_active ? 'bg-success' : 'bg-error'} border-2 border-white`}></div>
               </div>
-              
-              {/* Infos principales */}
-              <div className="flex-1">
-                <div className="flex flex-wrap items-center gap-2 mb-2">
-                  <h1 className="text-2xl md:text-3xl font-bold text-white">{nomComplet}</h1>
-                  <div className={`badge ${roleInfo.bgColor} ${roleInfo.textColor} gap-1`}>
-                    <RoleIcon className="w-3 h-3" />
-                    {roleInfo.label}
-                  </div>
-                  <div className={`badge ${utilisateur.is_active ? 'badge-success' : 'badge-error'} gap-1`}>
-                    {utilisateur.is_active ? <CheckCircle className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
-                    {utilisateur.is_active ? 'Actif' : 'Inactif'}
-                  </div>
-                </div>
-                <div className="flex flex-wrap gap-4 text-white/80 text-sm">
-                  <div className="flex items-center gap-1">
-                    <Mail className="w-4 h-4" />
-                    {utilisateur.email}
-                  </div>
-                  {utilisateur.phone && (
-                    <div className="flex items-center gap-1">
-                      <Phone className="w-4 h-4" />
-                      {utilisateur.phone}
-                    </div>
-                  )}
-                  {utilisateur.employee_id && (
-                    <div className="flex items-center gap-1">
-                      <IdCard className="w-4 h-4" />
-                      Matricule: {utilisateur.employee_id}
-                    </div>
-                  )}
-                </div>
+              <h3 className="text-xl font-bold mt-2">
+                {utilisateur.username || utilisateur.email}
+              </h3>
+              <p className="text-sm text-base-content/40">{utilisateur.email}</p>
+              <div className="flex justify-center gap-2 mt-2">
+                {getBadgeRole(utilisateur.role)}
+                {getBadgeStatut(utilisateur.is_active)}
               </div>
-              
-              {/* Actions */}
-              <div className="flex gap-2">
-                <Link 
-                  to={`/utilisateurs/${id}/edit`}
-                  className="btn btn-accent gap-2"
+            </div>
+          </div>
+
+          <div className="card bg-base-100 shadow-xl mt-6">
+            <div className="card-body">
+              <h4 className="font-medium flex items-center gap-2">
+                <Key className="w-4 h-4 text-primary" />
+                Permissions
+              </h4>
+              <div className="mt-2 space-y-1">
+                {utilisateur.role === 'admin' ? (
+                  <>
+                    <p className="text-sm flex items-center gap-2 text-success">
+                      <CheckCircle className="w-3 h-3" />
+                      Accès total
+                    </p>
+                    <p className="text-sm text-base-content/60 pl-5">
+                      • Gestion des utilisateurs<br />
+                      • Gestion des produits<br />
+                      • Gestion des ventes<br />
+                      • Rapports et statistiques
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-sm flex items-center gap-2 text-info">
+                      <CheckCircle className="w-3 h-3" />
+                      Accès limité
+                    </p>
+                    <p className="text-sm text-base-content/60 pl-5">
+                      • Voir les produits<br />
+                      • Effectuer des ventes<br />
+                      • Voir ses propres ventes
+                    </p>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {showModalSuppression && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowModalSuppression(false)}></div>
+          <div className="relative bg-base-100 rounded-2xl shadow-2xl max-w-md w-full mx-4 p-6">
+            <div className="text-center">
+              <div className="w-16 h-16 rounded-full bg-error/20 flex items-center justify-center mx-auto mb-4">
+                <Trash2 className="w-8 h-8 text-error" />
+              </div>
+              <h3 className="text-xl font-bold mb-2">Supprimer l'utilisateur</h3>
+              <p className="text-base-content/60 mb-4">
+                Êtes-vous sûr de vouloir supprimer définitivement 
+                l'utilisateur <span className="font-bold">{utilisateur.email}</span> ?
+                <br />
+                <span className="text-error text-sm">Cette action est irréversible !</span>
+              </p>
+              <div className="flex gap-3">
+                <button
+                  className="btn flex-1"
+                  onClick={() => setShowModalSuppression(false)}
+                  disabled={chargementAction}
                 >
-                  <Edit className="w-4 h-4" />
-                  Modifier
-                </Link>
-                <button 
-                  onClick={() => setOpenStatusDialog(true)}
-                  className={`btn gap-2 ${utilisateur.is_active ? 'btn-warning' : 'btn-success'} text-white`}
+                  Annuler
+                </button>
+                <button
+                  className="btn btn-error flex-1"
+                  onClick={supprimerUtilisateur}
+                  disabled={chargementAction}
                 >
-                  {utilisateur.is_active ? <UserX className="w-4 h-4" /> : <UserCheck className="w-4 h-4" />}
-                  {utilisateur.is_active ? 'Désactiver' : 'Activer'}
+                  {chargementAction ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                      Suppression...
+                    </>
+                  ) : (
+                    'Supprimer'
+                  )}
                 </button>
               </div>
             </div>
           </div>
         </div>
+      )}
 
-        {/* Grille des informations */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          
-          {/* Colonne gauche - Informations personnelles */}
-          <div className="lg:col-span-2 space-y-6">
-            
-            {/* Carte informations personnelles */}
-            <div className="card bg-base-100 shadow-xl border border-base-200">
-              <div className="card-body">
-                <h2 className="card-title text-base-content flex items-center gap-2">
-                  <User className="h-5 w-5 text-primary" />
-                  Informations personnelles
-                </h2>
-                <div className="divider my-2"></div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Prénom</label>
-                    <p className="text-base-content font-medium">{utilisateur.first_name || 'Non renseigné'}</p>
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Nom</label>
-                    <p className="text-base-content font-medium">{utilisateur.last_name || 'Non renseigné'}</p>
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Téléphone</label>
-                    <p className="text-base-content">{utilisateur.phone || 'Non renseigné'}</p>
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Email</label>
-                    <p className="text-base-content">{utilisateur.email}</p>
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Matricule</label>
-                    <p className="text-base-content">{utilisateur.employee_id || 'Non renseigné'}</p>
-                  </div>
-                </div>
+      {showModalStatut && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowModalStatut(false)}></div>
+          <div className="relative bg-base-100 rounded-2xl shadow-2xl max-w-md w-full mx-4 p-6">
+            <div className="text-center">
+              <div className={`w-16 h-16 rounded-full ${utilisateur.is_active ? 'bg-warning/20' : 'bg-success/20'} flex items-center justify-center mx-auto mb-4`}>
+                {utilisateur.is_active ? (
+                  <UserX className="w-8 h-8 text-warning" />
+                ) : (
+                  <UserCheck className="w-8 h-8 text-success" />
+                )}
               </div>
-            </div>
-
-            {/* Carte adresse */}
-            <div className="card bg-base-100 shadow-xl border border-base-200">
-              <div className="card-body">
-                <h2 className="card-title text-base-content flex items-center gap-2">
-                  <MapPin className="h-5 w-5 text-primary" />
-                  Adresse
-                </h2>
-                <div className="divider my-2"></div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="md:col-span-2">
-                    <label className="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Adresse</label>
-                    <p className="text-base-content">{utilisateur.address || 'Non renseignée'}</p>
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Ville</label>
-                    <p className="text-base-content">{utilisateur.city || 'Non renseignée'}</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Carte informations professionnelles */}
-            <div className="card bg-base-100 shadow-xl border border-base-200">
-              <div className="card-body">
-                <h2 className="card-title text-base-content flex items-center gap-2">
-                  <Briefcase className="h-5 w-5 text-primary" />
-                  Informations professionnelles
-                </h2>
-                <div className="divider my-2"></div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Date d'embauche</label>
-                    <p className="text-base-content">{formatDate(utilisateur.hire_date)}</p>
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Type de contrat</label>
-                    <p className="text-base-content">{utilisateur.contract_type || 'Non renseigné'}</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Colonne droite - Rôles et métadonnées */}
-          <div className="space-y-6">
-            
-            {/* Carte rôle global */}
-            <div className="card bg-base-100 shadow-xl border border-base-200">
-              <div className="card-body">
-                <h2 className="card-title text-base-content flex items-center gap-2">
-                  <Shield className="h-5 w-5 text-primary" />
-                  Rôle global
-                </h2>
-                <div className="divider my-2"></div>
-                <div className={`p-4 rounded-xl ${roleInfo.bgColor} border border-${roleInfo.color}/20`}>
-                  <div className="flex items-center gap-3">
-                    <div className={`p-2 rounded-lg bg-${roleInfo.color}/20`}>
-                      <RoleIcon className={`h-6 w-6 ${roleInfo.textColor}`} />
-                    </div>
-                    <div>
-                      <p className={`font-semibold ${roleInfo.textColor}`}>{roleInfo.label}</p>
-                      <p className="text-xs text-base-content/50">{roleInfo.description}</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Carte rôles par agence */}
-            {utilisateur.roles_agence && utilisateur.roles_agence.length > 0 && (
-              <div className="card bg-base-100 shadow-xl border border-base-200">
-                <div className="card-body">
-                  <h2 className="card-title text-base-content flex items-center gap-2">
-                    <Building2 className="h-5 w-5 text-primary" />
-                    Rôles par agence
-                  </h2>
-                  <div className="divider my-2"></div>
-                  <div className="space-y-3">
-                    {utilisateur.roles_agence.map((role, idx) => {
-                      const roleInfoAgence = roleConfig[role.role] || roleConfig.autre
-                      const RoleAgenceIcon = roleInfoAgence.icon
-                      return (
-                        <div key={idx} className={`p-3 rounded-lg ${roleInfoAgence.bgColor} border border-${roleInfoAgence.color}/20`}>
-                          <div className="flex items-start gap-3">
-                            <div className={`p-1.5 rounded-lg bg-${roleInfoAgence.color}/20`}>
-                              <RoleAgenceIcon className={`h-4 w-4 ${roleInfoAgence.textColor}`} />
-                            </div>
-                            <div className="flex-1">
-                              <p className={`font-medium text-sm ${roleInfoAgence.textColor}`}>{role.role_display}</p>
-                              <p className="text-xs text-base-content/60">{role.agence_nom}</p>
-                              <p className="text-xs text-base-content/40 mt-1">Attribué le {formatDate(role.date_attribution)}</p>
-                            </div>
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Carte métadonnées */}
-            <div className="card bg-base-100 shadow-xl border border-base-200">
-              <div className="card-body">
-                <h2 className="card-title text-base-content flex items-center gap-2">
-                  <Clock className="h-5 w-5 text-primary" />
-                  Métadonnées
-                </h2>
-                <div className="divider my-2"></div>
-                <div className="space-y-3">
-                  <div>
-                    <label className="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Date de création</label>
-                    <p className="text-sm text-base-content">{formatDateTime(utilisateur.created_at)}</p>
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Dernière modification</label>
-                    <p className="text-sm text-base-content">{formatDateTime(utilisateur.updated_at)}</p>
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Dernière connexion</label>
-                    <p className="text-sm text-base-content">{formatDateTime(utilisateur.last_login)}</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Modal confirmation changement de statut */}
-      {openStatusDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="bg-base-100 rounded-2xl shadow-xl max-w-md w-full mx-4 overflow-hidden">
-            <div className={`p-4 text-center ${utilisateur.is_active ? 'bg-warning' : 'bg-success'}`}>
-              {utilisateur.is_active ? (
-                <UserX className="h-12 w-12 text-white mx-auto mb-2" />
-              ) : (
-                <UserCheck className="h-12 w-12 text-white mx-auto mb-2" />
-              )}
-              <h3 className="text-xl font-bold text-white">
+              <h3 className="text-xl font-bold mb-2">
                 {utilisateur.is_active ? 'Désactiver' : 'Activer'} l'utilisateur
               </h3>
-            </div>
-            <div className="p-6 text-center">
-              <p className="text-base-content/70">
-                Êtes-vous sûr de vouloir {utilisateur.is_active ? 'désactiver' : 'activer'} l'utilisateur 
-                <strong className={utilisateur.is_active ? 'text-warning' : 'text-success'}>
-                  " {nomComplet} "
-                </strong>
-                ?
+              <p className="text-base-content/60 mb-4">
+                Êtes-vous sûr de vouloir {utilisateur.is_active ? 'désactiver' : 'activer'} 
+                l'utilisateur <span className="font-bold">{utilisateur.email}</span> ?
               </p>
-              <p className="text-sm text-base-content/50 mt-2">
-                {utilisateur.is_active 
-                  ? 'L\'utilisateur ne pourra plus se connecter.' 
-                  : 'L\'utilisateur pourra à nouveau se connecter.'}
-              </p>
-            </div>
-            <div className="flex gap-3 p-4 bg-base-200">
-              <button onClick={() => setOpenStatusDialog(false)} className="btn btn-ghost flex-1">
-                Annuler
-              </button>
-              <button 
-                onClick={handleToggleStatus} 
-                disabled={statusLoading}
-                className={`btn flex-1 text-white ${utilisateur.is_active ? 'btn-warning' : 'btn-success'}`}
-              >
-                {statusLoading ? <span className="loading loading-spinner loading-sm"></span> : (utilisateur.is_active ? 'Désactiver' : 'Activer')}
-              </button>
+              <div className="flex gap-3">
+                <button
+                  className="btn flex-1"
+                  onClick={() => setShowModalStatut(false)}
+                  disabled={chargementAction}
+                >
+                  Annuler
+                </button>
+                <button
+                  className={`btn flex-1 ${utilisateur.is_active ? 'btn-warning' : 'btn-success'}`}
+                  onClick={basculerStatut}
+                  disabled={chargementAction}
+                >
+                  {chargementAction ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                      Chargement...
+                    </>
+                  ) : (
+                    utilisateur.is_active ? 'Désactiver' : 'Activer'
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         </div>
       )}
     </div>
-  )
-}
+  );
+};
 
-export default UtilisateurDetail
+export default UtilisateurDetails;

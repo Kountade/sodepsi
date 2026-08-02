@@ -133,6 +133,11 @@ import Dashboard from './components/dashboard/Dashboard';
 import Statistiques from './components/dashboard/Statistiques';
 import Analyses from './components/dashboard/Analyses';
 
+import Utilisateurs from './components/users/Utilisateurs';
+import UtilisateurForm from './components/users/UtilisateurForm';
+import UtilisateurDetails from './components/users/UtilisateurDetail';
+import Profile from './components/Profile';
+
 function App() {
   const location = useLocation();
   
@@ -166,6 +171,12 @@ function App() {
         <Route path="/statistiques" element={<Statistiques />} />
         <Route path="/analyses" element={<Analyses />} />
 
+
+        <Route path="/utilisateurs" element={<Utilisateurs />} />
+        <Route path="/utilisateurs/ajouter" element={<UtilisateurForm />} />
+        <Route path="/utilisateurs/:id" element={<UtilisateurDetails />} />
+        <Route path="/utilisateurs/:id/modifier" element={<UtilisateurForm />} />
+        <Route path="/profile" element={<Profile />} />
                 {/* ==================== CATÉGORIES ==================== */}
                 <Route path="/categories" element={<Categories />} />
                 <Route path="/categories/nouveau" element={<CategoryForm />} />

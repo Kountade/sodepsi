@@ -1,4 +1,4 @@
-// src/components/Navbar.jsx - Version SODEPCI avec Finances et Trésorerie séparées
+// src/components/Navbar.jsx - Version SODEPCI avec rôles Admin et Vendeur uniquement
 
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
@@ -68,7 +68,6 @@ import {
   BarChart3,
   Edit,
   Eye,
-  // ========== ICÔNES POUR FINANCES & TRÉSORERIE ==========
   Landmark,        
   Coins,           
   ReceiptText,     
@@ -91,7 +90,6 @@ import {
 
 import logo from '../assets/logo.svg';
 
-// Import conditionnel
 let AxiosInstance = null;
 let GlobalAlerts = null;
 
@@ -102,15 +100,22 @@ try {
   console.warn('Modules optionnels non trouvés:', error.message);
 }
 
-// Configuration des rôles
+// Configuration des rôles - UNIQUEMENT ADMIN ET VENDEUR
 const ROLE_CONFIG = {
-  admin: { label: 'Administrateur', color: 'error', icon: Shield, description: 'Accès total', level: 100 },
-  gestionnaire: { label: 'Gestionnaire', color: 'secondary', icon: UsersRound, description: 'Gestion complète', level: 90 },
-  comptable: { label: 'Comptable', color: 'primary', icon: Calculator, description: 'Gestion financière', level: 80 },
-  magasinier: { label: 'Magasinier', color: 'info', icon: Boxes, description: 'Gestion des stocks', level: 70 },
-  caissier: { label: 'Caissier', color: 'warning', icon: CreditCard, description: 'Point de vente', level: 60 },
-  livreur: { label: 'Livreur', color: 'neutral', icon: Truck, description: 'Livraisons', level: 50 },
-  tresorier: { label: 'Trésorier', color: 'primary', icon: Wallet, description: 'Gestion de trésorerie', level: 85 }
+  admin: { 
+    label: 'Administrateur', 
+    color: 'error', 
+    icon: Shield, 
+    description: 'Accès total', 
+    level: 100 
+  },
+  vendeur: { 
+    label: 'Vendeur', 
+    color: 'primary', 
+    icon: ShoppingBag, 
+    description: 'Ventes uniquement', 
+    level: 60 
+  }
 };
 
 const Navbar = ({ content, mode, toggleColorMode }) => {
@@ -127,42 +132,20 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
   const [openSections, setOpenSections] = useState({
     'TABLEAU DE BORD': true,
     'VENTES': true,
-    'PRODUITS & STOCKS': false,
-    'ACHATS & FOURNISSEURS': false,
-    'FINANCES': false,
-    'TRÉSORERIE': false,
-    'LIVRAISONS': false,
-    'PARAMÈTRES': false,
     'MON ESPACE': false
   });
   
   const [userInitial, setUserInitial] = useState('U');
   const [userFullName, setUserFullName] = useState('Utilisateur');
-  const [userRole, setUserRole] = useState('caissier');
+  const [userRole, setUserRole] = useState('vendeur');
   const [currentTime, setCurrentTime] = useState(new Date());
   
   // États des compteurs
-  const [commandesALivrer, setCommandesALivrer] = useState(0);
-  const [stocksFaibles, setStocksFaibles] = useState(0);
   const [ventesImpayees, setVentesImpayees] = useState(0);
-  const [retoursCount, setRetoursCount] = useState(0);
   const [notificationsCount, setNotificationsCount] = useState(0);
+  const [commandesEnAttente, setCommandesEnAttente] = useState(0);
+  const [stocksFaibles, setStocksFaibles] = useState(0);
   const [alertesStockCount, setAlertesStockCount] = useState(0);
-  const [facturesEcheance, setFacturesEcheance] = useState(0);
-  
-  // États pour la Trésorerie
-  const [alertesTresorerieCount, setAlertesTresorerieCount] = useState(0);
-  const [mouvementsEnAttente, setMouvementsEnAttente] = useState(0);
-  const [fraisEnAttente, setFraisEnAttente] = useState(0);
-  const [caissesSousSeuil, setCaissesSousSeuil] = useState(0);
-
-  // Nouvel état pour les alertes de péremption
-  const [alertesPeremptionCount, setAlertesPeremptionCount] = useState(0);
-  
-  // États des alertes globales
-  const [showGlobalAlerts, setShowGlobalAlerts] = useState(false);
-  const [globalAlertCount, setGlobalAlertCount] = useState(0);
-  const [alertStats, setAlertStats] = useState({ total: 0, error: 0, warning: 0, info: 0 });
 
   // Récupérer l'utilisateur
   const getUserData = () => {
@@ -175,7 +158,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
   };
 
   const user = getUserData();
-  const role = user?.role || 'caissier';
+  const role = user?.role || 'vendeur';
   const userEmail = user?.email || '';
   const firstName = user?.first_name || '';
   const lastName = user?.last_name || '';
@@ -192,25 +175,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
 
   // Permissions
   const isAdmin = role === 'admin';
-  const isGestionnaire = role === 'gestionnaire';
-  const isComptable = role === 'comptable';
-  const isMagasinier = role === 'magasinier';
-  const isCaissier = role === 'caissier';
-  const isLivreur = role === 'livreur';
-  const isTresorier = role === 'tresorier' || isAdmin || isGestionnaire || isComptable;
-  
-  // Fonctions de permission
-  const canViewSales = () => isAdmin || isGestionnaire || isCaissier || isComptable;
-  const canViewPOS = () => isAdmin || isCaissier;
-  const canViewStock = () => isAdmin || isGestionnaire || isMagasinier;
-  const canViewPurchases = () => isAdmin || isGestionnaire;
-  const canViewFinances = () => isAdmin || isGestionnaire || isComptable;
-  const canViewTresorerie = () => isAdmin || isGestionnaire || isComptable || isTresorier;
-  const canViewUsers = () => isAdmin;
-  const canViewDeliveries = () => isAdmin || isGestionnaire || isLivreur;
-  const canViewParameters = () => isAdmin || isGestionnaire;
-  const canViewBackups = () => isAdmin;
-  const canViewAudit = () => isAdmin;
+  const isVendeur = role === 'vendeur';
 
   // Initiale utilisateur
   useEffect(() => {
@@ -223,7 +188,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
     }
   }, [firstName, lastName, userName]);
 
-  const roleConfig = ROLE_CONFIG[role] || ROLE_CONFIG.caissier;
+  const roleConfig = ROLE_CONFIG[role] || ROLE_CONFIG.vendeur;
   const RoleIcon = roleConfig.icon;
 
   // Charger les données
@@ -233,24 +198,18 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
         const token = localStorage.getItem('Token');
         if (!token || !AxiosInstance) return;
 
-        if (isAdmin || isGestionnaire) {
+        // Admin charge toutes les données
+        if (isAdmin) {
           const ordersRes = await AxiosInstance.get('/purchase-orders/?status=pending', {
             headers: { Authorization: `Token ${token}` }
           }).catch(() => ({ data: [] }));
-          setCommandesALivrer(ordersRes.data?.length || 0);
-
-          const retoursRes = await AxiosInstance.get('/purchase-returns/?status=requested', {
-            headers: { Authorization: `Token ${token}` }
-          }).catch(() => ({ data: [] }));
-          setRetoursCount(retoursRes.data?.length || 0);
+          setCommandesEnAttente(ordersRes.data?.length || 0);
 
           const notifRes = await AxiosInstance.get('/notifications/unread-count/', {
             headers: { Authorization: `Token ${token}` }
           }).catch(() => ({ data: { unread_count: 0 } }));
           setNotificationsCount(notifRes.data?.unread_count || 0);
-        }
 
-        if (isAdmin || isMagasinier) {
           const stocksRes = await AxiosInstance.get('/stocks/low-stock/', {
             headers: { Authorization: `Token ${token}` }
           }).catch(() => ({ data: [] }));
@@ -260,47 +219,14 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
             headers: { Authorization: `Token ${token}` }
           }).catch(() => ({ data: [] }));
           setAlertesStockCount(alertesRes.data?.length || 0);
-
-          // Récupération des alertes de péremption (expiry-alerts)
-          const peremptionRes = await AxiosInstance.get('/expiry-alerts/?is_active=true', {
-            headers: { Authorization: `Token ${token}` }
-          }).catch(() => ({ data: [] }));
-          setAlertesPeremptionCount(peremptionRes.data?.length || 0);
         }
 
-        if (isAdmin || isComptable || isCaissier) {
+        // Admin et Vendeur voient les ventes impayées
+        if (isAdmin || isVendeur) {
           const ventesRes = await AxiosInstance.get('/sales/?payment_status=pending', {
             headers: { Authorization: `Token ${token}` }
           }).catch(() => ({ data: [] }));
           setVentesImpayees(ventesRes.data?.length || 0);
-
-          const facturesRes = await AxiosInstance.get('/invoices/?status=due', {
-            headers: { Authorization: `Token ${token}` }
-          }).catch(() => ({ data: [] }));
-          setFacturesEcheance(facturesRes.data?.length || 0);
-        }
-
-        // Chargement des données Trésorerie
-        if (canViewTresorerie()) {
-          const alertesRes = await AxiosInstance.get('/tresorerie/alertes/list/', {
-            headers: { Authorization: `Token ${token}` }
-          }).catch(() => ({ data: { alertes: [] } }));
-          setAlertesTresorerieCount(alertesRes.data?.alertes?.length || 0);
-
-          const mouvementsRes = await AxiosInstance.get('/tresorerie/mouvements/?status=en_attente', {
-            headers: { Authorization: `Token ${token}` }
-          }).catch(() => ({ data: [] }));
-          setMouvementsEnAttente(mouvementsRes.data?.length || 0);
-
-          const fraisRes = await AxiosInstance.get('/tresorerie/frais/?status=en_attente', {
-            headers: { Authorization: `Token ${token}` }
-          }).catch(() => ({ data: [] }));
-          setFraisEnAttente(fraisRes.data?.length || 0);
-
-          const caissesRes = await AxiosInstance.get('/tresorerie/caisses/?sous_seuil=true', {
-            headers: { Authorization: `Token ${token}` }
-          }).catch(() => ({ data: [] }));
-          setCaissesSousSeuil(caissesRes.data?.length || 0);
         }
 
       } catch (error) {
@@ -309,7 +235,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
     };
 
     loadData();
-  }, [role, isAdmin, isGestionnaire, isMagasinier, isComptable, isCaissier]);
+  }, [role, isAdmin, isVendeur]);
 
   // Gestion des sections
   const handleSectionToggle = (section) => {
@@ -324,246 +250,27 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
     navigate('/');
   };
 
-  // Menu sections
+  // Menu sections - TABLEAU DE BORD avec Dashboard, Statistiques et Analyses
   const menuSections = [
     {
       name: 'TABLEAU DE BORD',
       icon: LayoutDashboard,
       items: [
         { id: 'dashboard', text: 'Dashboard', icon: LayoutDashboard, path: '/dashboard', permission: true },
-        { id: 'statistiques', text: 'Statistiques', icon: TrendingUp, path: '/statistiques', permission: isAdmin || isGestionnaire },
-        { id: 'analyses', text: 'Analyses', icon: BarChart3, path: '/analyses', permission: isAdmin || isGestionnaire }
+        { id: 'statistiques', text: 'Statistiques', icon: TrendingUp, path: '/statistiques', permission: isAdmin },
+        { id: 'analyses', text: 'Analyses', icon: BarChart3, path: '/analyses', permission: isAdmin }
       ]
     },
     {
       name: 'VENTES',
       icon: ShoppingCart,
       items: [
-        { id: 'pos', text: 'Point de Vente', icon: ShoppingBag, path: '/point-de-vente', permission: isAdmin || isCaissier },
-        { id: 'ventes', text: 'Ventes', icon: ShoppingCart, path: '/ventes', permission: isAdmin || isGestionnaire || isCaissier || isComptable, badge: ventesImpayees > 0 ? ventesImpayees : 0 },
-        { id: 'clients', text: 'Clients', icon: Users, path: '/clients', permission: isAdmin || isGestionnaire || isCaissier || isComptable },
-        { id: 'factures', text: 'Factures', icon: Receipt, path: '/factures', permission: isAdmin || isGestionnaire || isCaissier || isComptable, badge: facturesEcheance > 0 ? facturesEcheance : 0 },
-        { id: 'paiements', text: 'Paiements', icon: CreditCard, path: '/paiements', permission: isAdmin || isGestionnaire || isComptable },
-        { id: 'devis', text: 'Devis', icon: FileText, path: '/devis', permission: isAdmin || isGestionnaire || isCaissier }
-      ]
-    },
-    {
-      name: 'PRODUITS & STOCKS',
-      icon: Package,
-      items: [
-        // === ITEMS EXISTANTS ===
-        { id: 'categories', text: 'Catégories', icon: Tags, path: '/categories', permission: isAdmin || isGestionnaire || isMagasinier },
-        // NOUVEAU : Unités de mesure
-        { id: 'unites-mesure', text: 'Unités de mesure', icon: Ruler, path: '/unites-mesure', permission: isAdmin || isGestionnaire || isMagasinier },
-        { id: 'produits', text: 'Produits', icon: Package, path: '/produits', permission: isAdmin || isGestionnaire || isMagasinier },
-        // NOUVEAU : Lots
-        { id: 'lots', text: 'Lots', icon: Layers, path: '/lots', permission: isAdmin || isGestionnaire || isMagasinier },
-        { id: 'stocks', text: 'Stocks', icon: Boxes, path: '/stocks', permission: isAdmin || isGestionnaire || isMagasinier, badge: stocksFaibles > 0 ? stocksFaibles : 0 },
-        { id: 'entrepots', text: 'Entrepôts', icon: Warehouse, path: '/entrepots', permission: isAdmin || isGestionnaire },
-        { id: 'mouvements', text: 'Mouvements', icon: TrendingUp, path: '/mouvements-stock', permission: isAdmin || isGestionnaire || isMagasinier },
-        // NOUVEAU : Transferts
-        { id: 'transferts', text: 'Transferts', icon: MoveHorizontal, path: '/transferts', permission: isAdmin || isGestionnaire || isMagasinier },
-        { id: 'inventaire', text: 'Inventaire', icon: ClipboardCheck, path: '/inventaire', permission: isAdmin || isGestionnaire },
-        // NOUVEAU : Alertes péremption
-        { id: 'alertes-peremption', text: 'Alertes péremption', icon: AlertCircle, path: '/alertes-peremption', permission: isAdmin || isGestionnaire || isMagasinier, badge: alertesPeremptionCount > 0 ? alertesPeremptionCount : 0 },
-        { id: 'alertes-stock', text: 'Alertes Stock', icon: AlertOctagon, path: '/alertes-stock', permission: isAdmin || isGestionnaire || isMagasinier, badge: alertesStockCount > 0 ? alertesStockCount : 0 }
-      ]
-    },
-    {
-      name: 'ACHATS & FOURNISSEURS',
-      icon: ShoppingBag,
-      items: [
-        { id: 'fournisseurs', text: 'Fournisseurs', icon: Building2, path: '/fournisseurs', permission: isAdmin || isGestionnaire },
-        { id: 'commandes', text: 'Commandes', icon: FileText, path: '/commandes-fournisseurs', permission: isAdmin || isGestionnaire, badge: commandesALivrer > 0 ? commandesALivrer : 0 },
-        { id: 'receptions', text: 'Réceptions', icon: PackageCheck, path: '/receptions', permission: isAdmin || isGestionnaire },
-        { id: 'retours', text: 'Retours fournisseurs', icon: ReturnIcon, path: '/retours-fournisseurs', permission: isAdmin || isGestionnaire, badge: retoursCount > 0 ? retoursCount : 0 }
-      ]
-    },
-    {
-      name: 'FINANCES',
-      icon: DollarSign,
-      items: [
-        // ========== COMPTABILITÉ ==========
-        { id: 'comptes', text: 'Plan Comptable', icon: Grid3x3, path: '/comptes-comptables', permission: isAdmin || isGestionnaire || isComptable },
-        { id: 'ecritures', text: 'Écritures Comptables', icon: BookOpen, path: '/ecritures-comptables', permission: isAdmin || isGestionnaire || isComptable },
-        { id: 'journal', text: 'Journal Comptable', icon: ScrollText, path: '/journal-comptable', permission: isAdmin || isGestionnaire || isComptable },
-        { id: 'grand-livre', text: 'Grand Livre', icon: Scale, path: '/grand-livre', permission: isAdmin || isGestionnaire || isComptable },
-        { id: 'balance', text: 'Balance Générale', icon: Scale, path: '/balance-generale', permission: isAdmin || isGestionnaire || isComptable },
-        
-        // ========== BUDGETS ==========
-        { id: 'budgets', text: 'Budgets', icon: PiggyBank, path: '/budgets', permission: isAdmin || isGestionnaire || isComptable },
-        { id: 'depenses', text: 'Dépenses', icon: TrendingDown, path: '/depenses', permission: isAdmin || isGestionnaire || isComptable },
-        
-        // ========== RAPPORTS ==========
-        { id: 'rapports-financiers', text: 'Rapports Financiers', icon: FileSpreadsheet, path: '/rapports-financiers', permission: isAdmin || isGestionnaire || isComptable },
-        { id: 'sessions-caisse', text: 'Sessions Caisse', icon: Clock, path: '/sessions-caisse', permission: isAdmin || isGestionnaire || isCaissier }
-      ]
-    },
-    {
-      name: 'TRÉSORERIE',
-      icon: Wallet,
-      items: [
-        // ========== TABLEAU DE BORD ==========
-        { 
-          id: 'tresorerie-dashboard', 
-          text: 'Tableau de Bord', 
-          icon: Gauge, 
-          path: '/dashboard-tresorerie', 
-          permission: canViewTresorerie(),
-          badge: alertesTresorerieCount > 0 ? alertesTresorerieCount : 0
-        },
-        
-        // ========== CAISSES ET COMPTES ==========
-        { 
-          id: 'caisses', 
-          text: 'Caisses', 
-          icon: Banknote, 
-          path: '/caisses', 
-          permission: canViewTresorerie(),
-          badge: caissesSousSeuil > 0 ? caissesSousSeuil : 0
-        },
-        { 
-          id: 'comptes-bancaires', 
-          text: 'Comptes Bancaires', 
-          icon: Landmark, 
-          path: '/comptes-bancaires', 
-          permission: canViewTresorerie() 
-        },
-        
-        // ========== MOUVEMENTS ==========
-        { 
-          id: 'mouvements-tresorerie', 
-          text: 'Mouvements', 
-          icon: Coins, 
-          path: '/mouvements-tresorerie', 
-          permission: canViewTresorerie(),
-          badge: mouvementsEnAttente > 0 ? mouvementsEnAttente : 0
-        },
-        { 
-          id: 'frais', 
-          text: 'Frais & Dépenses', 
-          icon: ReceiptText, 
-          path: '/frais', 
-          permission: canViewTresorerie(),
-          badge: fraisEnAttente > 0 ? fraisEnAttente : 0
-        },
-        
-        // ========== PRÉVISIONS ==========
-        { 
-          id: 'previsions', 
-          text: 'Prévisions', 
-          icon: CalendarDays, 
-          path: '/previsions', 
-          permission: canViewTresorerie() 
-        },
-        
-        // ========== RAPPROCHEMENT ==========
-        { 
-          id: 'rapprochement', 
-          text: 'Rapprochement Bancaire', 
-          icon: CheckCircle, 
-          path: '/rapprochement-bancaire', 
-          permission: canViewTresorerie() 
-        },
-        
-        // ========== SUIVI JOURNALIER ==========
-        { 
-          id: 'tresorerie-journaliere', 
-          text: 'Trésorerie Journalière', 
-          icon: ClipboardList, 
-          path: '/tresorerie-journaliere', 
-          permission: canViewTresorerie() 
-        },
-        
-        // ========== ALERTES ==========
-        { 
-          id: 'alertes-tresorerie', 
-          text: 'Alertes Trésorerie', 
-          icon: AlertCircle, 
-          path: '/alertes-tresorerie', 
-          permission: canViewTresorerie(),
-          badge: alertesTresorerieCount > 0 ? alertesTresorerieCount : 0
-        }
-      ]
-    },
-    {
-      name: 'LIVRAISONS',
-      icon: Truck,
-      items: [
-        { id: 'livraisons', text: 'Livraisons', icon: Truck, path: '/livraisons', permission: isAdmin || isGestionnaire || isLivreur },
-        { id: 'tournees', text: 'Tournées', icon: MapPin, path: '/tournees', permission: isAdmin || isGestionnaire },
-        { id: 'livreurs', text: 'Livreurs', icon: Users, path: '/livreurs', permission: isAdmin || isGestionnaire },
-        { id: 'suivi', text: 'Suivi', icon: MapPin, path: '/suivi-livraisons', permission: isAdmin || isGestionnaire || isLivreur }
-      ]
-    },
-    {
-      name: 'PARAMÈTRES',
-      icon: Settings,
-      items: [
-        { 
-          id: 'company-config', 
-          text: 'Configuration SODEPCI', 
-          icon: Building2, 
-          path: '/company-config', 
-          permission: isAdmin || isGestionnaire 
-        },
-        { 
-          id: 'company-config-edit', 
-          text: 'Modifier SODEPCI', 
-          icon: Edit, 
-          path: '/company-config/edit', 
-          permission: isAdmin || isGestionnaire 
-        },
-        { 
-          id: 'notifications', 
-          text: 'Notifications', 
-          icon: Bell, 
-          path: '/notifications', 
-          permission: isAdmin || isGestionnaire, 
-          badge: notificationsCount > 0 ? notificationsCount : 0 
-        },
-        { 
-          id: 'system-settings', 
-          text: 'Paramètres Système', 
-          icon: Cog, 
-          path: '/system-settings', 
-          permission: isAdmin 
-        },
-        { 
-          id: 'document-templates', 
-          text: 'Modèles Documents', 
-          icon: Printer, 
-          path: '/document-templates', 
-          permission: isAdmin || isGestionnaire 
-        },
-        { 
-          id: 'backups', 
-          text: 'Sauvegardes', 
-          icon: Database, 
-          path: '/backups', 
-          permission: isAdmin 
-        },
-        { 
-          id: 'audit', 
-          text: "Journal d'audit", 
-          icon: History, 
-          path: '/audit', 
-          permission: isAdmin 
-        },
-        { 
-          id: 'utilisateurs', 
-          text: 'Utilisateurs', 
-          icon: Users, 
-          path: '/utilisateurs', 
-          permission: isAdmin 
-        },
-        { 
-          id: 'roles', 
-          text: 'Rôles & Permissions', 
-          icon: Shield, 
-          path: '/roles', 
-          permission: isAdmin 
-        }
+        { id: 'pos', text: 'Point de Vente', icon: ShoppingBag, path: '/point-de-vente', permission: isAdmin || isVendeur },
+        { id: 'ventes', text: 'Ventes', icon: ShoppingCart, path: '/ventes', permission: isAdmin || isVendeur, badge: ventesImpayees > 0 ? ventesImpayees : 0 },
+        { id: 'clients', text: 'Clients', icon: Users, path: '/clients', permission: isAdmin || isVendeur },
+        { id: 'factures', text: 'Factures', icon: Receipt, path: '/factures', permission: isAdmin || isVendeur },
+        { id: 'paiements', text: 'Paiements', icon: CreditCard, path: '/paiements', permission: isAdmin || isVendeur },
+        { id: 'devis', text: 'Devis', icon: FileText, path: '/devis', permission: isAdmin || isVendeur }
       ]
     },
     {
@@ -571,12 +278,102 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
       icon: UserCircle,
       items: [
         { id: 'profile', text: 'Mon Profil', icon: UserCircle, path: '/profile', permission: true },
-        { id: 'my-preferences', text: 'Mes Préférences', icon: Settings, path: '/my-preferences', permission: true },
         { id: 'my-notifications', text: 'Mes Notifications', icon: BellRing, path: '/my-notifications', permission: true, badge: notificationsCount > 0 ? notificationsCount : 0 },
         { id: 'support', text: 'Support', icon: HelpCircle, path: '/support', permission: true }
       ]
     }
   ];
+
+  // Ajouter les sections Admin si l'utilisateur est admin
+  if (isAdmin) {
+    // Insérer PRODUITS & STOCKS après VENTES
+    menuSections.splice(2, 0, {
+      name: 'PRODUITS & STOCKS',
+      icon: Package,
+      items: [
+        { id: 'categories', text: 'Catégories', icon: Tags, path: '/categories', permission: isAdmin },
+        { id: 'produits', text: 'Produits', icon: Package, path: '/produits', permission: isAdmin },
+        { id: 'stocks', text: 'Stocks', icon: Boxes, path: '/stocks', permission: isAdmin, badge: stocksFaibles > 0 ? stocksFaibles : 0 },
+        { id: 'entrepots', text: 'Entrepôts', icon: Warehouse, path: '/entrepots', permission: isAdmin },
+        { id: 'mouvements', text: 'Mouvements', icon: TrendingUp, path: '/mouvements-stock', permission: isAdmin },
+        { id: 'alertes-stock', text: 'Alertes Stock', icon: AlertOctagon, path: '/alertes-stock', permission: isAdmin, badge: alertesStockCount > 0 ? alertesStockCount : 0 }
+      ]
+    });
+
+    // Insérer ACHATS & FOURNISSEURS
+    menuSections.splice(3, 0, {
+      name: 'ACHATS & FOURNISSEURS',
+      icon: ShoppingBag,
+      items: [
+        { id: 'fournisseurs', text: 'Fournisseurs', icon: Building2, path: '/fournisseurs', permission: isAdmin },
+        { id: 'commandes', text: 'Commandes', icon: FileText, path: '/commandes-fournisseurs', permission: isAdmin, badge: commandesEnAttente > 0 ? commandesEnAttente : 0 },
+        { id: 'receptions', text: 'Réceptions', icon: PackageCheck, path: '/receptions', permission: isAdmin },
+        { id: 'retours', text: 'Retours fournisseurs', icon: ReturnIcon, path: '/retours-fournisseurs', permission: isAdmin }
+      ]
+    });
+
+    // Insérer FINANCES
+    menuSections.splice(4, 0, {
+      name: 'FINANCES',
+      icon: DollarSign,
+      items: [
+        { id: 'comptes', text: 'Plan Comptable', icon: Grid3x3, path: '/comptes-comptables', permission: isAdmin },
+        { id: 'ecritures', text: 'Écritures Comptables', icon: BookOpen, path: '/ecritures-comptables', permission: isAdmin },
+        { id: 'journal', text: 'Journal Comptable', icon: ScrollText, path: '/journal-comptable', permission: isAdmin },
+        { id: 'grand-livre', text: 'Grand Livre', icon: Scale, path: '/grand-livre', permission: isAdmin },
+        { id: 'balance', text: 'Balance Générale', icon: Scale, path: '/balance-generale', permission: isAdmin },
+        { id: 'budgets', text: 'Budgets', icon: PiggyBank, path: '/budgets', permission: isAdmin },
+        { id: 'depenses', text: 'Dépenses', icon: TrendingDown, path: '/depenses', permission: isAdmin },
+        { id: 'rapports-financiers', text: 'Rapports Financiers', icon: FileSpreadsheet, path: '/rapports-financiers', permission: isAdmin },
+        { id: 'sessions-caisse', text: 'Sessions Caisse', icon: Clock, path: '/sessions-caisse', permission: isAdmin }
+      ]
+    });
+
+    // Insérer TRÉSORERIE
+    menuSections.splice(5, 0, {
+      name: 'TRÉSORERIE',
+      icon: Wallet,
+      items: [
+        { id: 'tresorerie-dashboard', text: 'Tableau de Bord', icon: Gauge, path: '/dashboard-tresorerie', permission: isAdmin },
+        { id: 'caisses', text: 'Caisses', icon: Banknote, path: '/caisses', permission: isAdmin },
+        { id: 'comptes-bancaires', text: 'Comptes Bancaires', icon: Landmark, path: '/comptes-bancaires', permission: isAdmin },
+        { id: 'mouvements-tresorerie', text: 'Mouvements', icon: Coins, path: '/mouvements-tresorerie', permission: isAdmin },
+        { id: 'frais', text: 'Frais & Dépenses', icon: ReceiptText, path: '/frais', permission: isAdmin },
+        { id: 'previsions', text: 'Prévisions', icon: CalendarDays, path: '/previsions', permission: isAdmin },
+        { id: 'rapprochement', text: 'Rapprochement Bancaire', icon: CheckCircle, path: '/rapprochement-bancaire', permission: isAdmin },
+        { id: 'tresorerie-journaliere', text: 'Trésorerie Journalière', icon: ClipboardList, path: '/tresorerie-journaliere', permission: isAdmin },
+        { id: 'alertes-tresorerie', text: 'Alertes Trésorerie', icon: AlertCircle, path: '/alertes-tresorerie', permission: isAdmin }
+      ]
+    });
+
+    // Insérer LIVRAISONS
+    menuSections.splice(6, 0, {
+      name: 'LIVRAISONS',
+      icon: Truck,
+      items: [
+        { id: 'livraisons', text: 'Livraisons', icon: Truck, path: '/livraisons', permission: isAdmin },
+        { id: 'tournees', text: 'Tournées', icon: MapPin, path: '/tournees', permission: isAdmin },
+        { id: 'livreurs', text: 'Livreurs', icon: Users, path: '/livreurs', permission: isAdmin },
+        { id: 'suivi', text: 'Suivi', icon: MapPin, path: '/suivi-livraisons', permission: isAdmin }
+      ]
+    });
+
+    // Insérer PARAMÈTRES
+    menuSections.splice(7, 0, {
+      name: 'PARAMÈTRES',
+      icon: Settings,
+      items: [
+        { id: 'company-config', text: 'Configuration SODEPCI', icon: Building2, path: '/company-config', permission: isAdmin },
+        { id: 'notifications', text: 'Notifications', icon: Bell, path: '/notifications', permission: isAdmin, badge: notificationsCount > 0 ? notificationsCount : 0 },
+        { id: 'system-settings', text: 'Paramètres Système', icon: Cog, path: '/system-settings', permission: isAdmin },
+        { id: 'document-templates', text: 'Modèles Documents', icon: Printer, path: '/document-templates', permission: isAdmin },
+        { id: 'backups', text: 'Sauvegardes', icon: Database, path: '/backups', permission: isAdmin },
+        { id: 'audit', text: "Journal d'audit", icon: History, path: '/audit', permission: isAdmin },
+        { id: 'utilisateurs', text: 'Utilisateurs', icon: Users, path: '/utilisateurs', permission: isAdmin },
+        { id: 'roles', text: 'Rôles & Permissions', icon: Shield, path: '/roles', permission: isAdmin }
+      ]
+    });
+  }
 
   // Filtrer les sections
   const visibleSections = menuSections
@@ -613,7 +410,6 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
       ).map(item => ({ ...item, section: section.name }))
     ) : [];
 
-  // Rendu
   return (
     <div className="min-h-screen bg-base-200">
       
@@ -691,7 +487,6 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                 {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
               </button>
 
-              {/* Logo */}
               <Link to="/dashboard" className="hidden lg:flex items-center gap-3 group">
                 <div className="relative">
                   <div className="absolute inset-0 bg-primary-content/20 rounded-xl blur-md group-hover:blur-lg transition-all"></div>
@@ -705,7 +500,6 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                 </div>
               </Link>
 
-              {/* Logo mobile */}
               <div className="lg:hidden flex items-center gap-2">
                 <div className="w-8 h-8 bg-base-100 rounded-lg flex items-center justify-center border-2 border-accent">
                   <img src={logo} alt="Logo" className="w-6 h-6 object-contain" onError={(e) => { e.target.style.display = 'none' }} />
@@ -728,7 +522,6 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
             {/* Actions droite */}
             <div className="flex items-center gap-2">
               
-              {/* Recherche */}
               <button
                 onClick={() => setIsSearchOpen(true)}
                 className="p-2 rounded-lg text-primary-content hover:bg-primary-content/10 transition-colors"
@@ -737,44 +530,14 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                 <Search className="w-5 h-5" />
               </button>
 
-              {/* Badge rôle */}
               <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary-content/10">
                 <RoleIcon className="w-4 h-4 text-primary-content" />
                 <span className="text-primary-content text-xs font-medium">{roleConfig.label}</span>
+                {isAdmin && (
+                  <span className="badge badge-error badge-xs ml-1">Admin</span>
+                )}
               </div>
 
-              {/* Alertes globales */}
-              {(isAdmin || isGestionnaire) && GlobalAlerts && (
-                <div className="relative">
-                  <button
-                    onClick={() => setShowGlobalAlerts(!showGlobalAlerts)}
-                    className="relative p-2 rounded-lg text-primary-content hover:bg-primary-content/10 transition-colors"
-                    title="Toutes les alertes"
-                  >
-                    <Bell className="w-5 h-5" />
-                    {globalAlertCount > 0 && (
-                      <span className="absolute -top-1 -right-1 min-w-5 h-5 bg-accent text-accent-content text-xs rounded-full flex items-center justify-center font-bold px-1 animate-pulse">
-                        {globalAlertCount > 99 ? '99+' : globalAlertCount}
-                      </span>
-                    )}
-                  </button>
-                  
-                  {showGlobalAlerts && (
-                    <>
-                      <div className="fixed inset-0 z-40" onClick={() => setShowGlobalAlerts(false)}></div>
-                      <div className="absolute right-0 mt-2 w-[480px] max-w-[90vw] z-50">
-                        <GlobalAlerts
-                          onClose={() => setShowGlobalAlerts(false)}
-                          onAlertCount={setGlobalAlertCount}
-                          onStatsChange={setAlertStats}
-                        />
-                      </div>
-                    </>
-                  )}
-                </div>
-              )}
-
-              {/* Mode thème */}
               <button
                 onClick={toggleColorMode}
                 className="p-2 rounded-lg text-primary-content hover:bg-primary-content/10 transition-colors"
@@ -812,7 +575,6 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                                 {roleConfig.label}
                               </span>
                               {isAdmin && <span className="badge badge-error badge-sm">Admin</span>}
-                              {isTresorier && !isAdmin && <span className="badge badge-primary badge-sm">Trésorier</span>}
                             </div>
                           </div>
                         </div>
@@ -863,7 +625,6 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
       `}>
         <div className="h-full flex flex-col">
           
-          {/* Logo dans la sidebar */}
           <div className={`p-4 border-b border-primary/20 ${!sidebarOpen && 'text-center'} bg-gradient-to-r from-primary/5 to-transparent`}>
             <div className={`flex items-center ${!sidebarOpen && 'justify-center'} gap-3`}>
               <div className="w-10 h-10 bg-gradient-to-br from-primary to-primary/80 rounded-xl flex items-center justify-center shadow-lg">
@@ -878,7 +639,6 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
             </div>
           </div>
 
-          {/* Profil utilisateur */}
           <div className={`p-4 border-b border-primary/20 ${!sidebarOpen && 'text-center'}`}>
             <div className={`flex items-center ${!sidebarOpen && 'flex-col'} gap-3`}>
               <div className="avatar placeholder">
@@ -896,20 +656,16 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                       {roleConfig.label}
                     </span>
                     {isAdmin && <span className="badge badge-error badge-sm">Admin</span>}
-                    {isTresorier && !isAdmin && <span className="badge badge-primary badge-sm">Trésorier</span>}
                   </div>
                 </div>
               )}
             </div>
           </div>
 
-          {/* Menu de navigation */}
           <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
             {visibleSections.map((section, idx) => {
               const SectionIcon = section.icon;
               const isOpen = openSections[section.name] || false;
-              const isTresorerieSection = section.name === 'TRÉSORERIE';
-              const isFinancesSection = section.name === 'FINANCES';
               
               return (
                 <div key={idx} className="mb-1">
@@ -919,11 +675,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                       w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200
                       ${!sidebarOpen && 'justify-center'}
                       ${isOpen 
-                        ? isTresorerieSection 
-                          ? 'bg-emerald-500/20 text-emerald-600 dark:bg-emerald-500/30 dark:text-emerald-400' 
-                          : isFinancesSection
-                          ? 'bg-blue-500/20 text-blue-600 dark:bg-blue-500/30 dark:text-blue-400'
-                          : 'bg-primary/10 text-primary'
+                        ? 'bg-primary/10 text-primary'
                         : 'text-base-content/70 hover:bg-primary/5 hover:text-primary'
                       }
                     `}
@@ -931,10 +683,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                     <SectionIcon className={`w-5 h-5 ${isOpen ? 'text-inherit' : ''}`} />
                     {sidebarOpen && (
                       <>
-                        <span className={`flex-1 text-left text-xs font-semibold tracking-wide uppercase ${
-                          isTresorerieSection ? 'text-emerald-600 dark:text-emerald-400' : 
-                          isFinancesSection ? 'text-blue-600 dark:text-blue-400' : ''
-                        }`}>
+                        <span className="flex-1 text-left text-xs font-semibold tracking-wide uppercase">
                           {section.name}
                         </span>
                         {isOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
@@ -943,18 +692,10 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                   </button>
                   
                   {sidebarOpen && isOpen && (
-                    <div className={`ml-6 mt-2 space-y-1 border-l-2 pl-4 ${
-                      isTresorerieSection 
-                        ? 'border-emerald-400 dark:border-emerald-500' 
-                        : isFinancesSection
-                        ? 'border-blue-400 dark:border-blue-500'
-                        : 'border-primary'
-                    }`}>
+                    <div className="ml-6 mt-2 space-y-1 border-l-2 border-primary pl-4">
                       {section.items.map((item) => {
                         const ItemIcon = item.icon;
                         const isActive = path === item.path;
-                        const isTresorerieItem = item.path?.startsWith('/') && 
-                          ['/caisses', '/comptes-bancaires', '/mouvements-tresorerie', '/frais-tresorerie', '/previsions-tresorerie', '/rapprochement-bancaire', '/tresorerie-journaliere', '/alertes-tresorerie', '/dashboard-tresorerie'].includes(item.path);
                         
                         return (
                           <Link
@@ -963,11 +704,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                             className={`
                               flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all duration-200
                               ${isActive 
-                                ? isTresorerieItem
-                                  ? 'bg-emerald-500 text-white shadow-md'
-                                  : 'bg-primary text-primary-content shadow-md'
-                                : isTresorerieItem && !isActive
-                                ? 'text-base-content/60 hover:bg-emerald-500/10 hover:text-emerald-500'
+                                ? 'bg-primary text-primary-content shadow-md'
                                 : 'text-base-content/60 hover:bg-primary/10 hover:text-primary'
                               }
                             `}
@@ -989,7 +726,6 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
             })}
           </nav>
 
-          {/* Footer Sidebar */}
           <div className="p-4 border-t border-primary/20 bg-base-100">
             {sidebarOpen ? (
               <div className="flex items-center justify-between">
@@ -997,7 +733,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                   <div className="w-1.5 h-1.5 bg-success rounded-full animate-pulse"></div>
                   <span className="text-xs text-base-content/50">v2.1.0</span>
                 </div>
-                <span className="badge badge-primary badge-sm">SODEPCI 2026</span>
+                <span className="badge badge-primary badge-sm">SODEPCI</span>
               </div>
             ) : (
               <div className="text-center">
@@ -1042,7 +778,6 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                 </button>
               </div>
               
-              {/* Profil mobile */}
               <div className="flex items-center gap-3 p-3 bg-primary-content/10 rounded-xl">
                 <div className="w-10 h-10 rounded-full bg-primary-content/20 flex items-center justify-center text-primary-content font-bold">
                   {userInitial || 'U'}
@@ -1058,32 +793,16 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
               {visibleSections.map((section, idx) => {
                 const SectionIcon = section.icon;
                 const isOpen = openSections[section.name] || false;
-                const isTresorerieSection = section.name === 'TRÉSORERIE';
-                const isFinancesSection = section.name === 'FINANCES';
                 
                 return (
                   <div key={idx} className="mb-2">
                     <button
                       onClick={() => handleSectionToggle(section.name)}
-                      className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg transition-all ${
-                        isTresorerieSection 
-                          ? 'hover:bg-emerald-500/10' 
-                          : isFinancesSection
-                          ? 'hover:bg-blue-500/10'
-                          : 'hover:bg-primary/10'
-                      }`}
+                      className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg hover:bg-primary/10 transition-all"
                     >
                       <div className="flex items-center gap-3">
-                        <SectionIcon className={`w-5 h-5 ${
-                          isTresorerieSection ? 'text-emerald-500' : 
-                          isFinancesSection ? 'text-blue-500' : 
-                          'text-primary'
-                        }`} />
-                        <span className={`text-xs font-bold uppercase ${
-                          isTresorerieSection ? 'text-emerald-600 dark:text-emerald-400' : 
-                          isFinancesSection ? 'text-blue-600 dark:text-blue-400' : 
-                          ''
-                        }`}>
+                        <SectionIcon className="w-5 h-5 text-primary" />
+                        <span className="text-xs font-bold uppercase">
                           {section.name}
                         </span>
                       </div>
@@ -1091,18 +810,10 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                     </button>
                     
                     {isOpen && (
-                      <div className={`ml-6 mt-2 space-y-1 border-l-2 pl-4 ${
-                        isTresorerieSection 
-                          ? 'border-emerald-400 dark:border-emerald-500' 
-                          : isFinancesSection
-                          ? 'border-blue-400 dark:border-blue-500'
-                          : 'border-primary'
-                      }`}>
+                      <div className="ml-6 mt-2 space-y-1 border-l-2 border-primary pl-4">
                         {section.items.map((item) => {
                           const ItemIcon = item.icon;
                           const isActive = path === item.path;
-                          const isTresorerieItem = item.path?.startsWith('/') && 
-                            ['/caisses', '/comptes-bancaires', '/mouvements-tresorerie', '/frais-tresorerie', '/previsions-tresorerie', '/rapprochement-bancaire', '/tresorerie-journaliere', '/alertes-tresorerie', '/dashboard-tresorerie'].includes(item.path);
                           
                           return (
                             <Link
@@ -1112,11 +823,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                               className={`
                                 flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all
                                 ${isActive 
-                                  ? isTresorerieItem
-                                    ? 'bg-emerald-500 text-white'
-                                    : 'bg-primary text-primary-content'
-                                  : isTresorerieItem
-                                  ? 'hover:bg-emerald-500/10 hover:text-emerald-500'
+                                  ? 'bg-primary text-primary-content'
                                   : 'hover:bg-primary/10'
                                 }
                               `}
