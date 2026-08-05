@@ -1,4 +1,4 @@
-// src/components/Navbar.jsx - Version SODEPCI avec rôles Admin et Vendeur uniquement
+// src/components/Navbar.jsx - Version SODEPCI COMPLÈTE avec tous les menus
 
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
@@ -100,7 +100,7 @@ try {
   console.warn('Modules optionnels non trouvés:', error.message);
 }
 
-// Configuration des rôles - UNIQUEMENT ADMIN ET VENDEUR
+// Configuration des rôles
 const ROLE_CONFIG = {
   admin: { 
     label: 'Administrateur', 
@@ -132,6 +132,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
   const [openSections, setOpenSections] = useState({
     'TABLEAU DE BORD': true,
     'VENTES': true,
+    'PRODUITS & STOCKS': true,
     'MON ESPACE': false
   });
   
@@ -146,6 +147,8 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
   const [commandesEnAttente, setCommandesEnAttente] = useState(0);
   const [stocksFaibles, setStocksFaibles] = useState(0);
   const [alertesStockCount, setAlertesStockCount] = useState(0);
+  const [lotsExpirant, setLotsExpirant] = useState(0);
+  const [inventairesEnCours, setInventairesEnCours] = useState(0);
 
   // Récupérer l'utilisateur
   const getUserData = () => {
@@ -215,10 +218,22 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
           }).catch(() => ({ data: [] }));
           setStocksFaibles(stocksRes.data?.length || 0);
 
-          const alertesRes = await AxiosInstance.get('/stocks/alerts/', {
+          const alertesRes = await AxiosInstance.get('/expiry-alerts/', {
             headers: { Authorization: `Token ${token}` }
           }).catch(() => ({ data: [] }));
           setAlertesStockCount(alertesRes.data?.length || 0);
+          
+          // Lots expirant
+          const lotsRes = await AxiosInstance.get('/lots/expiring/?days=30', {
+            headers: { Authorization: `Token ${token}` }
+          }).catch(() => ({ data: [] }));
+          setLotsExpirant(lotsRes.data?.length || 0);
+          
+          // Inventaires en cours
+          const invRes = await AxiosInstance.get('/inventories/?status=in_progress', {
+            headers: { Authorization: `Token ${token}` }
+          }).catch(() => ({ data: [] }));
+          setInventairesEnCours(invRes.data?.length || 0);
         }
 
         // Admin et Vendeur voient les ventes impayées
@@ -250,7 +265,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
     navigate('/');
   };
 
-  // Menu sections - TABLEAU DE BORD avec Dashboard, Statistiques et Analyses
+  // Menu sections - Définition complète
   const menuSections = [
     {
       name: 'TABLEAU DE BORD',
@@ -270,45 +285,39 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
         { id: 'clients', text: 'Clients', icon: Users, path: '/clients', permission: isAdmin || isVendeur },
         { id: 'factures', text: 'Factures', icon: Receipt, path: '/factures', permission: isAdmin || isVendeur },
         { id: 'paiements', text: 'Paiements', icon: CreditCard, path: '/paiements', permission: isAdmin || isVendeur },
-        { id: 'devis', text: 'Devis', icon: FileText, path: '/devis', permission: isAdmin || isVendeur }
+        { id: 'devis', text: 'Devis', icon: FileText, path: '/devis', permission: isAdmin || isVendeur },
+        { id: 'retours-clients', text: 'Retours Clients', icon: ReturnIcon, path: '/retours-clients', permission: isAdmin || isVendeur }
       ]
     },
     {
-      name: 'MON ESPACE',
-      icon: UserCircle,
+      name: 'PRODUITS & STOCKS',
+      icon: Package,
       items: [
-        { id: 'profile', text: 'Mon Profil', icon: UserCircle, path: '/profile', permission: true },
-        { id: 'my-notifications', text: 'Mes Notifications', icon: BellRing, path: '/my-notifications', permission: true, badge: notificationsCount > 0 ? notificationsCount : 0 },
-        { id: 'support', text: 'Support', icon: HelpCircle, path: '/support', permission: true }
+        { id: 'categories', text: 'Catégories', icon: Tags, path: '/categories', permission: isAdmin },
+        { id: 'unites-mesure', text: 'Unités de Mesure', icon: Ruler, path: '/unites-mesure', permission: isAdmin },
+        { id: 'produits', text: 'Produits', icon: Package, path: '/produits', permission: isAdmin },
+        { id: 'stocks', text: 'Stocks', icon: Boxes, path: '/stocks', permission: isAdmin, badge: stocksFaibles > 0 ? stocksFaibles : 0 },
+        { id: 'entrepots', text: 'Entrepôts', icon: Warehouse, path: '/entrepots', permission: isAdmin },
+        { id: 'lots', text: 'Lots', icon: Layers, path: '/lots', permission: isAdmin, badge: lotsExpirant > 0 ? lotsExpirant : 0 },
+        { id: 'mouvements', text: 'Mouvements', icon: MoveHorizontal, path: '/mouvements-stock', permission: isAdmin },
+        { id: 'alertes-stock', text: 'Alertes Stock', icon: AlertOctagon, path: '/alertes-stock', permission: isAdmin, badge: alertesStockCount > 0 ? alertesStockCount : 0 },
+        { id: 'inventaires', text: 'Inventaires', icon: ClipboardCheck, path: '/inventaires', permission: isAdmin, badge: inventairesEnCours > 0 ? inventairesEnCours : 0 },
+        { id: 'transferts', text: 'Transferts', icon: ArrowLeftRight, path: '/transferts', permission: isAdmin }
       ]
     }
   ];
 
   // Ajouter les sections Admin si l'utilisateur est admin
   if (isAdmin) {
-    // Insérer PRODUITS & STOCKS après VENTES
-    menuSections.splice(2, 0, {
-      name: 'PRODUITS & STOCKS',
-      icon: Package,
-      items: [
-        { id: 'categories', text: 'Catégories', icon: Tags, path: '/categories', permission: isAdmin },
-        { id: 'produits', text: 'Produits', icon: Package, path: '/produits', permission: isAdmin },
-        { id: 'stocks', text: 'Stocks', icon: Boxes, path: '/stocks', permission: isAdmin, badge: stocksFaibles > 0 ? stocksFaibles : 0 },
-        { id: 'entrepots', text: 'Entrepôts', icon: Warehouse, path: '/entrepots', permission: isAdmin },
-        { id: 'mouvements', text: 'Mouvements', icon: TrendingUp, path: '/mouvements-stock', permission: isAdmin },
-        { id: 'alertes-stock', text: 'Alertes Stock', icon: AlertOctagon, path: '/alertes-stock', permission: isAdmin, badge: alertesStockCount > 0 ? alertesStockCount : 0 }
-      ]
-    });
-
     // Insérer ACHATS & FOURNISSEURS
     menuSections.splice(3, 0, {
       name: 'ACHATS & FOURNISSEURS',
       icon: ShoppingBag,
       items: [
         { id: 'fournisseurs', text: 'Fournisseurs', icon: Building2, path: '/fournisseurs', permission: isAdmin },
-        { id: 'commandes', text: 'Commandes', icon: FileText, path: '/commandes-fournisseurs', permission: isAdmin, badge: commandesEnAttente > 0 ? commandesEnAttente : 0 },
+        { id: 'commandes-fournisseurs', text: 'Commandes', icon: FileText, path: '/commandes-fournisseurs', permission: isAdmin, badge: commandesEnAttente > 0 ? commandesEnAttente : 0 },
         { id: 'receptions', text: 'Réceptions', icon: PackageCheck, path: '/receptions', permission: isAdmin },
-        { id: 'retours', text: 'Retours fournisseurs', icon: ReturnIcon, path: '/retours-fournisseurs', permission: isAdmin }
+        { id: 'retours-fournisseurs', text: 'Retours Fournisseurs', icon: ReturnIcon, path: '/retours-fournisseurs', permission: isAdmin }
       ]
     });
 
@@ -317,11 +326,11 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
       name: 'FINANCES',
       icon: DollarSign,
       items: [
-        { id: 'comptes', text: 'Plan Comptable', icon: Grid3x3, path: '/comptes-comptables', permission: isAdmin },
-        { id: 'ecritures', text: 'Écritures Comptables', icon: BookOpen, path: '/ecritures-comptables', permission: isAdmin },
-        { id: 'journal', text: 'Journal Comptable', icon: ScrollText, path: '/journal-comptable', permission: isAdmin },
+        { id: 'comptes-comptables', text: 'Plan Comptable', icon: Grid3x3, path: '/comptes-comptables', permission: isAdmin },
+        { id: 'ecritures-comptables', text: 'Écritures Comptables', icon: BookOpen, path: '/ecritures-comptables', permission: isAdmin },
+        { id: 'journal-comptable', text: 'Journal Comptable', icon: ScrollText, path: '/journal-comptable', permission: isAdmin },
         { id: 'grand-livre', text: 'Grand Livre', icon: Scale, path: '/grand-livre', permission: isAdmin },
-        { id: 'balance', text: 'Balance Générale', icon: Scale, path: '/balance-generale', permission: isAdmin },
+        { id: 'balance-generale', text: 'Balance Générale', icon: Scale, path: '/balance-generale', permission: isAdmin },
         { id: 'budgets', text: 'Budgets', icon: PiggyBank, path: '/budgets', permission: isAdmin },
         { id: 'depenses', text: 'Dépenses', icon: TrendingDown, path: '/depenses', permission: isAdmin },
         { id: 'rapports-financiers', text: 'Rapports Financiers', icon: FileSpreadsheet, path: '/rapports-financiers', permission: isAdmin },
@@ -334,13 +343,13 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
       name: 'TRÉSORERIE',
       icon: Wallet,
       items: [
-        { id: 'tresorerie-dashboard', text: 'Tableau de Bord', icon: Gauge, path: '/dashboard-tresorerie', permission: isAdmin },
+        { id: 'dashboard-tresorerie', text: 'Tableau de Bord', icon: Gauge, path: '/dashboard-tresorerie', permission: isAdmin },
         { id: 'caisses', text: 'Caisses', icon: Banknote, path: '/caisses', permission: isAdmin },
         { id: 'comptes-bancaires', text: 'Comptes Bancaires', icon: Landmark, path: '/comptes-bancaires', permission: isAdmin },
         { id: 'mouvements-tresorerie', text: 'Mouvements', icon: Coins, path: '/mouvements-tresorerie', permission: isAdmin },
         { id: 'frais', text: 'Frais & Dépenses', icon: ReceiptText, path: '/frais', permission: isAdmin },
         { id: 'previsions', text: 'Prévisions', icon: CalendarDays, path: '/previsions', permission: isAdmin },
-        { id: 'rapprochement', text: 'Rapprochement Bancaire', icon: CheckCircle, path: '/rapprochement-bancaire', permission: isAdmin },
+        { id: 'rapprochement-bancaire', text: 'Rapprochement Bancaire', icon: CheckCircle, path: '/rapprochement-bancaire', permission: isAdmin },
         { id: 'tresorerie-journaliere', text: 'Trésorerie Journalière', icon: ClipboardList, path: '/tresorerie-journaliere', permission: isAdmin },
         { id: 'alertes-tresorerie', text: 'Alertes Trésorerie', icon: AlertCircle, path: '/alertes-tresorerie', permission: isAdmin }
       ]
@@ -354,7 +363,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
         { id: 'livraisons', text: 'Livraisons', icon: Truck, path: '/livraisons', permission: isAdmin },
         { id: 'tournees', text: 'Tournées', icon: MapPin, path: '/tournees', permission: isAdmin },
         { id: 'livreurs', text: 'Livreurs', icon: Users, path: '/livreurs', permission: isAdmin },
-        { id: 'suivi', text: 'Suivi', icon: MapPin, path: '/suivi-livraisons', permission: isAdmin }
+        { id: 'suivi-livraisons', text: 'Suivi', icon: MapPin, path: '/suivi-livraisons', permission: isAdmin }
       ]
     });
 
@@ -371,6 +380,29 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
         { id: 'audit', text: "Journal d'audit", icon: History, path: '/audit', permission: isAdmin },
         { id: 'utilisateurs', text: 'Utilisateurs', icon: Users, path: '/utilisateurs', permission: isAdmin },
         { id: 'roles', text: 'Rôles & Permissions', icon: Shield, path: '/roles', permission: isAdmin }
+      ]
+    });
+
+    // Insérer MON ESPACE à la fin
+    menuSections.push({
+      name: 'MON ESPACE',
+      icon: UserCircle,
+      items: [
+        { id: 'profile', text: 'Mon Profil', icon: UserCircle, path: '/profile', permission: true },
+        { id: 'my-notifications', text: 'Mes Notifications', icon: BellRing, path: '/my-notifications', permission: true, badge: notificationsCount > 0 ? notificationsCount : 0 },
+        { id: 'support', text: 'Support', icon: HelpCircle, path: '/support', permission: true },
+        { id: 'preferences', text: 'Préférences', icon: Settings, path: '/my-preferences', permission: true }
+      ]
+    });
+  } else {
+    // Si Vendeur, ajouter MON ESPACE avec support
+    menuSections.push({
+      name: 'MON ESPACE',
+      icon: UserCircle,
+      items: [
+        { id: 'profile', text: 'Mon Profil', icon: UserCircle, path: '/profile', permission: true },
+        { id: 'my-notifications', text: 'Mes Notifications', icon: BellRing, path: '/my-notifications', permission: true, badge: notificationsCount > 0 ? notificationsCount : 0 },
+        { id: 'support', text: 'Support', icon: HelpCircle, path: '/support', permission: true }
       ]
     });
   }
