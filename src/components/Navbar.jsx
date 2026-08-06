@@ -1,4 +1,4 @@
-// src/components/Navbar.jsx - Version SODEPCI COMPLÈTE avec tous les menus
+// src/components/Navbar.jsx - Version SODEPCI COMPLÈTE avec tous les menus et routes mises à jour
 
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
@@ -86,6 +86,21 @@ import {
   Target,          
   PieChart,        
   FileSpreadsheet,
+  Handshake,
+  FileCheck,
+  RotateCcw,
+  Receipt as ReceiptIcon,
+  CreditCard as CreditCardIcon,
+  TrendingUp as TrendingUpIcon,
+  BarChart,
+  Clipboard,
+  AlertCircle as AlertCircleIcon,
+  Archive,
+  PackageOpen,
+  Truck as TruckIcon,
+  Map,
+  UserCheck,
+  Route,
 } from 'lucide-react';
 
 import logo from '../assets/logo.svg';
@@ -133,6 +148,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
     'TABLEAU DE BORD': true,
     'VENTES': true,
     'PRODUITS & STOCKS': true,
+    'ACHATS & FOURNISSEURS': true,
     'MON ESPACE': false
   });
   
@@ -149,6 +165,10 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
   const [alertesStockCount, setAlertesStockCount] = useState(0);
   const [lotsExpirant, setLotsExpirant] = useState(0);
   const [inventairesEnCours, setInventairesEnCours] = useState(0);
+  const [facturesImpayees, setFacturesImpayees] = useState(0);
+  const [receptionsEnAttente, setReceptionsEnAttente] = useState(0);
+  const [retoursEnAttente, setRetoursEnAttente] = useState(0);
+  const [paiementsFournisseursEnAttente, setPaiementsFournisseursEnAttente] = useState(0);
 
   // Récupérer l'utilisateur
   const getUserData = () => {
@@ -203,16 +223,43 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
 
         // Admin charge toutes les données
         if (isAdmin) {
-          const ordersRes = await AxiosInstance.get('/purchase-orders/?status=pending', {
+          // Achats - Commandes en attente
+          const ordersRes = await AxiosInstance.get('/purchase-orders/?status=draft,sent', {
             headers: { Authorization: `Token ${token}` }
           }).catch(() => ({ data: [] }));
           setCommandesEnAttente(ordersRes.data?.length || 0);
 
+          // Achats - Factures impayées
+          const invoicesRes = await AxiosInstance.get('/supplier-invoices/?paiement_status=unpaid,partial,overdue', {
+            headers: { Authorization: `Token ${token}` }
+          }).catch(() => ({ data: [] }));
+          setFacturesImpayees(invoicesRes.data?.length || 0);
+
+          // Achats - Réceptions en attente
+          const receiptsRes = await AxiosInstance.get('/receipts/?status=pending,in_progress', {
+            headers: { Authorization: `Token ${token}` }
+          }).catch(() => ({ data: [] }));
+          setReceptionsEnAttente(receiptsRes.data?.length || 0);
+
+          // Achats - Retours en attente
+          const returnsRes = await AxiosInstance.get('/purchase-returns/?status=requested', {
+            headers: { Authorization: `Token ${token}` }
+          }).catch(() => ({ data: [] }));
+          setRetoursEnAttente(returnsRes.data?.length || 0);
+
+          // Achats - Paiements fournisseurs en attente
+          const paymentsRes = await AxiosInstance.get('/fournisseur-paiements/?status=pending', {
+            headers: { Authorization: `Token ${token}` }
+          }).catch(() => ({ data: [] }));
+          setPaiementsFournisseursEnAttente(paymentsRes.data?.length || 0);
+
+          // Notifications
           const notifRes = await AxiosInstance.get('/notifications/unread-count/', {
             headers: { Authorization: `Token ${token}` }
           }).catch(() => ({ data: { unread_count: 0 } }));
           setNotificationsCount(notifRes.data?.unread_count || 0);
 
+          // Stocks
           const stocksRes = await AxiosInstance.get('/stocks/low-stock/', {
             headers: { Authorization: `Token ${token}` }
           }).catch(() => ({ data: [] }));
@@ -283,8 +330,8 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
         { id: 'pos', text: 'Point de Vente', icon: ShoppingBag, path: '/point-de-vente', permission: isAdmin || isVendeur },
         { id: 'ventes', text: 'Ventes', icon: ShoppingCart, path: '/ventes', permission: isAdmin || isVendeur, badge: ventesImpayees > 0 ? ventesImpayees : 0 },
         { id: 'clients', text: 'Clients', icon: Users, path: '/clients', permission: isAdmin || isVendeur },
-        { id: 'factures', text: 'Factures', icon: Receipt, path: '/factures', permission: isAdmin || isVendeur },
-        { id: 'paiements', text: 'Paiements', icon: CreditCard, path: '/paiements', permission: isAdmin || isVendeur },
+        { id: 'factures', text: 'Factures Clients', icon: Receipt, path: '/factures', permission: isAdmin || isVendeur },
+        { id: 'paiements', text: 'Paiements Clients', icon: CreditCard, path: '/paiements', permission: isAdmin || isVendeur },
         { id: 'devis', text: 'Devis', icon: FileText, path: '/devis', permission: isAdmin || isVendeur },
         { id: 'retours-clients', text: 'Retours Clients', icon: ReturnIcon, path: '/retours-clients', permission: isAdmin || isVendeur }
       ]
@@ -299,7 +346,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
         { id: 'stocks', text: 'Stocks', icon: Boxes, path: '/stocks', permission: isAdmin, badge: stocksFaibles > 0 ? stocksFaibles : 0 },
         { id: 'entrepots', text: 'Entrepôts', icon: Warehouse, path: '/entrepots', permission: isAdmin },
         { id: 'lots', text: 'Lots', icon: Layers, path: '/lots', permission: isAdmin, badge: lotsExpirant > 0 ? lotsExpirant : 0 },
-        { id: 'mouvements', text: 'Mouvements', icon: MoveHorizontal, path: '/mouvements-stock', permission: isAdmin },
+        { id: 'mouvements-stock', text: 'Mouvements Stock', icon: MoveHorizontal, path: '/mouvements-stock', permission: isAdmin },
         { id: 'alertes-stock', text: 'Alertes Stock', icon: AlertOctagon, path: '/alertes-stock', permission: isAdmin, badge: alertesStockCount > 0 ? alertesStockCount : 0 },
         { id: 'inventaires', text: 'Inventaires', icon: ClipboardCheck, path: '/inventaires', permission: isAdmin, badge: inventairesEnCours > 0 ? inventairesEnCours : 0 },
         { id: 'transferts', text: 'Transferts', icon: ArrowLeftRight, path: '/transferts', permission: isAdmin }
@@ -315,9 +362,12 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
       icon: ShoppingBag,
       items: [
         { id: 'fournisseurs', text: 'Fournisseurs', icon: Building2, path: '/fournisseurs', permission: isAdmin },
-        { id: 'commandes-fournisseurs', text: 'Commandes', icon: FileText, path: '/commandes-fournisseurs', permission: isAdmin, badge: commandesEnAttente > 0 ? commandesEnAttente : 0 },
-        { id: 'receptions', text: 'Réceptions', icon: PackageCheck, path: '/receptions', permission: isAdmin },
-        { id: 'retours-fournisseurs', text: 'Retours Fournisseurs', icon: ReturnIcon, path: '/retours-fournisseurs', permission: isAdmin }
+        { id: 'commandes-fournisseurs', text: 'Commandes Fournisseurs', icon: FileText, path: '/commandes-fournisseurs', permission: isAdmin, badge: commandesEnAttente > 0 ? commandesEnAttente : 0 },
+        { id: 'receptions', text: 'Réceptions', icon: PackageCheck, path: '/receptions', permission: isAdmin, badge: receptionsEnAttente > 0 ? receptionsEnAttente : 0 },
+        { id: 'retours-fournisseurs', text: 'Retours Fournisseurs', icon: RotateCcw, path: '/retours-fournisseurs', permission: isAdmin, badge: retoursEnAttente > 0 ? retoursEnAttente : 0 },
+        { id: 'factures-fournisseurs', text: 'Factures Fournisseurs', icon: ReceiptIcon, path: '/factures-fournisseurs', permission: isAdmin, badge: facturesImpayees > 0 ? facturesImpayees : 0 },
+        { id: 'paiements-fournisseurs', text: 'Paiements Fournisseurs', icon: CreditCardIcon, path: '/paiements-fournisseurs', permission: isAdmin, badge: paiementsFournisseursEnAttente > 0 ? paiementsFournisseursEnAttente : 0 },
+        { id: 'dashboard-achats', text: 'Dashboard Achats', icon: BarChart, path: '/dashboard-achats', permission: isAdmin }
       ]
     });
 
@@ -334,7 +384,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
         { id: 'budgets', text: 'Budgets', icon: PiggyBank, path: '/budgets', permission: isAdmin },
         { id: 'depenses', text: 'Dépenses', icon: TrendingDown, path: '/depenses', permission: isAdmin },
         { id: 'rapports-financiers', text: 'Rapports Financiers', icon: FileSpreadsheet, path: '/rapports-financiers', permission: isAdmin },
-        { id: 'sessions-caisse', text: 'Sessions Caisse', icon: Clock, path: '/sessions-caisse', permission: isAdmin }
+        { id: 'dashboard-finances', text: 'Dashboard Finances', icon: PieChart, path: '/dashboard-finances', permission: isAdmin }
       ]
     });
 
@@ -346,12 +396,12 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
         { id: 'dashboard-tresorerie', text: 'Tableau de Bord', icon: Gauge, path: '/dashboard-tresorerie', permission: isAdmin },
         { id: 'caisses', text: 'Caisses', icon: Banknote, path: '/caisses', permission: isAdmin },
         { id: 'comptes-bancaires', text: 'Comptes Bancaires', icon: Landmark, path: '/comptes-bancaires', permission: isAdmin },
-        { id: 'mouvements-tresorerie', text: 'Mouvements', icon: Coins, path: '/mouvements-tresorerie', permission: isAdmin },
+        { id: 'mouvements-tresorerie', text: 'Mouvements Trésorerie', icon: Coins, path: '/mouvements-tresorerie', permission: isAdmin },
         { id: 'frais', text: 'Frais & Dépenses', icon: ReceiptText, path: '/frais', permission: isAdmin },
         { id: 'previsions', text: 'Prévisions', icon: CalendarDays, path: '/previsions', permission: isAdmin },
         { id: 'rapprochement-bancaire', text: 'Rapprochement Bancaire', icon: CheckCircle, path: '/rapprochement-bancaire', permission: isAdmin },
         { id: 'tresorerie-journaliere', text: 'Trésorerie Journalière', icon: ClipboardList, path: '/tresorerie-journaliere', permission: isAdmin },
-        { id: 'alertes-tresorerie', text: 'Alertes Trésorerie', icon: AlertCircle, path: '/alertes-tresorerie', permission: isAdmin }
+        { id: 'alertes-tresorerie', text: 'Alertes Trésorerie', icon: AlertCircleIcon, path: '/alertes-tresorerie', permission: isAdmin }
       ]
     });
 
@@ -360,10 +410,10 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
       name: 'LIVRAISONS',
       icon: Truck,
       items: [
-        { id: 'livraisons', text: 'Livraisons', icon: Truck, path: '/livraisons', permission: isAdmin },
-        { id: 'tournees', text: 'Tournées', icon: MapPin, path: '/tournees', permission: isAdmin },
-        { id: 'livreurs', text: 'Livreurs', icon: Users, path: '/livreurs', permission: isAdmin },
-        { id: 'suivi-livraisons', text: 'Suivi', icon: MapPin, path: '/suivi-livraisons', permission: isAdmin }
+        { id: 'livraisons', text: 'Livraisons', icon: TruckIcon, path: '/livraisons', permission: isAdmin },
+        { id: 'tournees', text: 'Tournées', icon: Route, path: '/tournees', permission: isAdmin },
+        { id: 'livreurs', text: 'Livreurs', icon: UserCheck, path: '/livreurs', permission: isAdmin },
+        { id: 'suivi-livraisons', text: 'Suivi Livraisons', icon: Map, path: '/suivi-livraisons', permission: isAdmin }
       ]
     });
 

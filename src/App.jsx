@@ -132,6 +132,12 @@ import FraisForm from './components/tresorerie/FraisForm';
 import Dashboard from './components/dashboard/Dashboard';
 import Statistiques from './components/dashboard/Statistiques';
 import Analyses from './components/dashboard/Analyses';
+import FacturesFournisseursList from './components/achatsfournisseurs/FacturesFournisseursList';
+import FactureFournisseurDetail from './components/achatsfournisseurs/FactureFournisseurDetail';
+import FactureFournisseurForm from './components/achatsfournisseurs/FactureFournisseurForm';
+import PaiementFournisseurDetail from './components/achatsfournisseurs/PaiementFournisseurDetail';
+import PaiementsFournisseursList from './components/achatsfournisseurs/PaiementsFournisseursList';
+import PaiementFournisseurForm from './components/achatsfournisseurs/PaiementFournisseurForm';
 
 import Utilisateurs from './components/users/Utilisateurs';
 import UtilisateurForm from './components/users/UtilisateurForm';
@@ -171,6 +177,16 @@ function App() {
         <Route path="/statistiques" element={<Statistiques />} />
         <Route path="/analyses" element={<Analyses />} />
 
+<Route path="/factures-fournisseurs" element={<FacturesFournisseursList />} />
+<Route path="/factures-fournisseurs/nouveau" element={<FactureFournisseurForm />} />
+<Route path="/factures-fournisseurs/:id" element={<FactureFournisseurDetail />} />
+<Route path="/factures-fournisseurs/:id/modifier" element={<FactureFournisseurForm />} />
+<Route path="/factures-fournisseurs/:id/paiement" element={<FactureFournisseurDetail />} />
+
+
+<Route path="/paiements-fournisseurs" element={<PaiementsFournisseursList />} />
+<Route path="/paiements-fournisseurs/nouveau" element={<PaiementFournisseurForm />} />
+<Route path="/paiements-fournisseurs/:id" element={<PaiementFournisseurDetail />} />
 
         <Route path="/utilisateurs" element={<Utilisateurs />} />
         <Route path="/utilisateurs/ajouter" element={<UtilisateurForm />} />
