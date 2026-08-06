@@ -7,7 +7,7 @@ import {
   CreditCard, Calendar, DollarSign, Building2, 
   Receipt, Clock, Banknote, Wallet, Landmark,
   FileText, AlertTriangle, RefreshCw, Search,
-  HandCoins, Plus
+  HandCoins, Plus, TrendingUp
 } from 'lucide-react';
 
 const PaiementFournisseurForm = () => {
@@ -35,52 +35,40 @@ const PaiementFournisseurForm = () => {
 
   const showNotification = (message, type) => {
     setNotification({ show: true, message, type });
-    setTimeout(() => setNotification(prev => ({ ...prev, show: false })), 4000);
+    setTimeout(() => setNotification(prev => ({ ...prev, show: false })), 5000);
   };
 
-  // Récupérer TOUTES les factures pour déboguer
-  const fetchAllInvoices = async () => {
-    try {
-      const response = await AxiosInstance.get('/supplier-invoices/');
-      setAllInvoices(response.data || []);
-      console.log('📦 Toutes les factures:', response.data);
-      console.log('📊 Statuts disponibles:', [...new Set(response.data.map(i => i.paiement_status))]);
-      return response.data;
-    } catch (error) {
-      console.error('Erreur chargement toutes les factures:', error);
-      return [];
-    }
-  };
-
-  // Récupérer les factures impayées
+  // ✅ Récupérer les factures impayées
   const fetchInvoices = async () => {
     setLoadingInvoices(true);
     try {
-      // Récupérer toutes les factures d'abord
-      const allData = await fetchAllInvoices();
+      const response = await AxiosInstance.get('/supplier-invoices/', {
+        params: {
+          paiement_status: 'unpaid,partial,overdue'
+        }
+      });
       
-      // Filtrer les factures impayées (unpaid, partial, overdue)
-      const unpaidInvoices = allData.filter(
-        invoice => invoice.paiement_status === 'unpaid' || 
-                   invoice.paiement_status === 'partial' || 
-                   invoice.paiement_status === 'overdue'
-      );
+      console.log('✅ Factures impayées:', response.data);
+      setInvoices(response.data || []);
       
-      console.log('✅ Factures impayées:', unpaidInvoices);
-      setInvoices(unpaidInvoices);
-      
-      if (unpaidInvoices.length === 0) {
-        const paidCount = allData.filter(i => i.paiement_status === 'paid').length;
-        showNotification(
-          `Aucune facture impayée. ${allData.length} facture(s) au total (${paidCount} payée(s))`,
-          'warning'
-        );
+      if (response.data?.length === 0) {
+        showNotification('Aucune facture impayée disponible', 'warning');
       }
     } catch (error) {
       console.error('❌ Erreur chargement factures:', error);
       showNotification('Erreur de chargement des factures', 'error');
     } finally {
       setLoadingInvoices(false);
+    }
+  };
+
+  // Récupérer TOUTES les factures pour les statistiques
+  const fetchAllInvoices = async () => {
+    try {
+      const response = await AxiosInstance.get('/supplier-invoices/');
+      setAllInvoices(response.data || []);
+    } catch (error) {
+      console.error('Erreur chargement toutes les factures:', error);
     }
   };
 
@@ -106,11 +94,12 @@ const PaiementFournisseurForm = () => {
 
   useEffect(() => {
     fetchInvoices();
+    fetchAllInvoices();
     fetchCaisses();
     fetchComptesBancaires();
   }, []);
 
-  // Quand une facture est sélectionnée
+  // ✅ Quand une facture est sélectionnée
   useEffect(() => {
     if (formData.supplier_invoice) {
       const invoice = invoices.find(i => i.id === parseInt(formData.supplier_invoice));
@@ -142,11 +131,32 @@ const PaiementFournisseurForm = () => {
     }
   };
 
+  // ✅ Payer tout
+  const handlePayAll = () => {
+    if (selectedInvoice) {
+      setFormData(prev => ({
+        ...prev,
+        amount: selectedInvoice.remaining_amount?.toString() || ''
+      }));
+    }
+  };
+
+  // ✅ Payer un pourcentage
+  const handleSetPercentage = (percentage) => {
+    if (selectedInvoice) {
+      const amount = (selectedInvoice.remaining_amount * percentage) / 100;
+      setFormData(prev => ({
+        ...prev,
+        amount: amount.toFixed(2)
+      }));
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
 
-    // Validation
+    // ✅ Validations
     if (!formData.supplier_invoice) {
       showNotification('Veuillez sélectionner une facture', 'error');
       setLoading(false);
@@ -161,7 +171,10 @@ const PaiementFournisseurForm = () => {
     }
 
     if (selectedInvoice && amount > selectedInvoice.remaining_amount) {
-      showNotification(`Le montant (${amount.toLocaleString()} FCFA) dépasse le solde restant (${selectedInvoice.remaining_amount.toLocaleString()} FCFA)`, 'error');
+      showNotification(
+        `Le montant (${amount.toLocaleString()} FCFA) dépasse le solde restant (${selectedInvoice.remaining_amount.toLocaleString()} FCFA)`,
+        'error'
+      );
       setLoading(false);
       return;
     }
@@ -196,19 +209,55 @@ const PaiementFournisseurForm = () => {
         compte_destination_id: formData.compte_destination_id ? parseInt(formData.compte_destination_id) : null
       };
 
+      console.log('📤 Envoi du paiement:', dataToSend);
+
       const response = await AxiosInstance.post('/fournisseur-paiements/', dataToSend);
 
-      showNotification('Paiement enregistré avec succès', 'success');
+      console.log('✅ Réponse:', response.data);
+
+      // ✅ Calcul du nouveau solde restant
+      const remaining = response.data.remaining_amount || 0;
+      if (remaining > 0) {
+        showNotification(
+          `✅ Paiement enregistré ! Solde restant : ${remaining.toLocaleString()} FCFA`,
+          'success'
+        );
+      } else {
+        showNotification('✅ Facture entièrement payée !', 'success');
+      }
 
       setTimeout(() => {
-        navigate(`/paiements-fournisseurs/${response.data.id}`);
-      }, 1500);
+        navigate('/paiements-fournisseurs');
+      }, 2000);
 
     } catch (error) {
-      console.error('Erreur:', error);
-      const errorMsg = error.response?.data?.message || 
-                       error.response?.data?.detail ||
-                       'Erreur lors de l\'enregistrement du paiement';
+      console.error('❌ Erreur:', error);
+      console.error('Détails:', error.response?.data);
+      
+      let errorMsg = 'Erreur lors de l\'enregistrement du paiement';
+      
+      if (error.response?.data) {
+        if (typeof error.response.data === 'object') {
+          const errors = error.response.data;
+          if (errors.message) {
+            errorMsg = errors.message;
+          } else if (errors.detail) {
+            errorMsg = errors.detail;
+          } else if (errors.non_field_errors) {
+            errorMsg = errors.non_field_errors.join(', ');
+          } else {
+            const firstError = Object.values(errors)[0];
+            if (Array.isArray(firstError)) {
+              errorMsg = firstError[0];
+            } else if (typeof firstError === 'string') {
+              errorMsg = firstError;
+            }
+          }
+        } else if (typeof error.response.data === 'string') {
+          errorMsg = error.response.data;
+        }
+      }
+      
       showNotification(errorMsg, 'error');
     } finally {
       setLoading(false);
@@ -219,14 +268,14 @@ const PaiementFournisseurForm = () => {
     navigate('/paiements-fournisseurs');
   };
 
-  // Filtrer les factures
+  // ✅ Filtrer les factures
   const filteredInvoices = invoices.filter(invoice => {
     const search = searchTerm.toLowerCase();
     return (invoice.invoice_number?.toLowerCase() || '').includes(search) ||
            (invoice.supplier_name?.toLowerCase() || '').includes(search);
   });
 
-  // Compter les statuts des factures
+  // ✅ Statistiques des statuts
   const getStatusCount = () => {
     const counts = { total: allInvoices.length };
     allInvoices.forEach(inv => {
@@ -237,11 +286,18 @@ const PaiementFournisseurForm = () => {
 
   const statusCount = getStatusCount();
 
+  // ✅ Calcul du reste après paiement
+  const getRemainingAfterPayment = () => {
+    if (!selectedInvoice) return 0;
+    const amount = parseFloat(formData.amount) || 0;
+    return Math.max(0, selectedInvoice.remaining_amount - amount);
+  };
+
   return (
     <div className="space-y-4 sm:space-y-6 p-4 sm:p-6 bg-gray-50 min-h-screen">
       {/* Notification */}
       {notification.show && (
-        <div className="fixed top-20 right-4 z-50 animate-slideDown">
+        <div className="fixed top-20 right-4 z-50 animate-slideDown max-w-md">
           <div className={`alert ${notification.type === 'success' ? 'alert-success' : notification.type === 'warning' ? 'alert-warning' : 'alert-error'} shadow-xl rounded-xl`}>
             <div className="flex items-center gap-2">
               {notification.type === 'success' ? <CheckCircle className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
@@ -275,10 +331,7 @@ const PaiementFournisseurForm = () => {
               </p>
             </div>
           </div>
-          <button 
-            onClick={fetchInvoices} 
-            className="btn btn-sm btn-outline gap-2"
-          >
+          <button onClick={fetchInvoices} className="btn btn-sm btn-outline gap-2">
             <RefreshCw className="w-4 h-4" /> Rafraîchir
           </button>
         </div>
@@ -324,6 +377,7 @@ const PaiementFournisseurForm = () => {
                   <option key={invoice.id} value={invoice.id}>
                     {invoice.invoice_number} - {invoice.supplier_name} 
                     ({invoice.remaining_amount?.toLocaleString()} FCFA restant)
+                    {invoice.paiement_status === 'partial' && ' 🔄 Partiellement payée'}
                     {invoice.paiement_status === 'overdue' && ' 🔴 En retard'}
                   </option>
                 ))}
@@ -340,6 +394,7 @@ const PaiementFournisseurForm = () => {
                 </div>
               )}
               
+              {/* Message si aucune facture */}
               {!loadingInvoices && invoices.length === 0 && (
                 <div className="mt-3 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
                   <div className="flex items-start gap-3">
@@ -373,12 +428,6 @@ const PaiementFournisseurForm = () => {
                   </div>
                 </div>
               )}
-
-              {!loadingInvoices && invoices.length > 0 && (
-                <p className="text-xs text-gray-400 mt-1">
-                  {invoices.length} facture(s) impayée(s) disponible(s)
-                </p>
-              )}
             </div>
 
             {/* Détails de la facture sélectionnée */}
@@ -402,20 +451,82 @@ const PaiementFournisseurForm = () => {
                     <p className="font-semibold text-error">{selectedInvoice.remaining_amount?.toLocaleString()} FCFA</p>
                   </div>
                 </div>
+                
+                {/* ✅ Barre de progression du paiement */}
                 <div className="mt-3">
                   <div className="flex justify-between text-xs mb-1">
-                    <span className="text-gray-500">Progression</span>
+                    <span className="text-gray-500">Progression du paiement</span>
                     <span className="font-semibold">
-                      {((selectedInvoice.total_amount - selectedInvoice.remaining_amount) / selectedInvoice.total_amount * 100 || 0).toFixed(1)}%
+                      {selectedInvoice.paid_percentage?.toFixed(1) || 0}%
                     </span>
                   </div>
                   <div className="w-full bg-gray-200 rounded-full h-2">
                     <div 
-                      className="bg-success h-2 rounded-full transition-all duration-500" 
-                      style={{ width: `${((selectedInvoice.total_amount - selectedInvoice.remaining_amount) / selectedInvoice.total_amount * 100) || 0}%` }}
+                      className={`h-2 rounded-full transition-all duration-500 ${
+                        selectedInvoice.paid_percentage >= 100 ? 'bg-success' : 
+                        selectedInvoice.paid_percentage >= 50 ? 'bg-warning' : 'bg-error'
+                      }`}
+                      style={{ width: `${Math.min(selectedInvoice.paid_percentage || 0, 100)}%` }}
                     ></div>
                   </div>
+                  <div className="flex justify-between text-xs text-gray-400 mt-1">
+                    <span>Payé: {selectedInvoice.amount_paid?.toLocaleString()} FCFA</span>
+                    <span>
+                      {selectedInvoice.paiement_status === 'paid' ? '✅ Payée' : 
+                       selectedInvoice.paiement_status === 'partial' ? '🔄 Partielle' : 
+                       '⏳ Non payée'}
+                    </span>
+                  </div>
                 </div>
+              </div>
+            )}
+
+            {/* ✅ Actions rapides pour le montant */}
+            {selectedInvoice && selectedInvoice.remaining_amount > 0 && (
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Actions rapides
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={handlePayAll}
+                    className="btn btn-success btn-sm gap-1"
+                  >
+                    <CheckCircle className="w-3 h-3" /> Payer tout
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSetPercentage(50)}
+                    className="btn btn-outline btn-sm"
+                  >
+                    50%
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSetPercentage(25)}
+                    className="btn btn-outline btn-sm"
+                  >
+                    25%
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSetPercentage(75)}
+                    className="btn btn-outline btn-sm"
+                  >
+                    75%
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSetPercentage(10)}
+                    className="btn btn-outline btn-sm"
+                  >
+                    10%
+                  </button>
+                </div>
+                <p className="text-xs text-gray-400 mt-1">
+                  💡 Cliquez sur un pourcentage pour pré-remplir le montant
+                </p>
               </div>
             )}
 
@@ -439,9 +550,18 @@ const PaiementFournisseurForm = () => {
                 />
               </div>
               {selectedInvoice && (
-                <p className="text-xs text-gray-400 mt-1">
-                  Solde restant: <span className="font-semibold text-error">{selectedInvoice.remaining_amount?.toLocaleString()} FCFA</span>
-                </p>
+                <div className="flex justify-between text-xs mt-1">
+                  <span className="text-gray-400">
+                    Solde restant: <span className="font-semibold text-error">{selectedInvoice.remaining_amount?.toLocaleString()} FCFA</span>
+                  </span>
+                  {parseFloat(formData.amount) > 0 && selectedInvoice.remaining_amount > 0 && (
+                    <span className="text-gray-400">
+                      Reste après paiement: <span className="font-semibold text-warning">
+                        {getRemainingAfterPayment().toLocaleString()} FCFA
+                      </span>
+                    </span>
+                  )}
+                </div>
               )}
             </div>
 
@@ -561,9 +681,10 @@ const PaiementFournisseurForm = () => {
               <ul className="text-sm text-blue-600 space-y-1 mt-2">
                 <li>• Le paiement sera automatiquement enregistré dans la trésorerie</li>
                 <li>• Le solde de la facture sera mis à jour automatiquement</li>
+                <li>• Vous pouvez payer par tranches (paiements partiels)</li>
                 <li>• Choisissez une seule destination (caisse OU compte bancaire)</li>
                 <li>• Le montant ne peut pas dépasser le solde restant</li>
-                <li>• 💡 Si aucune facture n'apparaît, créez-en une d'abord</li>
+                <li>• 💡 Utilisez les boutons rapides pour pré-remplir le montant</li>
               </ul>
             </div>
           </div>

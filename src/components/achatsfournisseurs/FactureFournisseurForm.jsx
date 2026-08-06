@@ -5,7 +5,8 @@ import AxiosInstance from '../AxiosInstance';
 import {
   ArrowLeft, Save, X, CheckCircle, AlertCircle,
   FileText, Calendar, DollarSign, Building2, ShoppingBag,
-  Receipt, Clock, Search, RefreshCw, AlertTriangle
+  Receipt, Clock, Search, RefreshCw, AlertTriangle,
+  Plus, Trash2, Check, Eye
 } from 'lucide-react';
 
 const FactureFournisseurForm = () => {
@@ -15,10 +16,15 @@ const FactureFournisseurForm = () => {
   const [loading, setLoading] = useState(false);
   const [fetchingData, setFetchingData] = useState(isEdit);
   const [purchaseOrders, setPurchaseOrders] = useState([]);
-  const [allOrders, setAllOrders] = useState([]);
+  const [availableReceipts, setAvailableReceipts] = useState([]);
+  const [selectedReceiptId, setSelectedReceiptId] = useState(null);
+  const [selectedReceipt, setSelectedReceipt] = useState(null);
   const [loadingOrders, setLoadingOrders] = useState(false);
+  const [loadingReceipts, setLoadingReceipts] = useState(false);
   const [notification, setNotification] = useState({ show: false, message: '', type: 'success' });
   const [searchOrder, setSearchOrder] = useState('');
+  const [searchReceipt, setSearchReceipt] = useState('');
+  const [existingReceipt, setExistingReceipt] = useState(null);
   
   const [formData, setFormData] = useState({
     purchase_order: '',
@@ -28,7 +34,8 @@ const FactureFournisseurForm = () => {
     amount: '',
     tax_amount: '',
     total_amount: '',
-    notes: ''
+    notes: '',
+    receipt_id: null
   });
 
   const showNotification = (message, type) => {
@@ -36,31 +43,19 @@ const FactureFournisseurForm = () => {
     setTimeout(() => setNotification(prev => ({ ...prev, show: false })), 4000);
   };
 
-  // Récupérer TOUTES les commandes et filtrer
-  const fetchAllOrders = async () => {
+  // Récupérer les commandes reçues
+  const fetchOrders = async () => {
     setLoadingOrders(true);
     try {
-      // Récupérer toutes les commandes
-      const response = await AxiosInstance.get('/purchase-orders/');
+      const response = await AxiosInstance.get('/purchase-orders/', {
+        params: { status: 'received,partial' }
+      });
       
-      console.log('📦 Toutes les commandes:', response.data);
-      setAllOrders(response.data || []);
+      console.log('📦 Commandes disponibles:', response.data);
+      setPurchaseOrders(response.data || []);
       
-      // Filtrer celles qui sont reçues ou partielles
-      const available = (response.data || []).filter(
-        order => order.status === 'received' || order.status === 'partial'
-      );
-      
-      console.log('✅ Commandes disponibles (received/partial):', available);
-      setPurchaseOrders(available);
-      
-      if (available.length === 0) {
-        // Afficher les statuts disponibles
-        const statuses = [...new Set((response.data || []).map(o => o.status))];
-        showNotification(
-          `Aucune commande reçue. Statuts disponibles: ${statuses.join(', ')}`,
-          'warning'
-        );
+      if (response.data?.length === 0) {
+        showNotification('Aucune commande reçue disponible', 'warning');
       }
     } catch (error) {
       console.error('❌ Erreur chargement commandes:', error);
@@ -70,12 +65,58 @@ const FactureFournisseurForm = () => {
     }
   };
 
+  // Récupérer les réceptions disponibles pour une commande
+  const fetchAvailableReceipts = async (orderId) => {
+    if (!orderId) {
+      setAvailableReceipts([]);
+      setSelectedReceiptId(null);
+      setSelectedReceipt(null);
+      return;
+    }
+    
+    setLoadingReceipts(true);
+    try {
+      const response = await AxiosInstance.get('/receptions/available_for_invoice/', {
+        params: { purchase_order: orderId }
+      });
+      
+      console.log('📦 Réceptions disponibles:', response.data);
+      setAvailableReceipts(response.data || []);
+      
+      // Si une seule réception disponible, la sélectionner automatiquement
+      if (response.data?.length === 1) {
+        const receipt = response.data[0];
+        setSelectedReceiptId(receipt.id);
+        setSelectedReceipt(receipt);
+        // Mettre à jour le montant
+        setFormData(prev => ({
+          ...prev,
+          amount: receipt.total_received_amount?.toString() || '',
+          total_amount: (receipt.total_received_amount + (parseFloat(prev.tax_amount) || 0)).toString()
+        }));
+      } else if (response.data?.length === 0) {
+        showNotification('Aucune réception disponible pour cette commande', 'warning');
+        setSelectedReceiptId(null);
+        setSelectedReceipt(null);
+      }
+    } catch (error) {
+      console.error('❌ Erreur chargement réceptions:', error);
+      showNotification('Erreur lors du chargement des réceptions', 'error');
+    } finally {
+      setLoadingReceipts(false);
+    }
+  };
+
   // Récupérer la facture en modification
   const fetchInvoice = async () => {
     if (!isEdit) return;
     try {
       const response = await AxiosInstance.get(`/supplier-invoices/${id}/`);
       const data = response.data;
+      
+      // Récupérer la réception associée
+      const receipt = data.receipt;
+      
       setFormData({
         purchase_order: data.purchase_order?.id || '',
         invoice_number: data.invoice_number || '',
@@ -84,8 +125,15 @@ const FactureFournisseurForm = () => {
         amount: data.amount || '',
         tax_amount: data.tax_amount || '',
         total_amount: data.total_amount || '',
-        notes: data.notes || ''
+        notes: data.notes || '',
+        receipt_id: receipt?.id || null
       });
+      
+      if (receipt) {
+        setExistingReceipt(receipt);
+        setSelectedReceiptId(receipt.id);
+        setSelectedReceipt(receipt);
+      }
     } catch (error) {
       console.error('Erreur chargement facture:', error);
       showNotification('Erreur de chargement de la facture', 'error');
@@ -95,11 +143,22 @@ const FactureFournisseurForm = () => {
   };
 
   useEffect(() => {
-    fetchAllOrders();
+    fetchOrders();
     if (isEdit) {
       fetchInvoice();
     }
   }, [id]);
+
+  // Charger les réceptions quand la commande change (en création)
+  useEffect(() => {
+    if (formData.purchase_order && !isEdit) {
+      fetchAvailableReceipts(formData.purchase_order);
+    } else if (!formData.purchase_order) {
+      setAvailableReceipts([]);
+      setSelectedReceiptId(null);
+      setSelectedReceipt(null);
+    }
+  }, [formData.purchase_order, isEdit]);
 
   // Calculer automatiquement le total TTC
   useEffect(() => {
@@ -115,6 +174,25 @@ const FactureFournisseurForm = () => {
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
+    
+    // Si changement de commande, réinitialiser la réception
+    if (name === 'purchase_order') {
+      setSelectedReceiptId(null);
+      setSelectedReceipt(null);
+      setAvailableReceipts([]);
+    }
+  };
+
+  // Sélectionner une réception
+  const handleSelectReceipt = (receipt) => {
+    setSelectedReceiptId(receipt.id);
+    setSelectedReceipt(receipt);
+    // Mettre à jour le montant avec le total de la réception
+    setFormData(prev => ({
+      ...prev,
+      amount: receipt.total_received_amount?.toString() || '',
+      total_amount: (receipt.total_received_amount + (parseFloat(prev.tax_amount) || 0)).toString()
+    }));
   };
 
   const handleSubmit = async (e) => {
@@ -127,6 +205,14 @@ const FactureFournisseurForm = () => {
       setLoading(false);
       return;
     }
+    
+    // ✅ Vérifier qu'une réception est sélectionnée (pour création)
+    if (!isEdit && !selectedReceiptId) {
+      showNotification('Veuillez sélectionner une réception', 'error');
+      setLoading(false);
+      return;
+    }
+
     if (!formData.invoice_number) {
       showNotification('Veuillez saisir le numéro de facture', 'error');
       setLoading(false);
@@ -165,8 +251,11 @@ const FactureFournisseurForm = () => {
         amount: parseFloat(formData.amount),
         tax_amount: parseFloat(formData.tax_amount) || 0,
         total_amount: parseFloat(formData.total_amount),
-        notes: formData.notes
+        notes: formData.notes,
+        receipt_id: isEdit ? null : selectedReceiptId  // ✅ Envoyer l'ID de la réception
       };
+
+      console.log('📤 Envoi de la facture:', dataToSend);
 
       const response = await AxiosInstance({
         method: method,
@@ -184,10 +273,33 @@ const FactureFournisseurForm = () => {
       }, 1500);
 
     } catch (error) {
-      console.error('Erreur:', error);
-      const errorMsg = error.response?.data?.message || 
-                       error.response?.data?.detail ||
-                       'Erreur lors de l\'enregistrement de la facture';
+      console.error('❌ Erreur:', error);
+      console.error('Détails:', error.response?.data);
+      
+      let errorMsg = 'Erreur lors de l\'enregistrement de la facture';
+      
+      if (error.response?.data) {
+        if (typeof error.response.data === 'object') {
+          const errors = error.response.data;
+          if (errors.message) {
+            errorMsg = errors.message;
+          } else if (errors.detail) {
+            errorMsg = errors.detail;
+          } else if (errors.non_field_errors) {
+            errorMsg = errors.non_field_errors.join(', ');
+          } else {
+            const firstError = Object.values(errors)[0];
+            if (Array.isArray(firstError)) {
+              errorMsg = firstError[0];
+            } else if (typeof firstError === 'string') {
+              errorMsg = firstError;
+            }
+          }
+        } else if (typeof error.response.data === 'string') {
+          errorMsg = error.response.data;
+        }
+      }
+      
       showNotification(errorMsg, 'error');
     } finally {
       setLoading(false);
@@ -205,6 +317,13 @@ const FactureFournisseurForm = () => {
            (order.supplier_name?.toLowerCase() || '').includes(search);
   });
 
+  // Filtrer les réceptions par recherche
+  const filteredReceipts = availableReceipts.filter(receipt => {
+    const search = searchReceipt.toLowerCase();
+    return (receipt.receipt_number?.toLowerCase() || '').includes(search) ||
+           (receipt.po_number?.toLowerCase() || '').includes(search);
+  });
+
   // Récupérer le fournisseur d'une commande sélectionnée
   const getSelectedOrderSupplier = () => {
     const order = purchaseOrders.find(o => o.id === parseInt(formData.purchase_order));
@@ -214,15 +333,6 @@ const FactureFournisseurForm = () => {
   const getSelectedOrderNumber = () => {
     const order = purchaseOrders.find(o => o.id === parseInt(formData.purchase_order));
     return order ? order.po_number : '';
-  };
-
-  // Compter les statuts
-  const getStatusCount = () => {
-    const counts = {};
-    allOrders.forEach(order => {
-      counts[order.status] = (counts[order.status] || 0) + 1;
-    });
-    return counts;
   };
 
   if (fetchingData) {
@@ -270,11 +380,11 @@ const FactureFournisseurForm = () => {
                 </h1>
               </div>
               <p className="text-sm text-gray-500 ml-1">
-                {isEdit ? 'Modifiez les informations de la facture' : 'Créez une nouvelle facture à partir d\'une commande reçue'}
+                {isEdit ? 'Modifiez les informations de la facture' : 'Sélectionnez une réception non facturée pour créer une facture'}
               </p>
             </div>
           </div>
-          <button onClick={fetchAllOrders} className="btn btn-sm btn-outline gap-2">
+          <button onClick={fetchOrders} className="btn btn-sm btn-outline gap-2">
             <RefreshCw className="w-4 h-4" /> Rafraîchir
           </button>
         </div>
@@ -333,40 +443,6 @@ const FactureFournisseurForm = () => {
                   </span>
                 )}
               </div>
-              
-              {/* Affichage des informations */}
-              {!isEdit && !loadingOrders && (
-                <div className="mt-2">
-                  {purchaseOrders.length === 0 ? (
-                    <div className="text-sm text-warning">
-                      <AlertTriangle className="w-4 h-4 inline mr-1" />
-                      Aucune commande avec le statut "Reçu" ou "Partiel"
-                      {allOrders.length > 0 && (
-                        <div className="text-xs text-gray-400 mt-1">
-                          Commandes existantes : {allOrders.length} 
-                          ({Object.entries(getStatusCount()).map(([status, count]) => 
-                            `${status}: ${count}`
-                          ).join(', ')})
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="text-xs text-gray-400">
-                      {purchaseOrders.length} commande(s) disponible(s) pour facturation
-                      {allOrders.length > purchaseOrders.length && 
-                        ` (${allOrders.length - purchaseOrders.length} non disponibles)`
-                      }
-                    </div>
-                  )}
-                  <button 
-                    type="button"
-                    onClick={fetchAllOrders}
-                    className="text-xs text-primary hover:underline mt-1"
-                  >
-                    🔄 Rafraîchir la liste
-                  </button>
-                </div>
-              )}
 
               {formData.purchase_order && (
                 <div className="mt-2 flex flex-wrap gap-4 text-sm text-gray-500">
@@ -379,6 +455,151 @@ const FactureFournisseurForm = () => {
                 </div>
               )}
             </div>
+
+            {/* ✅ Sélection de la réception - UNE SEULE RÉCEPTION */}
+            {formData.purchase_order && !isEdit && (
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Réception à facturer <span className="text-error">*</span>
+                </label>
+                
+                <div className="relative mb-2">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input
+                    type="text"
+                    className="input input-bordered w-full pl-9"
+                    placeholder="Rechercher une réception (numéro ou commande)..."
+                    value={searchReceipt}
+                    onChange={(e) => setSearchReceipt(e.target.value)}
+                  />
+                  {loadingReceipts && (
+                    <span className="loading loading-spinner loading-sm absolute right-3 top-1/2 -translate-y-1/2"></span>
+                  )}
+                </div>
+
+                {loadingReceipts ? (
+                  <div className="flex items-center justify-center py-8">
+                    <span className="loading loading-spinner loading-md"></span>
+                    <span className="ml-3 text-gray-500">Chargement des réceptions...</span>
+                  </div>
+                ) : availableReceipts.length === 0 ? (
+                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                    <div className="flex items-start gap-3">
+                      <AlertTriangle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <p className="text-sm font-semibold text-yellow-700">Aucune réception disponible</p>
+                        <p className="text-xs text-yellow-600 mt-1">
+                          Cette commande n'a pas de réception terminée non facturée.
+                          Vérifiez que les réceptions sont terminées et non facturées.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-2 max-h-72 overflow-y-auto border rounded-lg p-3">
+                    {filteredReceipts.map(receipt => (
+                      <div
+                        key={receipt.id}
+                        onClick={() => handleSelectReceipt(receipt)}
+                        className={`flex items-center gap-4 p-3 rounded-lg cursor-pointer transition-all ${
+                          selectedReceiptId === receipt.id
+                            ? 'bg-primary/10 border-2 border-primary'
+                            : 'bg-gray-50 border-2 border-transparent hover:bg-gray-100'
+                        }`}
+                      >
+                        <div className="flex-shrink-0">
+                          {selectedReceiptId === receipt.id ? (
+                            <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center">
+                              <Check className="w-4 h-4 text-white" />
+                            </div>
+                          ) : (
+                            <div className="w-6 h-6 rounded-full border-2 border-gray-300 flex items-center justify-center">
+                              <span className="text-xs text-gray-400">{filteredReceipts.indexOf(receipt) + 1}</span>
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3">
+                            <span className="font-mono font-semibold">{receipt.receipt_number}</span>
+                            <span className="badge badge-success badge-sm">✅ Terminée</span>
+                            <span className="badge badge-info badge-sm">{receipt.po_number}</span>
+                          </div>
+                          <div className="text-sm text-gray-500 mt-1 flex flex-wrap gap-4">
+                            <span>
+                              Montant: <span className="font-semibold text-gray-700">{receipt.total_received_amount?.toLocaleString()} FCFA</span>
+                            </span>
+                            <span>•</span>
+                            <span>Date: {new Date(receipt.receipt_date).toLocaleDateString()}</span>
+                            <span>•</span>
+                            <span>Fournisseur: <span className="font-semibold">{receipt.supplier_name}</span></span>
+                          </div>
+                        </div>
+                        {selectedReceiptId === receipt.id && (
+                          <div className="flex-shrink-0">
+                            <span className="badge badge-primary">Sélectionnée</span>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Résumé de la réception sélectionnée */}
+                {selectedReceipt && (
+                  <div className="mt-3 p-4 bg-green-50 rounded-lg border border-green-200">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-semibold text-green-700 flex items-center gap-2">
+                          <CheckCircle className="w-4 h-4" />
+                          Réception sélectionnée
+                        </p>
+                        <p className="text-sm text-gray-600 mt-1">
+                          {selectedReceipt.receipt_number} - {selectedReceipt.po_number}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm text-gray-500">Montant total</p>
+                        <p className="text-lg font-bold text-primary">{selectedReceipt.total_received_amount?.toLocaleString()} FCFA</p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedReceiptId(null);
+                        setSelectedReceipt(null);
+                        setFormData(prev => ({
+                          ...prev,
+                          amount: '',
+                          total_amount: ''
+                        }));
+                      }}
+                      className="btn btn-ghost btn-xs text-error gap-1 mt-2"
+                    >
+                      <X className="w-3 h-3" /> Désélectionner
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Réception déjà facturée (en modification) */}
+            {isEdit && existingReceipt && (
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Réception facturée
+                </label>
+                <div className="flex items-center gap-3 p-3 bg-green-50 rounded-lg border border-green-200">
+                  <CheckCircle className="w-5 h-5 text-green-500" />
+                  <div>
+                    <span className="font-mono font-semibold">{existingReceipt.receipt_number}</span>
+                    <span className="text-sm text-gray-500 ml-3">
+                      {existingReceipt.total?.toLocaleString()} FCFA
+                    </span>
+                  </div>
+                  <span className="badge badge-success ml-auto">✅ Facturée</span>
+                </div>
+              </div>
+            )}
 
             {/* Numéro de facture */}
             <div>
@@ -445,6 +666,11 @@ const FactureFournisseurForm = () => {
                   required
                 />
               </div>
+              {selectedReceipt && !isEdit && (
+                <p className="text-xs text-gray-400 mt-1">
+                  💡 Montant suggéré: {selectedReceipt.total_received_amount?.toLocaleString()} FCFA
+                </p>
+              )}
             </div>
 
             {/* TVA */}
@@ -516,11 +742,12 @@ const FactureFournisseurForm = () => {
                 <FileText className="w-4 h-4" /> Informations
               </h4>
               <ul className="text-sm text-blue-600 space-y-1 mt-2">
-                <li>• La facture doit correspondre à une commande <strong>reçue</strong> ou <strong>partiellement reçue</strong></li>
-                <li>• Vérifiez que le montant total correspond à la facture papier</li>
+                <li>• La facture doit correspondre à <strong>UNE</strong> réception terminée</li>
+                <li>• La réception ne doit pas être déjà facturée</li>
+                <li>• Le montant de la facture doit correspondre au total de la réception</li>
+                <li>• Une réception ne peut être facturée qu'<strong>UNE SEULE</strong> fois</li>
                 <li>• La date d'échéance détermine le délai de paiement</li>
-                <li>• 💡 Si aucune commande n'apparaît, vérifiez le statut de vos commandes</li>
-                <li>• 📊 Statuts acceptés: <span className="badge badge-success">received</span> <span className="badge badge-warning">partial</span></li>
+                <li>• 💡 Si aucune réception n'apparaît, vérifiez qu'elles sont terminées et non facturées</li>
               </ul>
             </div>
           </div>
@@ -537,7 +764,7 @@ const FactureFournisseurForm = () => {
             <button
               type="submit"
               className="btn bg-gradient-to-r from-primary to-primary/80 text-white border-none flex-1 sm:flex-none order-1 sm:order-2 gap-2"
-              disabled={loading || loadingOrders || purchaseOrders.length === 0}
+              disabled={loading || loadingOrders || (!isEdit && !selectedReceiptId)}
             >
               {loading ? (
                 <>

@@ -9,7 +9,7 @@ import {
   Calendar, DollarSign, Clock, Download,
   Receipt, AlertTriangle, FileCheck, Banknote,
   QrCode, Trash2, Building2, Hash, Printer,
-  HandCoins
+  HandCoins, TrendingUp
 } from 'lucide-react';
 
 const PaiementsFournisseursList = () => {
@@ -134,10 +134,7 @@ const PaiementsFournisseursList = () => {
     showNotification('Téléchargement du reçu...', 'success');
   };
 
-  // ✅ NOUVEAU : Redirection directe vers le formulaire de paiement
-  // L'utilisateur devra choisir une facture dans le formulaire
   const handleNewPayment = () => {
-    // Rediriger vers un formulaire qui permet de sélectionner une facture
     navigate('/paiements-fournisseurs/nouveau');
   };
 
@@ -196,6 +193,13 @@ const PaiementsFournisseursList = () => {
     return <span className={`badge badge-${m.color}`}>{m.label}</span>;
   };
 
+  const formatCurrency = (amount) => {
+    if (!amount && amount !== 0) return '0 FCFA';
+    const num = typeof amount === 'string' ? parseFloat(amount) : amount;
+    if (isNaN(num)) return '0 FCFA';
+    return `${num.toLocaleString('fr-FR')} FCFA`;
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[calc(100vh-200px)]">
@@ -236,7 +240,7 @@ const PaiementsFournisseursList = () => {
             </div>
             
             <p className="text-gray-600 mb-4">
-              Êtes-vous sûr de vouloir annuler le paiement <strong>{selectedPayment.reference}</strong> de <strong>{selectedPayment.amount?.toLocaleString()} F</strong> ?
+              Êtes-vous sûr de vouloir annuler le paiement <strong>{selectedPayment.reference}</strong> de <strong>{formatCurrency(selectedPayment.amount)}</strong> ?
             </p>
             
             <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
@@ -300,22 +304,19 @@ const PaiementsFournisseursList = () => {
               <h1 className="text-2xl sm:text-3xl font-black text-primary">Paiements fournisseurs</h1>
             </div>
             <p className="text-sm text-gray-500 ml-1">
-              Gérez vos paiements aux fournisseurs – {stats.total} paiement(s) pour {stats.totalAmount.toLocaleString()} FCFA
+              Gérez vos paiements aux fournisseurs – {stats.total} paiement(s) pour {formatCurrency(stats.totalAmount)}
             </p>
           </div>
           <div className="flex flex-wrap gap-3">
             <button onClick={fetchPayments} className="btn btn-sm sm:btn-md btn-outline gap-2">
               <RefreshCw className="w-4 h-4" /> Actualiser
             </button>
-            
-            {/* ✅ NOUVEAU BOUTON : Nouveau paiement - Redirection directe */}
             <button 
               onClick={handleNewPayment} 
               className="btn btn-sm sm:btn-md bg-gradient-to-r from-success to-success/80 text-white border-none shadow-lg gap-2"
             >
               <HandCoins className="w-4 h-4" /> Nouveau paiement
             </button>
-            
             <button 
               onClick={() => navigate('/factures-fournisseurs')} 
               className="btn btn-sm sm:btn-md bg-gradient-to-r from-primary to-primary/80 text-white border-none shadow-lg gap-2"
@@ -354,7 +355,7 @@ const PaiementsFournisseursList = () => {
         </div>
         <div className="bg-white shadow-md rounded-xl p-3">
           <div className="flex items-center justify-between">
-            <div><p className="text-xs text-gray-500">Total payé</p><p className="text-sm font-bold text-primary">{stats.totalAmount.toLocaleString()} F</p></div>
+            <div><p className="text-xs text-gray-500">Total payé</p><p className="text-sm font-bold text-primary">{formatCurrency(stats.totalAmount)}</p></div>
             <Banknote className="w-8 h-8 text-primary/20" />
           </div>
         </div>
@@ -468,7 +469,7 @@ const PaiementsFournisseursList = () => {
                         <span className="text-sm">{new Date(payment.payment_date).toLocaleDateString()}</span>
                       </div>
                     </td>
-                    <td className="py-3 text-right font-semibold">{payment.amount?.toLocaleString()} F</td>
+                    <td className="py-3 text-right font-semibold">{formatCurrency(payment.amount)}</td>
                     <td className="py-3 text-center">{getMethodBadge(payment.method)}</td>
                     <td className="py-3 text-center">{getStatusBadge(payment.status)}</td>
                     <td className="py-3 text-center">
@@ -521,7 +522,7 @@ const PaiementsFournisseursList = () => {
 
         {/* Pagination */}
         {filteredPayments.length > 0 && (
-          <div className="px-6 py-4 border-t flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="px-6 py-4 border-t flex flex-col sm:flex-row items-center justify-between gap-4 bg-gray-50">
             <div className="text-sm text-gray-500">
               Affichage de {startIndex + 1} à {Math.min(currentPage * itemsPerPage, filteredPayments.length)} sur {filteredPayments.length}
             </div>
@@ -530,6 +531,7 @@ const PaiementsFournisseursList = () => {
                 <option value="5">5 lignes</option>
                 <option value="10">10 lignes</option>
                 <option value="20">20 lignes</option>
+                <option value="50">50 lignes</option>
               </select>
               <div className="join">
                 <button className="join-item btn btn-sm" onClick={() => setCurrentPage(p => Math.max(1, p-1))} disabled={currentPage === 1}>

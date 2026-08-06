@@ -8,7 +8,8 @@ import {
   Eye, Filter, ChevronLeft, ChevronRight,
   Calendar, DollarSign, Clock, Download,
   CreditCard, Receipt, AlertTriangle, FileCheck,
-  Building2, Hash, Printer, QrCode
+  Building2, Hash, Printer, QrCode, TrendingUp,
+  Trash2, HandCoins
 } from 'lucide-react';
 
 const FacturesFournisseursList = () => {
@@ -112,16 +113,12 @@ const FacturesFournisseursList = () => {
     }
   };
 
-  const handleDownloadPdf = (invoiceId) => {
-    // Fonction à implémenter pour le téléchargement PDF
-    showNotification('Téléchargement PDF en cours...', 'success');
-  };
-
   const filteredInvoices = invoices.filter(invoice => {
     const matchesSearch = !searchTerm || 
       (invoice.invoice_number?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
       (invoice.supplier_name?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
-      (invoice.po_number?.toLowerCase() || '').includes(searchTerm.toLowerCase());
+      (invoice.po_number?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+      (invoice.receipt_number?.toLowerCase() || '').includes(searchTerm.toLowerCase());
     return matchesSearch;
   });
 
@@ -129,6 +126,7 @@ const FacturesFournisseursList = () => {
   const startIndex = (currentPage - 1) * itemsPerPage;
   const paginatedInvoices = filteredInvoices.slice(startIndex, startIndex + itemsPerPage);
 
+  // Statistiques
   const stats = {
     total: invoices.length,
     unpaid: invoices.filter(i => i.paiement_status === 'unpaid').length,
@@ -136,9 +134,62 @@ const FacturesFournisseursList = () => {
     paid: invoices.filter(i => i.paiement_status === 'paid').length,
     overdue: invoices.filter(i => i.paiement_status === 'overdue').length,
     totalAmount: invoices.reduce((sum, i) => sum + (i.total_amount || 0), 0),
+    totalPaid: invoices.reduce((sum, i) => sum + (i.amount_paid || 0), 0),
     unpaidAmount: invoices
-      .filter(i => i.paiement_status === 'unpaid' || i.paiement_status === 'partial' || i.paiement_status === 'overdue')
+      .filter(i => i.paiement_status !== 'paid')
       .reduce((sum, i) => sum + (i.remaining_amount || 0), 0)
+  };
+
+  const formatAmount = (amount) => {
+    if (amount === undefined || amount === null) return '0';
+    return amount.toLocaleString();
+  };
+
+  const PaymentProgressBar = ({ invoice }) => {
+    const progress = invoice.paid_percentage || 0;
+    
+    const getColor = () => {
+      if (progress >= 100) return 'bg-success';
+      if (progress >= 50) return 'bg-warning';
+      return 'bg-error';
+    };
+
+    const getLabel = () => {
+      if (progress >= 100) return '✅ Payée';
+      if (progress >= 50) return '🔄 Partielle';
+      return '⏳ Non payée';
+    };
+
+    return (
+      <div className="w-full">
+        <div className="flex justify-between text-xs mb-0.5">
+          <span className="text-gray-500">{getLabel()}</span>
+          <span className="font-semibold">{progress.toFixed(0)}%</span>
+        </div>
+        <div className="w-full bg-gray-200 rounded-full h-1.5">
+          <div 
+            className={`${getColor()} h-1.5 rounded-full transition-all duration-500`}
+            style={{ width: `${Math.min(progress, 100)}%` }}
+          ></div>
+        </div>
+      </div>
+    );
+  };
+
+  const getPaiementStatusBadge = (status) => {
+    const statusMap = {
+      'unpaid': { label: 'Non payée', color: 'error', icon: <AlertTriangle className="w-3 h-3" /> },
+      'partial': { label: 'Partielle', color: 'warning', icon: <Clock className="w-3 h-3" /> },
+      'paid': { label: '✅ Payée', color: 'success', icon: <CheckCircle className="w-3 h-3" /> },
+      'overdue': { label: '🔴 En retard', color: 'error', icon: <AlertTriangle className="w-3 h-3" /> }
+    };
+    const s = statusMap[status] || { label: status, color: 'ghost', icon: null };
+    
+    return (
+      <span className={`badge badge-${s.color} gap-1 text-xs`}>
+        {s.icon} {s.label}
+      </span>
+    );
   };
 
   const getStatusBadge = (status) => {
@@ -150,22 +201,7 @@ const FacturesFournisseursList = () => {
       'disputed': { label: 'Contestée', color: 'error' }
     };
     const s = statusMap[status] || { label: status, color: 'ghost' };
-    return <span className={`badge badge-${s.color}`}>{s.label}</span>;
-  };
-
-  const getPaiementStatusBadge = (status) => {
-    const statusMap = {
-      'unpaid': { label: 'Non payée', color: 'error', icon: <AlertTriangle className="w-3 h-3" /> },
-      'partial': { label: 'Partiellement payée', color: 'warning', icon: <Clock className="w-3 h-3" /> },
-      'paid': { label: 'Payée', color: 'success', icon: <CheckCircle className="w-3 h-3" /> },
-      'overdue': { label: 'En retard', color: 'error', icon: <AlertTriangle className="w-3 h-3" /> }
-    };
-    const s = statusMap[status] || { label: status, color: 'ghost', icon: null };
-    return (
-      <span className={`badge badge-${s.color} gap-1`}>
-        {s.icon} {s.label}
-      </span>
-    );
+    return <span className={`badge badge-${s.color} text-xs`}>{s.label}</span>;
   };
 
   if (loading) {
@@ -222,7 +258,7 @@ const FacturesFournisseursList = () => {
                 Annuler
               </button>
               <button onClick={handleDelete} className="btn bg-gradient-to-r from-error to-error/80 text-white flex-1 gap-2">
-                <X className="w-4 h-4" /> Supprimer
+                <Trash2 className="w-4 h-4" /> Supprimer
               </button>
             </div>
           </div>
@@ -247,7 +283,6 @@ const FacturesFournisseursList = () => {
             <button onClick={fetchInvoices} className="btn btn-sm sm:btn-md btn-outline gap-2">
               <RefreshCw className="w-4 h-4" /> Actualiser
             </button>
-            {/* ✅ BOUTON NOUVELLE FACTURE AJOUTÉ */}
             <button 
               onClick={() => navigate('/factures-fournisseurs/nouveau')} 
               className="btn btn-sm sm:btn-md bg-gradient-to-r from-primary to-primary/80 text-white border-none shadow-lg gap-2"
@@ -259,7 +294,7 @@ const FacturesFournisseursList = () => {
       </div>
 
       {/* Cartes statistiques */}
-      <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-7 gap-3">
         <div className="bg-white shadow-md rounded-xl p-3">
           <div className="flex items-center justify-between">
             <div><p className="text-xs text-gray-500">Total</p><p className="text-xl font-bold text-primary">{stats.total}</p></div>
@@ -292,7 +327,13 @@ const FacturesFournisseursList = () => {
         </div>
         <div className="bg-white shadow-md rounded-xl p-3">
           <div className="flex items-center justify-between">
-            <div><p className="text-xs text-gray-500">Dette</p><p className="text-sm font-bold text-error">{stats.unpaidAmount.toLocaleString()} F</p></div>
+            <div><p className="text-xs text-gray-500">Total payé</p><p className="text-sm font-bold text-success">{formatAmount(stats.totalPaid)} F</p></div>
+            <TrendingUp className="w-8 h-8 text-success/20" />
+          </div>
+        </div>
+        <div className="bg-white shadow-md rounded-xl p-3">
+          <div className="flex items-center justify-between">
+            <div><p className="text-xs text-gray-500">Reste à payer</p><p className="text-sm font-bold text-error">{formatAmount(stats.unpaidAmount)} F</p></div>
             <DollarSign className="w-8 h-8 text-error/20" />
           </div>
         </div>
@@ -305,7 +346,7 @@ const FacturesFournisseursList = () => {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input 
               type="text" 
-              placeholder="Rechercher par numéro, fournisseur ou commande..." 
+              placeholder="Rechercher par numéro, fournisseur, commande ou réception..." 
               className="input input-bordered w-full pl-9" 
               value={searchTerm} 
               onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }} 
@@ -327,8 +368,8 @@ const FacturesFournisseursList = () => {
               <option value="all">Tous les paiements</option>
               <option value="unpaid">Non payées</option>
               <option value="partial">Partiellement payées</option>
-              <option value="paid">Payées</option>
-              <option value="overdue">En retard</option>
+              <option value="paid">✅ Payées</option>
+              <option value="overdue">🔴 En retard</option>
             </select>
             <input type="date" className="input input-bordered" placeholder="Date début" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
             <input type="date" className="input input-bordered" placeholder="Date fin" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
@@ -355,6 +396,7 @@ const FacturesFournisseursList = () => {
                 <th className="py-3">N° Facture</th>
                 <th className="py-3">Fournisseur</th>
                 <th className="py-3">Commande</th>
+                <th className="py-3">Réception</th>
                 <th className="py-3">Date</th>
                 <th className="py-3">Échéance</th>
                 <th className="py-3 text-right">Montant</th>
@@ -367,7 +409,7 @@ const FacturesFournisseursList = () => {
             <tbody>
               {paginatedInvoices.length === 0 ? (
                 <tr>
-                  <td colSpan="10" className="text-center py-16">
+                  <td colSpan="11" className="text-center py-16">
                     <Receipt className="w-16 h-16 text-gray-300 mx-auto mb-3" />
                     <p className="text-gray-500 font-medium">Aucune facture trouvée</p>
                     <button 
@@ -389,6 +431,7 @@ const FacturesFournisseursList = () => {
                       </div>
                     </td>
                     <td className="py-3 font-mono text-sm">{invoice.po_number || '-'}</td>
+                    <td className="py-3 font-mono text-sm text-gray-500">{invoice.receipt_number || '-'}</td>
                     <td className="py-3">
                       <div className="flex items-center gap-1">
                         <Calendar className="w-3 h-3 text-gray-400" />
@@ -404,13 +447,14 @@ const FacturesFournisseursList = () => {
                         </span>
                       </div>
                     </td>
-                    <td className="py-3 text-right font-semibold">{invoice.total_amount?.toLocaleString()} F</td>
-                    <td className="py-3 text-right text-success">{invoice.amount_paid?.toLocaleString()} F</td>
-                    <td className="py-3 text-right font-semibold text-error">{invoice.remaining_amount?.toLocaleString()} F</td>
+                    <td className="py-3 text-right font-semibold">{formatAmount(invoice.total_amount)} F</td>
+                    <td className="py-3 text-right text-success font-semibold">{formatAmount(invoice.amount_paid)} F</td>
+                    <td className="py-3 text-right font-semibold text-error">{formatAmount(invoice.remaining_amount)} F</td>
                     <td className="py-3 text-center">
                       <div className="flex flex-col items-center gap-1">
                         {getPaiementStatusBadge(invoice.paiement_status)}
                         {getStatusBadge(invoice.status)}
+                        <PaymentProgressBar invoice={invoice} />
                       </div>
                     </td>
                     <td className="py-3 text-center">
@@ -422,45 +466,48 @@ const FacturesFournisseursList = () => {
                         >
                           <Eye className="w-4 h-4" />
                         </button>
-                        {/* ✅ BOUTON MODIFIER */}
                         {invoice.paiement_status !== 'paid' && (
+                          <>
+                            <button 
+                              onClick={() => handleEdit(invoice.id)} 
+                              className="btn btn-ghost btn-sm btn-circle text-warning"
+                              title="Modifier"
+                            >
+                              <Edit className="w-4 h-4" />
+                            </button>
+                            <button 
+                              onClick={() => handleRegisterPayment(invoice.id)} 
+                              className="btn btn-primary btn-sm btn-circle"
+                              title="Enregistrer un paiement"
+                            >
+                              <HandCoins className="w-4 h-4" />
+                            </button>
+                            <button 
+                              onClick={() => {
+                                setSelectedInvoice(invoice);
+                                setShowDeleteModal(true);
+                              }} 
+                              className="btn btn-ghost btn-sm btn-circle text-error"
+                              title="Supprimer"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </>
+                        )}
+                        {invoice.pdf_file && (
                           <button 
-                            onClick={() => handleEdit(invoice.id)} 
-                            className="btn btn-ghost btn-sm btn-circle text-warning"
-                            title="Modifier"
+                            className="btn btn-ghost btn-sm btn-circle text-primary"
+                            title="Télécharger PDF"
                           >
-                            <Edit className="w-4 h-4" />
+                            <Printer className="w-4 h-4" />
                           </button>
                         )}
-                        {/* ✅ BOUTON PAIEMENT */}
-                        {invoice.paiement_status !== 'paid' && (
+                        {invoice.qr_code && (
                           <button 
-                            onClick={() => handleRegisterPayment(invoice.id)} 
-                            className="btn btn-primary btn-sm btn-circle"
-                            title="Enregistrer un paiement"
+                            className="btn btn-ghost btn-sm btn-circle text-primary"
+                            title="QR Code"
                           >
-                            <CreditCard className="w-4 h-4" />
-                          </button>
-                        )}
-                        {/* ✅ BOUTON PDF */}
-                        <button 
-                          onClick={() => handleDownloadPdf(invoice.id)} 
-                          className="btn btn-ghost btn-sm btn-circle text-primary"
-                          title="Télécharger PDF"
-                        >
-                          <Printer className="w-4 h-4" />
-                        </button>
-                        {/* ✅ BOUTON SUPPRIMER */}
-                        {invoice.paiement_status !== 'paid' && (
-                          <button 
-                            onClick={() => {
-                              setSelectedInvoice(invoice);
-                              setShowDeleteModal(true);
-                            }} 
-                            className="btn btn-ghost btn-sm btn-circle text-error"
-                            title="Supprimer"
-                          >
-                            <X className="w-4 h-4" />
+                            <QrCode className="w-4 h-4" />
                           </button>
                         )}
                       </div>
@@ -483,6 +530,7 @@ const FacturesFournisseursList = () => {
                 <option value="5">5 lignes</option>
                 <option value="10">10 lignes</option>
                 <option value="20">20 lignes</option>
+                <option value="50">50 lignes</option>
               </select>
               <div className="join">
                 <button className="join-item btn btn-sm" onClick={() => setCurrentPage(p => Math.max(1, p-1))} disabled={currentPage === 1}>
@@ -513,11 +561,11 @@ const FacturesFournisseursList = () => {
             <span className="text-gray-500">Facture vérifiée et conforme</span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="badge badge-success">Payée</span>
-            <span className="text-gray-500">Facture entièrement payée</span>
+            <span className="badge badge-success gap-1"><CheckCircle className="w-3 h-3" /> Payée</span>
+            <span className="text-gray-500">Facture entièrement payée ✅</span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="badge badge-warning">Partielle</span>
+            <span className="badge badge-warning gap-1"><Clock className="w-3 h-3" /> Partielle</span>
             <span className="text-gray-500">Partiellement payée</span>
           </div>
           <div className="flex items-center gap-2">
@@ -526,7 +574,7 @@ const FacturesFournisseursList = () => {
           </div>
           <div className="flex items-center gap-2">
             <span className="badge badge-error gap-1"><AlertTriangle className="w-3 h-3" /> En retard</span>
-            <span className="text-gray-500">Date d'échéance dépassée</span>
+            <span className="text-gray-500">Date d'échéance dépassée 🔴</span>
           </div>
         </div>
       </div>
