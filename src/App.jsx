@@ -132,6 +132,7 @@ import FraisForm from './components/tresorerie/FraisForm';
 import Dashboard from './components/dashboard/Dashboard';
 import Statistiques from './components/dashboard/Statistiques';
 import Analyses from './components/dashboard/Analyses';
+import DashboardAchats from './components/achatsfournisseurs/DashboardAchats';
 import FacturesFournisseursList from './components/achatsfournisseurs/FacturesFournisseursList';
 import FactureFournisseurDetail from './components/achatsfournisseurs/FactureFournisseurDetail';
 import FactureFournisseurForm from './components/achatsfournisseurs/FactureFournisseurForm';
@@ -176,6 +177,9 @@ function App() {
               <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/statistiques" element={<Statistiques />} />
         <Route path="/analyses" element={<Analyses />} />
+
+         <Route path="/dashboard-achats" element={<DashboardAchats />} />
+        
 
 <Route path="/factures-fournisseurs" element={<FacturesFournisseursList />} />
 <Route path="/factures-fournisseurs/nouveau" element={<FactureFournisseurForm />} />

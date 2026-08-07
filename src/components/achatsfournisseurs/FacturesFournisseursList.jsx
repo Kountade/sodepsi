@@ -126,23 +126,26 @@ const FacturesFournisseursList = () => {
   const startIndex = (currentPage - 1) * itemsPerPage;
   const paginatedInvoices = filteredInvoices.slice(startIndex, startIndex + itemsPerPage);
 
-  // Statistiques
+  // ✅ CORRECTION : Statistiques avec parseFloat pour éviter la concaténation
   const stats = {
     total: invoices.length,
     unpaid: invoices.filter(i => i.paiement_status === 'unpaid').length,
     partial: invoices.filter(i => i.paiement_status === 'partial').length,
     paid: invoices.filter(i => i.paiement_status === 'paid').length,
     overdue: invoices.filter(i => i.paiement_status === 'overdue').length,
-    totalAmount: invoices.reduce((sum, i) => sum + (i.total_amount || 0), 0),
-    totalPaid: invoices.reduce((sum, i) => sum + (i.amount_paid || 0), 0),
+    totalAmount: invoices.reduce((sum, i) => sum + parseFloat(i.total_amount || 0), 0),
+    totalPaid: invoices.reduce((sum, i) => sum + parseFloat(i.amount_paid || 0), 0),
     unpaidAmount: invoices
       .filter(i => i.paiement_status !== 'paid')
-      .reduce((sum, i) => sum + (i.remaining_amount || 0), 0)
+      .reduce((sum, i) => sum + parseFloat(i.remaining_amount || 0), 0)
   };
 
+  // ✅ CORRECTION : formatAmount avec parseFloat
   const formatAmount = (amount) => {
     if (amount === undefined || amount === null) return '0';
-    return amount.toLocaleString();
+    const num = typeof amount === 'string' ? parseFloat(amount) : amount;
+    if (isNaN(num)) return '0';
+    return num.toLocaleString();
   };
 
   const PaymentProgressBar = ({ invoice }) => {
@@ -276,7 +279,7 @@ const FacturesFournisseursList = () => {
               <h1 className="text-2xl sm:text-3xl font-black text-primary">Factures fournisseurs</h1>
             </div>
             <p className="text-sm text-gray-500 ml-1">
-              Gérez vos factures fournisseurs – {stats.total} facture(s) pour {stats.totalAmount.toLocaleString()} FCFA
+              Gérez vos factures fournisseurs – {stats.total} facture(s) pour {formatAmount(stats.totalAmount)} FCFA
             </p>
           </div>
           <div className="flex flex-wrap gap-3">
@@ -327,13 +330,13 @@ const FacturesFournisseursList = () => {
         </div>
         <div className="bg-white shadow-md rounded-xl p-3">
           <div className="flex items-center justify-between">
-            <div><p className="text-xs text-gray-500">Total payé</p><p className="text-sm font-bold text-success">{formatAmount(stats.totalPaid)} F</p></div>
+            <div><p className="text-xs text-gray-500">Total payé</p><p className="text-sm font-bold text-success">{formatAmount(stats.totalPaid)} FCFA</p></div>
             <TrendingUp className="w-8 h-8 text-success/20" />
           </div>
         </div>
         <div className="bg-white shadow-md rounded-xl p-3">
           <div className="flex items-center justify-between">
-            <div><p className="text-xs text-gray-500">Reste à payer</p><p className="text-sm font-bold text-error">{formatAmount(stats.unpaidAmount)} F</p></div>
+            <div><p className="text-xs text-gray-500">Reste à payer</p><p className="text-sm font-bold text-error">{formatAmount(stats.unpaidAmount)} FCFA</p></div>
             <DollarSign className="w-8 h-8 text-error/20" />
           </div>
         </div>
@@ -421,99 +424,106 @@ const FacturesFournisseursList = () => {
                   </td>
                 </tr>
               ) : (
-                paginatedInvoices.map(invoice => (
-                  <tr key={invoice.id} className="hover:bg-gray-50">
-                    <td className="py-3 font-mono font-semibold">{invoice.invoice_number}</td>
-                    <td className="py-3">
-                      <div className="flex items-center gap-1">
-                        <Building2 className="w-3 h-3 text-gray-400" />
-                        <span>{invoice.supplier_name}</span>
-                      </div>
-                    </td>
-                    <td className="py-3 font-mono text-sm">{invoice.po_number || '-'}</td>
-                    <td className="py-3 font-mono text-sm text-gray-500">{invoice.receipt_number || '-'}</td>
-                    <td className="py-3">
-                      <div className="flex items-center gap-1">
-                        <Calendar className="w-3 h-3 text-gray-400" />
-                        <span className="text-sm">{new Date(invoice.invoice_date).toLocaleDateString()}</span>
-                      </div>
-                    </td>
-                    <td className="py-3">
-                      <div className="flex items-center gap-1">
-                        <Clock className="w-3 h-3 text-gray-400" />
-                        <span className={`text-sm ${invoice.is_overdue ? 'text-error font-semibold' : ''}`}>
-                          {new Date(invoice.due_date).toLocaleDateString()}
-                          {invoice.is_overdue && ' 🔴'}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="py-3 text-right font-semibold">{formatAmount(invoice.total_amount)} F</td>
-                    <td className="py-3 text-right text-success font-semibold">{formatAmount(invoice.amount_paid)} F</td>
-                    <td className="py-3 text-right font-semibold text-error">{formatAmount(invoice.remaining_amount)} F</td>
-                    <td className="py-3 text-center">
-                      <div className="flex flex-col items-center gap-1">
-                        {getPaiementStatusBadge(invoice.paiement_status)}
-                        {getStatusBadge(invoice.status)}
-                        <PaymentProgressBar invoice={invoice} />
-                      </div>
-                    </td>
-                    <td className="py-3 text-center">
-                      <div className="flex justify-center gap-1">
-                        <button 
-                          onClick={() => handleViewDetails(invoice.id)} 
-                          className="btn btn-ghost btn-sm btn-circle"
-                          title="Voir détails"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
-                        {invoice.paiement_status !== 'paid' && (
-                          <>
-                            <button 
-                              onClick={() => handleEdit(invoice.id)} 
-                              className="btn btn-ghost btn-sm btn-circle text-warning"
-                              title="Modifier"
-                            >
-                              <Edit className="w-4 h-4" />
-                            </button>
-                            <button 
-                              onClick={() => handleRegisterPayment(invoice.id)} 
-                              className="btn btn-primary btn-sm btn-circle"
-                              title="Enregistrer un paiement"
-                            >
-                              <HandCoins className="w-4 h-4" />
-                            </button>
-                            <button 
-                              onClick={() => {
-                                setSelectedInvoice(invoice);
-                                setShowDeleteModal(true);
-                              }} 
-                              className="btn btn-ghost btn-sm btn-circle text-error"
-                              title="Supprimer"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </>
-                        )}
-                        {invoice.pdf_file && (
+                paginatedInvoices.map(invoice => {
+                  // ✅ Conversion des montants pour éviter les erreurs
+                  const totalAmount = parseFloat(invoice.total_amount) || 0;
+                  const amountPaid = parseFloat(invoice.amount_paid) || 0;
+                  const remaining = parseFloat(invoice.remaining_amount) || 0;
+                  
+                  return (
+                    <tr key={invoice.id} className="hover:bg-gray-50">
+                      <td className="py-3 font-mono font-semibold">{invoice.invoice_number}</td>
+                      <td className="py-3">
+                        <div className="flex items-center gap-1">
+                          <Building2 className="w-3 h-3 text-gray-400" />
+                          <span>{invoice.supplier_name}</span>
+                        </div>
+                      </td>
+                      <td className="py-3 font-mono text-sm">{invoice.po_number || '-'}</td>
+                      <td className="py-3 font-mono text-sm text-gray-500">{invoice.receipt_number || '-'}</td>
+                      <td className="py-3">
+                        <div className="flex items-center gap-1">
+                          <Calendar className="w-3 h-3 text-gray-400" />
+                          <span className="text-sm">{new Date(invoice.invoice_date).toLocaleDateString()}</span>
+                        </div>
+                      </td>
+                      <td className="py-3">
+                        <div className="flex items-center gap-1">
+                          <Clock className="w-3 h-3 text-gray-400" />
+                          <span className={`text-sm ${invoice.is_overdue ? 'text-error font-semibold' : ''}`}>
+                            {new Date(invoice.due_date).toLocaleDateString()}
+                            {invoice.is_overdue && ' 🔴'}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="py-3 text-right font-semibold">{formatAmount(totalAmount)} F</td>
+                      <td className="py-3 text-right text-success font-semibold">{formatAmount(amountPaid)} F</td>
+                      <td className="py-3 text-right font-semibold text-error">{formatAmount(remaining)} F</td>
+                      <td className="py-3 text-center">
+                        <div className="flex flex-col items-center gap-1">
+                          {getPaiementStatusBadge(invoice.paiement_status)}
+                          {getStatusBadge(invoice.status)}
+                          <PaymentProgressBar invoice={invoice} />
+                        </div>
+                      </td>
+                      <td className="py-3 text-center">
+                        <div className="flex justify-center gap-1">
                           <button 
-                            className="btn btn-ghost btn-sm btn-circle text-primary"
-                            title="Télécharger PDF"
+                            onClick={() => handleViewDetails(invoice.id)} 
+                            className="btn btn-ghost btn-sm btn-circle"
+                            title="Voir détails"
                           >
-                            <Printer className="w-4 h-4" />
+                            <Eye className="w-4 h-4" />
                           </button>
-                        )}
-                        {invoice.qr_code && (
-                          <button 
-                            className="btn btn-ghost btn-sm btn-circle text-primary"
-                            title="QR Code"
-                          >
-                            <QrCode className="w-4 h-4" />
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                          {invoice.paiement_status !== 'paid' && (
+                            <>
+                              <button 
+                                onClick={() => handleEdit(invoice.id)} 
+                                className="btn btn-ghost btn-sm btn-circle text-warning"
+                                title="Modifier"
+                              >
+                                <Edit className="w-4 h-4" />
+                              </button>
+                              <button 
+                                onClick={() => handleRegisterPayment(invoice.id)} 
+                                className="btn btn-primary btn-sm btn-circle"
+                                title="Enregistrer un paiement"
+                              >
+                                <HandCoins className="w-4 h-4" />
+                              </button>
+                              <button 
+                                onClick={() => {
+                                  setSelectedInvoice(invoice);
+                                  setShowDeleteModal(true);
+                                }} 
+                                className="btn btn-ghost btn-sm btn-circle text-error"
+                                title="Supprimer"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </>
+                          )}
+                          {invoice.pdf_file && (
+                            <button 
+                              className="btn btn-ghost btn-sm btn-circle text-primary"
+                              title="Télécharger PDF"
+                            >
+                              <Printer className="w-4 h-4" />
+                            </button>
+                          )}
+                          {invoice.qr_code && (
+                            <button 
+                              className="btn btn-ghost btn-sm btn-circle text-primary"
+                              title="QR Code"
+                            >
+                              <QrCode className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
