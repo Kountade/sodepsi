@@ -40,11 +40,12 @@ const ReceptionForm = () => {
 
   const getToken = () => localStorage.getItem('Token');
 
-  // Récupérer les commandes confirmées
+  // ✅ CORRIGÉ : Récupérer les commandes disponibles pour réception
   const fetchPurchaseOrders = async () => {
     try {
       const token = getToken();
-      const response = await AxiosInstance.get('/purchase-orders/?status=confirmed', {
+      // Utiliser le nouvel endpoint available_for_receipt
+      const response = await AxiosInstance.get('/purchase-orders/available_for_receipt/', {
         headers: { Authorization: `Token ${token}` }
       });
       setPurchaseOrders(response.data);
@@ -78,10 +79,10 @@ const ReceptionForm = () => {
       const lines = response.data.lines || [];
       setOrderLines(lines);
       
-      // Initialiser les lignes de réception
+      // Initialiser les lignes de réception - ✅ Pré-remplir avec les quantités déjà reçues si existantes
       const initialLines = lines.map(line => ({
         po_line: line.id,
-        quantity_received: '',
+        quantity_received: line.quantity_received || '',
         quantity_damaged: '',
         lot_number: '',
         expiry_date: '',
@@ -196,9 +197,16 @@ const ReceptionForm = () => {
     for (let i = 0; i < receptionLines.length; i++) {
       const line = receptionLines[i];
       const orderedQty = orderLines[i]?.quantity || 0;
+      const alreadyReceived = orderLines[i]?.quantity_received || 0;
+      const remainingQty = orderedQty - alreadyReceived;
       const receivedQty = parseInt(line.quantity_received);
-      if (!isNaN(receivedQty) && receivedQty > orderedQty) {
-        newFieldErrors[`line_${i}`] = `La quantité reçue (${receivedQty}) dépasse la quantité commandée (${orderedQty})`;
+      
+      if (!isNaN(receivedQty) && receivedQty > 0) {
+        // ✅ CORRECTION : Vérifier par rapport à la quantité restante
+        if (receivedQty > remainingQty) {
+          newFieldErrors[`line_${i}`] = 
+            `La quantité reçue (${receivedQty}) dépasse la quantité restante (${remainingQty})`;
+        }
       }
     }
     
@@ -282,6 +290,19 @@ const ReceptionForm = () => {
     }
   };
 
+  // Calcul du total réceptionné
+  const calculateTotalReceived = () => {
+    return receptionLines.reduce((sum, line) => {
+      const qty = parseInt(line.quantity_received);
+      return sum + (isNaN(qty) ? 0 : qty);
+    }, 0);
+  };
+
+  // Calcul du total commandé
+  const calculateTotalOrdered = () => {
+    return orderLines.reduce((sum, line) => sum + line.quantity, 0);
+  };
+
   if (fetching) {
     return (
       <div className="flex items-center justify-center min-h-[calc(100vh-200px)] bg-gray-50">
@@ -346,13 +367,25 @@ const ReceptionForm = () => {
                       disabled={isEditMode}
                     >
                       <option value="">Sélectionner une commande</option>
-                      {purchaseOrders.map(po => (
-                        <option key={po.id} value={po.id}>
-                          {po.po_number} - {po.supplier_name}
-                        </option>
-                      ))}
+                      {purchaseOrders.map(po => {
+                        const isPartial = po.status === 'partial';
+                        const progress = po.receipt_progress || 0;
+                        return (
+                          <option key={po.id} value={po.id}>
+                            {po.po_number} - {po.supplier_name}
+                            {isPartial && ` (Partiellement reçue - ${Math.round(progress)}%)`}
+                            {po.is_fully_received && ' (Complète)'}
+                          </option>
+                        );
+                      })}
                     </select>
                     {fieldErrors.purchase_order && <span className="text-error text-xs mt-1">{fieldErrors.purchase_order}</span>}
+                    {selectedOrder && selectedOrder.status === 'partial' && (
+                      <div className="alert alert-warning mt-2 py-2 text-sm">
+                        <AlertCircle className="w-4 h-4" />
+                        <span>Cette commande est partiellement reçue ({Math.round(selectedOrder.receipt_progress || 0)}%)</span>
+                      </div>
+                    )}
                   </div>
 
                   <div className="form-control">
@@ -432,6 +465,9 @@ const ReceptionForm = () => {
                   <h3 className="font-semibold flex items-center gap-2">
                     <Package className="w-4 h-4 text-primary" /> Produits à réceptionner
                   </h3>
+                  <p className="text-xs text-gray-400 mt-1">
+                    Quantité restante à recevoir : {orderLines.reduce((sum, line) => sum + (line.quantity - line.quantity_received), 0)} unités
+                  </p>
                 </div>
                 
                 <div className="p-6 overflow-x-auto">
@@ -441,6 +477,8 @@ const ReceptionForm = () => {
                         <th className="px-3 py-2 text-left text-sm font-semibold">Produit</th>
                         <th className="px-3 py-2 text-center text-sm font-semibold">Cmd.</th>
                         <th className="px-3 py-2 text-center text-sm font-semibold">Reçu</th>
+                        <th className="px-3 py-2 text-center text-sm font-semibold">Restant</th>
+                        <th className="px-3 py-2 text-center text-sm font-semibold">À recevoir</th>
                         <th className="px-3 py-2 text-center text-sm font-semibold">Avarié</th>
                         <th className="px-3 py-2 text-left text-sm font-semibold">N° Lot</th>
                         <th className="px-3 py-2 text-center text-sm font-semibold">Expiration</th>
@@ -448,69 +486,78 @@ const ReceptionForm = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {orderLines.map((line, index) => (
-                        <tr key={line.id} className="border-b hover:bg-gray-50">
-                          <td className="px-3 py-2">
-                            <div>
-                              <p className="font-medium text-sm">{line.product_name}</p>
-                              <p className="text-xs text-gray-400">{line.product_code}</p>
-                            </div>
-                          </td>
-                          <td className="px-3 py-2 text-center">{line.quantity} </td>
-                          <td className="px-3 py-2">
-                            <input
-                              type="number"
-                              value={receptionLines[index]?.quantity_received || ''}
-                              onChange={(e) => updateReceptionLine(index, 'quantity_received', e.target.value)}
-                              className="input input-bordered input-sm w-20 text-center"
-                              min="0"
-                              max={line.quantity}
-                            />
-                          </td>
-                          <td className="px-3 py-2">
-                            <input
-                              type="number"
-                              value={receptionLines[index]?.quantity_damaged || ''}
-                              onChange={(e) => updateReceptionLine(index, 'quantity_damaged', e.target.value)}
-                              className="input input-bordered input-sm w-20 text-center"
-                              min="0"
-                            />
-                          </td>
-                          <td className="px-3 py-2">
-                            <input
-                              type="text"
-                              value={receptionLines[index]?.lot_number || ''}
-                              onChange={(e) => updateReceptionLine(index, 'lot_number', e.target.value)}
-                              className="input input-bordered input-sm w-28"
-                              placeholder="Lot"
-                            />
-                          </td>
-                          <td className="px-3 py-2">
-                            <input
-                              type="date"
-                              value={receptionLines[index]?.expiry_date || ''}
-                              onChange={(e) => updateReceptionLine(index, 'expiry_date', e.target.value)}
-                              className="input input-bordered input-sm w-28"
-                            />
-                          </td>
-                          <td className="px-3 py-2">
-                            <select
-                              value={receptionLines[index]?.quality_status || 'pending'}
-                              onChange={(e) => updateReceptionLine(index, 'quality_status', e.target.value)}
-                              className="select select-bordered select-sm w-24"
-                            >
-                              <option value="pending">En attente</option>
-                              <option value="passed">Approuvé</option>
-                              <option value="failed">Refusé</option>
-                            </select>
-                          </td>
-                        </tr>
-                      ))}
+                      {orderLines.map((line, index) => {
+                        const remainingQty = line.quantity - (line.quantity_received || 0);
+                        return (
+                          <tr key={line.id} className="border-b hover:bg-gray-50">
+                            <td className="px-3 py-2">
+                              <div>
+                                <p className="font-medium text-sm">{line.product_name}</p>
+                                <p className="text-xs text-gray-400">{line.product_code}</p>
+                              </div>
+                            </td>
+                            <td className="px-3 py-2 text-center">{line.quantity}</td>
+                            <td className="px-3 py-2 text-center">{line.quantity_received || 0}</td>
+                            <td className="px-3 py-2 text-center font-semibold text-warning">{remainingQty}</td>
+                            <td className="px-3 py-2">
+                              <input
+                                type="number"
+                                value={receptionLines[index]?.quantity_received || ''}
+                                onChange={(e) => updateReceptionLine(index, 'quantity_received', e.target.value)}
+                                className={`input input-bordered input-sm w-20 text-center ${fieldErrors[`line_${index}`] ? 'input-error' : ''}`}
+                                min="0"
+                                max={remainingQty}
+                                placeholder="0"
+                              />
+                              {fieldErrors[`line_${index}`] && (
+                                <p className="text-error text-xs mt-1">{fieldErrors[`line_${index}`]}</p>
+                              )}
+                            </td>
+                            <td className="px-3 py-2">
+                              <input
+                                type="number"
+                                value={receptionLines[index]?.quantity_damaged || ''}
+                                onChange={(e) => updateReceptionLine(index, 'quantity_damaged', e.target.value)}
+                                className="input input-bordered input-sm w-20 text-center"
+                                min="0"
+                                placeholder="0"
+                              />
+                            </td>
+                            <td className="px-3 py-2">
+                              <input
+                                type="text"
+                                value={receptionLines[index]?.lot_number || ''}
+                                onChange={(e) => updateReceptionLine(index, 'lot_number', e.target.value)}
+                                className="input input-bordered input-sm w-28"
+                                placeholder="Lot"
+                              />
+                            </td>
+                            <td className="px-3 py-2">
+                              <input
+                                type="date"
+                                value={receptionLines[index]?.expiry_date || ''}
+                                onChange={(e) => updateReceptionLine(index, 'expiry_date', e.target.value)}
+                                className="input input-bordered input-sm w-28"
+                              />
+                            </td>
+                            <td className="px-3 py-2">
+                              <select
+                                value={receptionLines[index]?.quality_status || 'pending'}
+                                onChange={(e) => updateReceptionLine(index, 'quality_status', e.target.value)}
+                                className="select select-bordered select-sm w-24"
+                              >
+                                <option value="pending">En attente</option>
+                                <option value="passed">Approuvé</option>
+                                <option value="failed">Refusé</option>
+                              </select>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
-                  <p className="text-xs text-gray-400 mt-2">* Les champs "Reçu" sont obligatoires pour valider la réception</p>
+                  <p className="text-xs text-gray-400 mt-2">* Les champs "À recevoir" sont obligatoires pour valider la réception</p>
                   {errors.lines && <p className="text-error text-sm mt-2">{errors.lines}</p>}
-                  {fieldErrors.lines && <p className="text-error text-sm mt-2">{fieldErrors.lines}</p>}
                 </div>
               </div>
             )}
@@ -537,22 +584,59 @@ const ReceptionForm = () => {
                         <span className="font-medium">{selectedOrder.supplier_name}</span>
                       </div>
                       <div className="flex justify-between text-sm">
+                        <span className="text-gray-500">Statut</span>
+                        <span className={`badge ${selectedOrder.status === 'partial' ? 'badge-warning' : 'badge-primary'}`}>
+                          {selectedOrder.status === 'partial' ? 'Partiel' : 'Confirmé'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-sm">
                         <span className="text-gray-500">Total commande</span>
                         <span className="font-medium">{selectedOrder.total?.toLocaleString()} FCFA</span>
                       </div>
                     </div>
+                    
                     <div className="border-t pt-3">
-                      <div className="flex justify-between font-semibold">
-                        <span>Total reçu</span>
-                        <span className="text-primary">
-                          {receptionLines.reduce((sum, line) => {
-                            const qty = parseInt(line.quantity_received);
-                            return sum + (isNaN(qty) ? 0 : qty);
-                          }, 0)} / 
-                          {orderLines.reduce((sum, line) => sum + line.quantity, 0)} unités
-                        </span>
+                      <div className="space-y-2">
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-500">Quantité commandée</span>
+                          <span className="font-medium">{calculateTotalOrdered()} unités</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-500">Déjà reçu</span>
+                          <span className="font-medium text-success">
+                            {orderLines.reduce((sum, line) => sum + (line.quantity_received || 0), 0)} unités
+                          </span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-500">Restant</span>
+                          <span className="font-medium text-warning">
+                            {orderLines.reduce((sum, line) => sum + (line.quantity - (line.quantity_received || 0)), 0)} unités
+                          </span>
+                        </div>
+                        <div className="flex justify-between font-semibold text-sm pt-1 border-t">
+                          <span>À recevoir maintenant</span>
+                          <span className="text-primary">
+                            {calculateTotalReceived()} unités
+                          </span>
+                        </div>
                       </div>
                     </div>
+
+                    {/* Barre de progression */}
+                    {selectedOrder.receipt_progress !== undefined && (
+                      <div className="pt-2">
+                        <div className="flex justify-between text-xs mb-1">
+                          <span className="text-gray-500">Progression</span>
+                          <span className="font-medium">{Math.round(selectedOrder.receipt_progress || 0)}%</span>
+                        </div>
+                        <div className="w-full bg-gray-200 rounded-full h-2">
+                          <div 
+                            className="bg-primary h-2 rounded-full transition-all duration-500"
+                            style={{ width: `${Math.min(selectedOrder.receipt_progress || 0, 100)}%` }}
+                          ></div>
+                        </div>
+                      </div>
+                    )}
                   </>
                 )}
 

@@ -90,12 +90,19 @@ const CommandesList = () => {
   const startIndex = (currentPage - 1) * itemsPerPage;
   const paginatedOrders = filteredOrders.slice(startIndex, startIndex + itemsPerPage);
 
+  // ✅ CORRECTION DU CALCUL DES STATISTIQUES
   const stats = {
     total: orders.length,
     draft: orders.filter(o => o.status === 'draft').length,
     confirmed: orders.filter(o => o.status === 'confirmed').length,
     received: orders.filter(o => o.status === 'received').length,
-    totalAmount: orders.reduce((sum, o) => sum + (o.total || 0), 0)
+    totalAmount: orders.reduce((sum, o) => sum + parseFloat(o.total || 0), 0)
+  };
+
+  // ✅ FONCTION DE FORMATAGE CORRECTE
+  const formatAmount = (amount) => {
+    if (!amount || isNaN(amount)) return '0';
+    return Math.round(amount).toLocaleString('fr-FR');
   };
 
   const getStatusBadge = (status) => {
@@ -155,8 +162,9 @@ const CommandesList = () => {
               </div>
               <h1 className="text-2xl sm:text-3xl font-black text-primary">Commandes fournisseurs</h1>
             </div>
+            {/* ✅ AFFICHAGE CORRIGÉ */}
             <p className="text-sm text-gray-500 ml-1">
-              Gérez vos bons de commande – {stats.total} commande(s) pour {stats.totalAmount.toLocaleString()} FCFA
+              Gérez vos bons de commande – <strong>{stats.total}</strong> commande(s) pour <strong>{formatAmount(stats.totalAmount)}</strong> FCFA
             </p>
           </div>
           <div className="flex flex-wrap gap-3">
@@ -198,7 +206,10 @@ const CommandesList = () => {
         </div>
         <div className="bg-white shadow-md rounded-xl p-3">
           <div className="flex items-center justify-between">
-            <div><p className="text-xs text-gray-500">Montant total</p><p className="text-sm font-bold text-warning">{stats.totalAmount.toLocaleString()} F</p></div>
+            <div><p className="text-xs text-gray-500">Montant total</p>
+              {/* ✅ FORMATAGE CORRECT */}
+              <p className="text-sm font-bold text-warning">{formatAmount(stats.totalAmount)} F</p>
+            </div>
             <DollarSign className="w-8 h-8 text-warning/20" />
           </div>
         </div>
@@ -282,7 +293,8 @@ const CommandesList = () => {
                         <span className="text-sm">{new Date(order.expected_delivery_date).toLocaleDateString()}</span>
                       </div>
                     </td>
-                    <td className="py-3 text-right font-semibold">{order.total?.toLocaleString()} F</td>
+                    {/* ✅ FORMATAGE CORRECT DANS LE TABLEAU */}
+                    <td className="py-3 text-right font-semibold">{formatAmount(order.total)} F</td>
                     <td className="py-3 text-center">{getStatusBadge(order.status)}</td>
                     <td className="py-3 text-center">
                       <div className="flex justify-center gap-1">
