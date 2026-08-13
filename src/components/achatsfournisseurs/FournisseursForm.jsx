@@ -1,38 +1,78 @@
-// src/components/achats/FactureFournisseurForm.jsx
+// src/components/achats/FournisseursForm.jsx
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import AxiosInstance from '../AxiosInstance';
 import {
-  ArrowLeft, Save, X, CheckCircle, AlertCircle,
-  FileText, Calendar, DollarSign, Building2, ShoppingBag,
-  Receipt, Clock, Search, RefreshCw, AlertTriangle,
-  Plus, Trash2
+  ArrowLeft, Save, X, Truck, Building2, User, Phone, Mail,
+  MapPin, Globe, FileText, Star, CheckCircle, AlertCircle,
+  Plus, Trash2, Edit, RefreshCw, Calendar, Package
 } from 'lucide-react';
 
-const FactureFournisseurForm = () => {
+const FournisseursForm = () => {
   const navigate = useNavigate();
   const { id } = useParams();
-  const isEdit = !!id;
+  const isEditMode = !!id;
+
   const [loading, setLoading] = useState(false);
-  const [fetchingData, setFetchingData] = useState(isEdit);
-  const [purchaseOrders, setPurchaseOrders] = useState([]);
-  const [availableReceipts, setAvailableReceipts] = useState([]);
-  const [selectedReceipts, setSelectedReceipts] = useState([]);
-  const [loadingOrders, setLoadingOrders] = useState(false);
-  const [loadingReceipts, setLoadingReceipts] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [notification, setNotification] = useState({ show: false, message: '', type: 'success' });
-  const [searchOrder, setSearchOrder] = useState('');
-  
+  const [activeTab, setActiveTab] = useState('general');
+  const [contacts, setContacts] = useState([]);
+  const [products, setProducts] = useState([]);
+  const [editingContact, setEditingContact] = useState(null);
+  const [editingProduct, setEditingProduct] = useState(null);
+  const [showContactModal, setShowContactModal] = useState(false);
+  const [showProductModal, setShowProductModal] = useState(false);
+  const [productSearch, setProductSearch] = useState('');
+  const [productOptions, setProductOptions] = useState([]);
+  const [loadingProducts, setLoadingProducts] = useState(false);
+
+  // Formulaire fournisseur
   const [formData, setFormData] = useState({
-    purchase_order: '',
-    invoice_number: '',
-    invoice_date: new Date().toISOString().split('T')[0],
-    due_date: '',
-    amount: '',
-    tax_amount: '',
-    total_amount: '',
-    notes: '',
-    receipt_ids: []
+    code: '',
+    name: '',
+    commercial_name: '',
+    type: 'local',
+    contact_person: '',
+    phone: '',
+    mobile: '',
+    email: '',
+    website: '',
+    address: '',
+    city: '',
+    country: 'Sénégal',
+    postal_code: '',
+    tax_id: '',
+    registration_number: '',
+    payment_terms: '30',
+    delivery_lead_time: 7,
+    minimum_order: 0,
+    rating: 0,
+    is_active: true,
+    is_preferred: false,
+    notes: ''
+  });
+
+  // Formulaire contact
+  const [contactForm, setContactForm] = useState({
+    name: '',
+    position: '',
+    phone: '',
+    mobile: '',
+    email: '',
+    is_primary: false,
+    notes: ''
+  });
+
+  // Formulaire produit fournisseur
+  const [productForm, setProductForm] = useState({
+    product: '',
+    supplier_sku: '',
+    purchase_price: 0,
+    lead_time: 7,
+    minimum_order: 1,
+    is_active: true,
+    notes: ''
   });
 
   const showNotification = (message, type) => {
@@ -40,278 +80,360 @@ const FactureFournisseurForm = () => {
     setTimeout(() => setNotification(prev => ({ ...prev, show: false })), 4000);
   };
 
-  // Récupérer les commandes reçues
-  const fetchOrders = async () => {
-    setLoadingOrders(true);
-    try {
-      const response = await AxiosInstance.get('/purchase-orders/', {
-        params: { status: 'received,partial' }
-      });
-      
-      console.log('📦 Commandes disponibles:', response.data);
-      setPurchaseOrders(response.data || []);
-      
-      if (response.data?.length === 0) {
-        showNotification('Aucune commande reçue disponible', 'warning');
-      }
-    } catch (error) {
-      console.error('❌ Erreur chargement commandes:', error);
-      showNotification('Erreur lors du chargement des commandes', 'error');
-    } finally {
-      setLoadingOrders(false);
-    }
+  const getToken = () => localStorage.getItem('Token');
+
+  // Génération automatique du code
+  const generateCode = () => {
+    const prefix = 'FOURN';
+    const year = new Date().getFullYear();
+    const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+    return `${prefix}-${year}-${random}`;
   };
 
-  // Récupérer les réceptions disponibles pour une commande
-  const fetchAvailableReceipts = async (orderId) => {
-    if (!orderId) {
-      setAvailableReceipts([]);
-      return;
-    }
-    
-    setLoadingReceipts(true);
+  // Chargement du fournisseur en mode édition
+  const fetchSupplier = async () => {
+    if (!isEditMode) return;
+    setLoading(true);
     try {
-      const response = await AxiosInstance.get('/receptions/available_for_invoice/', {
-        params: { purchase_order: orderId }
+      const token = getToken();
+      const response = await AxiosInstance.get(`/suppliers/${id}/`, {
+        headers: { 'Authorization': `Token ${token}` }
       });
-      
-      console.log('📦 Réceptions disponibles:', response.data);
-      setAvailableReceipts(response.data || []);
-      
-      if (response.data?.length === 0) {
-        showNotification('Aucune réception disponible pour cette commande', 'warning');
-      }
-    } catch (error) {
-      console.error('❌ Erreur chargement réceptions:', error);
-      showNotification('Erreur lors du chargement des réceptions', 'error');
-    } finally {
-      setLoadingReceipts(false);
-    }
-  };
-
-  // Récupérer la facture en modification
-  const fetchInvoice = async () => {
-    if (!isEdit) return;
-    try {
-      const response = await AxiosInstance.get(`/supplier-invoices/${id}/`);
       const data = response.data;
       setFormData({
-        purchase_order: data.purchase_order?.id || '',
-        invoice_number: data.invoice_number || '',
-        invoice_date: data.invoice_date || '',
-        due_date: data.due_date || '',
-        amount: data.amount || '',
-        tax_amount: data.tax_amount || '',
-        total_amount: data.total_amount || '',
-        notes: data.notes || '',
-        receipt_ids: data.receipts?.map(r => r.id) || []
+        code: data.code || '',
+        name: data.name || '',
+        commercial_name: data.commercial_name || '',
+        type: data.type || 'local',
+        contact_person: data.contact_person || '',
+        phone: data.phone || '',
+        mobile: data.mobile || '',
+        email: data.email || '',
+        website: data.website || '',
+        address: data.address || '',
+        city: data.city || '',
+        country: data.country || 'Sénégal',
+        postal_code: data.postal_code || '',
+        tax_id: data.tax_id || '',
+        registration_number: data.registration_number || '',
+        payment_terms: data.payment_terms || '30',
+        delivery_lead_time: data.delivery_lead_time || 7,
+        minimum_order: data.minimum_order || 0,
+        rating: data.rating || 0,
+        is_active: data.is_active !== undefined ? data.is_active : true,
+        is_preferred: data.is_preferred || false,
+        notes: data.notes || ''
       });
-      
-      // Charger les réceptions associées
-      if (data.receipts) {
-        setSelectedReceipts(data.receipts);
-      }
+      setContacts(data.contacts || []);
+      setProducts(data.products || []);
     } catch (error) {
-      console.error('Erreur chargement facture:', error);
-      showNotification('Erreur de chargement de la facture', 'error');
+      console.error('Erreur:', error);
+      if (error.response?.status === 401) {
+        showNotification('Session expirée', 'error');
+        setTimeout(() => navigate('/login'), 2000);
+      } else if (error.response?.status === 404) {
+        showNotification('Fournisseur non trouvé', 'error');
+        setTimeout(() => navigate('/fournisseurs'), 1500);
+      } else {
+        showNotification('Erreur de chargement', 'error');
+      }
     } finally {
-      setFetchingData(false);
+      setLoading(false);
+    }
+  };
+
+  // Chargement des produits disponibles pour l'association
+  const fetchAvailableProducts = async (search = '') => {
+    setLoadingProducts(true);
+    try {
+      const token = getToken();
+      const response = await AxiosInstance.get('/products/?is_active=true', {
+        headers: { 'Authorization': `Token ${token}` }
+      });
+      let results = response.data.results || response.data || [];
+      if (search) {
+        results = results.filter(p =>
+          p.name?.toLowerCase().includes(search.toLowerCase()) ||
+          p.code?.toLowerCase().includes(search.toLowerCase())
+        );
+      }
+      // Exclure les produits déjà associés
+      const existingProductIds = products.map(p => p.product);
+      results = results.filter(p => !existingProductIds.includes(p.id));
+      setProductOptions(results.slice(0, 20));
+    } catch (error) {
+      console.error('Erreur chargement produits:', error);
+      setProductOptions([]);
+    } finally {
+      setLoadingProducts(false);
     }
   };
 
   useEffect(() => {
-    fetchOrders();
-    if (isEdit) {
-      fetchInvoice();
+    if (isEditMode) {
+      fetchSupplier();
+    } else {
+      // Nouveau fournisseur : générer un code
+      setFormData(prev => ({ ...prev, code: generateCode() }));
     }
   }, [id]);
 
-  // Charger les réceptions quand la commande change
   useEffect(() => {
-    if (formData.purchase_order && !isEdit) {
-      fetchAvailableReceipts(formData.purchase_order);
-    } else if (!formData.purchase_order) {
-      setAvailableReceipts([]);
+    if (showProductModal) {
+      fetchAvailableProducts(productSearch);
     }
-  }, [formData.purchase_order, isEdit]);
+  }, [showProductModal, productSearch]);
 
-  // Calculer automatiquement le total TTC
-  useEffect(() => {
-    const amount = parseFloat(formData.amount) || 0;
-    const tax = parseFloat(formData.tax_amount) || 0;
-    const total = amount + tax;
+  // Gestion des changements du formulaire principal
+  const handleChange = (e) => {
+    const { name, value, type, checked } = e.target;
     setFormData(prev => ({
       ...prev,
-      total_amount: total > 0 ? total.toFixed(2) : ''
+      [name]: type === 'checkbox' ? checked : value
     }));
-  }, [formData.amount, formData.tax_amount]);
-
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
-    
-    // Si changement de commande, réinitialiser les réceptions
-    if (name === 'purchase_order') {
-      setSelectedReceipts([]);
-    }
   };
 
-  // Gestion des réceptions sélectionnées
-  const toggleReceiptSelection = (receipt) => {
-    setSelectedReceipts(prev => {
-      const exists = prev.find(r => r.id === receipt.id);
-      if (exists) {
-        return prev.filter(r => r.id !== receipt.id);
-      } else {
-        return [...prev, receipt];
-      }
-    });
+  // Gestion des changements du formulaire contact
+  const handleContactChange = (e) => {
+    const { name, value, type, checked } = e.target;
+    setContactForm(prev => ({
+      ...prev,
+      [name]: type === 'checkbox' ? checked : value
+    }));
   };
 
-  // Calculer le total des réceptions sélectionnées
-  const calculateReceiptsTotal = () => {
-    return selectedReceipts.reduce((sum, r) => sum + (r.total_received_amount || 0), 0);
+  // Gestion des changements du formulaire produit
+  const handleProductChange = (e) => {
+    const { name, value, type, checked } = e.target;
+    setProductForm(prev => ({
+      ...prev,
+      [name]: type === 'checkbox' ? checked : value
+    }));
   };
 
+  // Soumission du formulaire principal - CORRIGÉ
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setLoading(true);
+    setSaving(true);
+    try {
+      const token = getToken();
+      const url = isEditMode ? `/suppliers/${id}/` : '/suppliers/';
+      const method = isEditMode ? 'put' : 'post';
 
-    // Validation
-    if (!formData.purchase_order) {
-      showNotification('Veuillez sélectionner une commande', 'error');
-      setLoading(false);
-      return;
-    }
-    
-    // ✅ Vérifier qu'au moins une réception est sélectionnée
-    if (selectedReceipts.length === 0 && !isEdit) {
-      showNotification('Veuillez sélectionner au moins une réception', 'error');
-      setLoading(false);
-      return;
-    }
+      // Nettoyer les données - Convertir null/undefined en chaînes vides
+      const data = { ...formData };
+      
+      // Liste des champs qui peuvent être vides
+      const optionalFields = ['commercial_name', 'contact_person', 'mobile', 'website', 
+                              'postal_code', 'tax_id', 'registration_number', 'notes'];
+      
+      Object.keys(data).forEach(key => {
+        // Si la valeur est null ou undefined, la convertir en chaîne vide
+        if (data[key] === null || data[key] === undefined) {
+          data[key] = '';
+        }
+        // Si c'est une chaîne et qu'elle est undefined, la convertir en chaîne vide
+        if (typeof data[key] === 'string' && data[key] === 'undefined') {
+          data[key] = '';
+        }
+      });
 
-    if (!formData.invoice_number) {
-      showNotification('Veuillez saisir le numéro de facture', 'error');
-      setLoading(false);
-      return;
+      // S'assurer que les champs obligatoires ne sont pas vides
+      const requiredFields = ['code', 'name', 'phone', 'email', 'address', 'city', 'type'];
+      for (const field of requiredFields) {
+        if (!data[field] || data[field].trim() === '') {
+          showNotification(`Le champ "${field}" est obligatoire`, 'error');
+          setSaving(false);
+          return;
+        }
+      }
+
+      // Pour les champs numériques
+      if (data.delivery_lead_time === null || data.delivery_lead_time === undefined || data.delivery_lead_time === '') {
+        data.delivery_lead_time = 7;
+      }
+      if (data.minimum_order === null || data.minimum_order === undefined || data.minimum_order === '') {
+        data.minimum_order = 0;
+      }
+      if (data.rating === null || data.rating === undefined || data.rating === '') {
+        data.rating = 0;
+      }
+
+      const response = await AxiosInstance[method](url, data, {
+        headers: { 'Authorization': `Token ${token}` }
+      });
+
+      showNotification(
+        isEditMode ? 'Fournisseur modifié avec succès' : 'Fournisseur créé avec succès',
+        'success'
+      );
+
+      if (!isEditMode) {
+        setTimeout(() => navigate(`/fournisseurs/${response.data.id}`), 1000);
+      } else {
+        fetchSupplier();
+      }
+    } catch (error) {
+      console.error('Erreur:', error);
+      if (error.response?.data) {
+        const errors = error.response.data;
+        const messages = Object.keys(errors).map(key => `${key}: ${errors[key]}`);
+        showNotification(messages.join(' | '), 'error');
+      } else {
+        showNotification('Erreur lors de l\'enregistrement', 'error');
+      }
+    } finally {
+      setSaving(false);
     }
-    if (!formData.invoice_date) {
-      showNotification('Veuillez saisir la date de facture', 'error');
-      setLoading(false);
-      return;
-    }
-    if (!formData.due_date) {
-      showNotification('Veuillez saisir la date d\'échéance', 'error');
-      setLoading(false);
-      return;
-    }
-    if (!formData.amount || parseFloat(formData.amount) <= 0) {
-      showNotification('Veuillez saisir un montant valide', 'error');
-      setLoading(false);
-      return;
-    }
-    if (!formData.total_amount || parseFloat(formData.total_amount) <= 0) {
-      showNotification('Veuillez saisir un total TTC valide', 'error');
-      setLoading(false);
+  };
+
+  // Gestion des contacts
+  const handleAddContact = async () => {
+    if (!contactForm.name || !contactForm.phone || !contactForm.email) {
+      showNotification('Veuillez remplir les champs obligatoires (Nom, Téléphone, Email)', 'error');
       return;
     }
 
     try {
-      const url = isEdit ? `/supplier-invoices/${id}/` : '/supplier-invoices/';
-      const method = isEdit ? 'put' : 'post';
+      const token = getToken();
+      let url = '/supplier-contacts/';
+      let method = 'post';
+      let data = { ...contactForm };
 
-      const dataToSend = {
-        purchase_order: parseInt(formData.purchase_order),
-        invoice_number: formData.invoice_number,
-        invoice_date: formData.invoice_date,
-        due_date: formData.due_date,
-        amount: parseFloat(formData.amount),
-        tax_amount: parseFloat(formData.tax_amount) || 0,
-        total_amount: parseFloat(formData.total_amount),
-        notes: formData.notes,
-        receipt_ids: selectedReceipts.map(r => r.id)  // ✅ Envoyer les IDs des réceptions
-      };
+      if (editingContact) {
+        url = `/supplier-contacts/${editingContact.id}/`;
+        method = 'put';
+      } else {
+        data.supplier = parseInt(id);
+      }
 
-      console.log('📤 Envoi de la facture:', dataToSend);
-
-      const response = await AxiosInstance({
-        method: method,
-        url: url,
-        data: dataToSend
+      const response = await AxiosInstance[method](url, data, {
+        headers: { 'Authorization': `Token ${token}` }
       });
 
       showNotification(
-        isEdit ? 'Facture modifiée avec succès' : 'Facture créée avec succès',
+        editingContact ? 'Contact modifié avec succès' : 'Contact ajouté avec succès',
         'success'
       );
 
-      setTimeout(() => {
-        navigate(`/factures-fournisseurs/${response.data.id}`);
-      }, 1500);
-
+      await fetchSupplier();
+      setShowContactModal(false);
+      setEditingContact(null);
+      setContactForm({ name: '', position: '', phone: '', mobile: '', email: '', is_primary: false, notes: '' });
     } catch (error) {
-      console.error('❌ Erreur:', error);
-      console.error('Détails:', error.response?.data);
-      
-      let errorMsg = 'Erreur lors de l\'enregistrement de la facture';
-      
-      if (error.response?.data) {
-        if (typeof error.response.data === 'object') {
-          const errors = error.response.data;
-          if (errors.message) {
-            errorMsg = errors.message;
-          } else if (errors.detail) {
-            errorMsg = errors.detail;
-          } else if (errors.non_field_errors) {
-            errorMsg = errors.non_field_errors.join(', ');
-          } else {
-            const firstError = Object.values(errors)[0];
-            if (Array.isArray(firstError)) {
-              errorMsg = firstError[0];
-            } else if (typeof firstError === 'string') {
-              errorMsg = firstError;
-            }
-          }
-        } else if (typeof error.response.data === 'string') {
-          errorMsg = error.response.data;
-        }
-      }
-      
-      showNotification(errorMsg, 'error');
-    } finally {
-      setLoading(false);
+      console.error('Erreur:', error);
+      showNotification('Erreur lors de l\'enregistrement du contact', 'error');
     }
   };
 
-  const handleCancel = () => {
-    navigate('/factures-fournisseurs');
+  const handleDeleteContact = async (contactId) => {
+    if (!window.confirm('Voulez-vous vraiment supprimer ce contact ?')) return;
+    try {
+      const token = getToken();
+      await AxiosInstance.delete(`/supplier-contacts/${contactId}/`, {
+        headers: { 'Authorization': `Token ${token}` }
+      });
+      showNotification('Contact supprimé avec succès', 'success');
+      fetchSupplier();
+    } catch (error) {
+      showNotification('Erreur lors de la suppression', 'error');
+    }
   };
 
-  // Filtrer les commandes par recherche
-  const filteredOrders = purchaseOrders.filter(order => {
-    const search = searchOrder.toLowerCase();
-    return (order.po_number?.toLowerCase() || '').includes(search) ||
-           (order.supplier_name?.toLowerCase() || '').includes(search);
-  });
-
-  // Récupérer le fournisseur d'une commande sélectionnée
-  const getSelectedOrderSupplier = () => {
-    const order = purchaseOrders.find(o => o.id === parseInt(formData.purchase_order));
-    return order ? order.supplier_name : '';
+  const handleEditContact = (contact) => {
+    setEditingContact(contact);
+    setContactForm({
+      name: contact.name || '',
+      position: contact.position || '',
+      phone: contact.phone || '',
+      mobile: contact.mobile || '',
+      email: contact.email || '',
+      is_primary: contact.is_primary || false,
+      notes: contact.notes || ''
+    });
+    setShowContactModal(true);
   };
 
-  const getSelectedOrderNumber = () => {
-    const order = purchaseOrders.find(o => o.id === parseInt(formData.purchase_order));
-    return order ? order.po_number : '';
+  // Gestion des produits fournisseurs
+  const handleAddProduct = async () => {
+    if (!productForm.product) {
+      showNotification('Veuillez sélectionner un produit', 'error');
+      return;
+    }
+    if (productForm.purchase_price <= 0) {
+      showNotification('Le prix d\'achat doit être supérieur à 0', 'error');
+      return;
+    }
+
+    try {
+      const token = getToken();
+      let url = '/supplier-products/';
+      let method = 'post';
+      let data = { ...productForm };
+
+      if (editingProduct) {
+        url = `/supplier-products/${editingProduct.id}/`;
+        method = 'put';
+      } else {
+        data.supplier = parseInt(id);
+      }
+
+      const response = await AxiosInstance[method](url, data, {
+        headers: { 'Authorization': `Token ${token}` }
+      });
+
+      showNotification(
+        editingProduct ? 'Produit modifié avec succès' : 'Produit associé avec succès',
+        'success'
+      );
+
+      await fetchSupplier();
+      setShowProductModal(false);
+      setEditingProduct(null);
+      setProductForm({ product: '', supplier_sku: '', purchase_price: 0, lead_time: 7, minimum_order: 1, is_active: true, notes: '' });
+      setProductSearch('');
+    } catch (error) {
+      console.error('Erreur:', error);
+      showNotification('Erreur lors de l\'association du produit', 'error');
+    }
   };
 
-  if (fetchingData) {
+  const handleDeleteProduct = async (productId) => {
+    if (!window.confirm('Voulez-vous vraiment dissocier ce produit ?')) return;
+    try {
+      const token = getToken();
+      await AxiosInstance.delete(`/supplier-products/${productId}/`, {
+        headers: { 'Authorization': `Token ${token}` }
+      });
+      showNotification('Produit dissocié avec succès', 'success');
+      fetchSupplier();
+    } catch (error) {
+      showNotification('Erreur lors de la dissociation', 'error');
+    }
+  };
+
+  const handleEditProduct = (product) => {
+    setEditingProduct(product);
+    setProductForm({
+      product: product.product || '',
+      supplier_sku: product.supplier_sku || '',
+      purchase_price: product.purchase_price || 0,
+      lead_time: product.lead_time || 7,
+      minimum_order: product.minimum_order || 1,
+      is_active: product.is_active !== undefined ? product.is_active : true,
+      notes: product.notes || ''
+    });
+    setShowProductModal(true);
+  };
+
+  if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[calc(100vh-200px)]">
         <div className="text-center space-y-4">
           <div className="loading loading-spinner loading-lg text-primary w-12 h-12"></div>
-          <p className="text-base font-semibold text-gray-500">Chargement...</p>
+          <p className="text-base font-semibold text-gray-500">
+            {isEditMode ? 'Chargement du fournisseur...' : 'Préparation du formulaire...'}
+          </p>
         </div>
       </div>
     );
@@ -322,7 +444,7 @@ const FactureFournisseurForm = () => {
       {/* Notification */}
       {notification.show && (
         <div className="fixed top-20 right-4 z-50 animate-slideDown">
-          <div className={`alert ${notification.type === 'success' ? 'alert-success' : notification.type === 'warning' ? 'alert-warning' : 'alert-error'} shadow-xl rounded-xl`}>
+          <div className={`alert ${notification.type === 'success' ? 'alert-success' : 'alert-error'} shadow-xl rounded-xl`}>
             <div className="flex items-center gap-2">
               {notification.type === 'success' ? <CheckCircle className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
               <span className="font-medium">{notification.message}</span>
@@ -334,383 +456,552 @@ const FactureFournisseurForm = () => {
         </div>
       )}
 
+      {/* Modal Contact */}
+      {showContactModal && (
+        <div className="modal modal-open">
+          <div className="modal-box max-w-lg">
+            <h3 className="font-bold text-lg mb-4">
+              {editingContact ? 'Modifier le contact' : 'Ajouter un contact'}
+            </h3>
+            <div className="space-y-3">
+              <div>
+                <label className="label label-text">Nom complet *</label>
+                <input name="name" value={contactForm.name} onChange={handleContactChange} className="input input-bordered w-full" />
+              </div>
+              <div>
+                <label className="label label-text">Poste</label>
+                <input name="position" value={contactForm.position} onChange={handleContactChange} className="input input-bordered w-full" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="label label-text">Téléphone *</label>
+                  <input name="phone" value={contactForm.phone} onChange={handleContactChange} className="input input-bordered w-full" />
+                </div>
+                <div>
+                  <label className="label label-text">Mobile</label>
+                  <input name="mobile" value={contactForm.mobile} onChange={handleContactChange} className="input input-bordered w-full" />
+                </div>
+              </div>
+              <div>
+                <label className="label label-text">Email *</label>
+                <input name="email" type="email" value={contactForm.email} onChange={handleContactChange} className="input input-bordered w-full" />
+              </div>
+              <div className="flex items-center gap-2">
+                <input name="is_primary" type="checkbox" checked={contactForm.is_primary} onChange={handleContactChange} className="checkbox" />
+                <label className="label-text">Contact principal</label>
+              </div>
+              <div>
+                <label className="label label-text">Notes</label>
+                <textarea name="notes" value={contactForm.notes} onChange={handleContactChange} className="textarea textarea-bordered w-full" rows="2"></textarea>
+              </div>
+            </div>
+            <div className="modal-action">
+              <button className="btn btn-ghost" onClick={() => { setShowContactModal(false); setEditingContact(null); setContactForm({ name: '', position: '', phone: '', mobile: '', email: '', is_primary: false, notes: '' }); }}>Annuler</button>
+              <button className="btn btn-primary" onClick={handleAddContact} disabled={saving}>
+                <Save className="w-4 h-4" /> {editingContact ? 'Modifier' : 'Ajouter'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Produit */}
+      {showProductModal && (
+        <div className="modal modal-open">
+          <div className="modal-box max-w-lg">
+            <h3 className="font-bold text-lg mb-4">
+              {editingProduct ? 'Modifier le produit associé' : 'Associer un produit'}
+            </h3>
+            <div className="space-y-3">
+              {!editingProduct && (
+                <div>
+                  <label className="label label-text">Produit *</label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      placeholder="Rechercher un produit..."
+                      value={productSearch}
+                      onChange={(e) => setProductSearch(e.target.value)}
+                      className="input input-bordered w-full"
+                    />
+                    {loadingProducts && (
+                      <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                        <span className="loading loading-spinner loading-sm"></span>
+                      </div>
+                    )}
+                  </div>
+                  <select
+                    name="product"
+                    value={productForm.product}
+                    onChange={handleProductChange}
+                    className="select select-bordered w-full mt-2"
+                    disabled={loadingProducts}
+                  >
+                    <option value="">Sélectionner un produit</option>
+                    {productOptions.map(p => (
+                      <option key={p.id} value={p.id}>{p.code} - {p.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              <div>
+                <label className="label label-text">Référence fournisseur</label>
+                <input name="supplier_sku" value={productForm.supplier_sku} onChange={handleProductChange} className="input input-bordered w-full" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="label label-text">Prix d'achat *</label>
+                  <input name="purchase_price" type="number" step="0.01" value={productForm.purchase_price} onChange={handleProductChange} className="input input-bordered w-full" />
+                </div>
+                <div>
+                  <label className="label label-text">Délai livraison (jours)</label>
+                  <input name="lead_time" type="number" value={productForm.lead_time} onChange={handleProductChange} className="input input-bordered w-full" />
+                </div>
+              </div>
+              <div>
+                <label className="label label-text">Quantité minimum</label>
+                <input name="minimum_order" type="number" value={productForm.minimum_order} onChange={handleProductChange} className="input input-bordered w-full" />
+              </div>
+              <div className="flex items-center gap-2">
+                <input name="is_active" type="checkbox" checked={productForm.is_active} onChange={handleProductChange} className="checkbox" />
+                <label className="label-text">Actif</label>
+              </div>
+              <div>
+                <label className="label label-text">Notes</label>
+                <textarea name="notes" value={productForm.notes} onChange={handleProductChange} className="textarea textarea-bordered w-full" rows="2"></textarea>
+              </div>
+            </div>
+            <div className="modal-action">
+              <button className="btn btn-ghost" onClick={() => { setShowProductModal(false); setEditingProduct(null); setProductForm({ product: '', supplier_sku: '', purchase_price: 0, lead_time: 7, minimum_order: 1, is_active: true, notes: '' }); setProductSearch(''); }}>Annuler</button>
+              <button className="btn btn-primary" onClick={handleAddProduct} disabled={saving}>
+                <Save className="w-4 h-4" /> {editingProduct ? 'Modifier' : 'Associer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* En-tête */}
       <div className="relative overflow-hidden bg-gradient-to-r from-primary/10 via-primary/5 to-transparent rounded-2xl p-5">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <button onClick={handleCancel} className="btn btn-ghost btn-sm btn-circle">
-              <ArrowLeft className="w-5 h-5" />
-            </button>
-            <div>
-              <div className="flex items-center gap-3 mb-1">
-                <div className="p-2 bg-primary/10 rounded-xl">
-                  <Receipt className="w-7 h-7 text-primary" />
-                </div>
-                <h1 className="text-2xl sm:text-3xl font-black text-primary">
-                  {isEdit ? 'Modifier la facture' : 'Nouvelle facture fournisseur'}
-                </h1>
+          <div>
+            <div className="flex items-center gap-3 mb-2">
+              <button onClick={() => navigate('/fournisseurs')} className="btn btn-ghost btn-sm btn-circle">
+                <ArrowLeft className="w-5 h-5" />
+              </button>
+              <div className="p-2 bg-primary/10 rounded-xl">
+                <Truck className="w-7 h-7 text-primary" />
               </div>
-              <p className="text-sm text-gray-500 ml-1">
-                {isEdit ? 'Modifiez les informations de la facture' : 'Sélectionnez une commande et ses réceptions pour créer une facture'}
-              </p>
+              <h1 className="text-2xl sm:text-3xl font-black text-primary">
+                {isEditMode ? 'Modifier le fournisseur' : 'Nouveau fournisseur'}
+              </h1>
             </div>
+            <p className="text-sm text-gray-500 ml-1">
+              {isEditMode ? `Modification de ${formData.name || '...'}` : 'Créez un nouveau fournisseur dans la base'}
+            </p>
           </div>
-          <button onClick={fetchOrders} className="btn btn-sm btn-outline gap-2">
-            <RefreshCw className="w-4 h-4" /> Rafraîchir
-          </button>
-        </div>
-      </div>
-
-      {/* Formulaire */}
-      <div className="bg-white rounded-xl shadow-xl p-6">
-        <form onSubmit={handleSubmit}>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Commande associée */}
-            <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Commande associée <span className="text-error">*</span>
-              </label>
-              
-              {!isEdit && (
-                <div className="relative mb-2">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                  <input
-                    type="text"
-                    className="input input-bordered w-full pl-9"
-                    placeholder="Rechercher une commande (numéro ou fournisseur)..."
-                    value={searchOrder}
-                    onChange={(e) => setSearchOrder(e.target.value)}
-                  />
-                  {loadingOrders && (
-                    <span className="loading loading-spinner loading-sm absolute right-3 top-1/2 -translate-y-1/2"></span>
-                  )}
-                </div>
-              )}
-
-              <div className="flex gap-2">
-                <select
-                  name="purchase_order"
-                  className={`select select-bordered flex-1 ${loadingOrders ? 'opacity-50' : ''}`}
-                  value={formData.purchase_order}
-                  onChange={handleChange}
-                  disabled={isEdit || loadingOrders}
-                >
-                  <option value="">
-                    {loadingOrders ? '⏳ Chargement...' : 
-                     purchaseOrders.length === 0 ? '⚠️ Aucune commande reçue' : 
-                     '📦 Sélectionner une commande reçue...'}
-                  </option>
-                  {filteredOrders.map(order => (
-                    <option key={order.id} value={order.id}>
-                      {order.po_number} - {order.supplier_name} 
-                      ({order.total?.toLocaleString()} FCFA) 
-                      [{order.status === 'received' ? '✅ Reçu' : '🔄 Partiel'}]
-                    </option>
-                  ))}
-                </select>
-                {isEdit && (
-                  <span className="badge badge-info flex items-center gap-1 whitespace-nowrap">
-                    <Clock className="w-3 h-3" /> Non modifiable
-                  </span>
-                )}
-              </div>
-
-              {formData.purchase_order && (
-                <div className="mt-2 flex flex-wrap gap-4 text-sm text-gray-500">
-                  <span className="flex items-center gap-1">
-                    <Building2 className="w-3 h-3" /> {getSelectedOrderSupplier()}
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <ShoppingBag className="w-3 h-3" /> {getSelectedOrderNumber()}
-                  </span>
-                </div>
-              )}
-            </div>
-
-            {/* ✅ Sélection des réceptions */}
-            {formData.purchase_order && !isEdit && (
-              <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Réceptions à facturer <span className="text-error">*</span>
-                </label>
-                
-                {loadingReceipts ? (
-                  <div className="flex items-center justify-center py-8">
-                    <span className="loading loading-spinner loading-md"></span>
-                    <span className="ml-3 text-gray-500">Chargement des réceptions...</span>
-                  </div>
-                ) : availableReceipts.length === 0 ? (
-                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                    <div className="flex items-start gap-3">
-                      <AlertTriangle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
-                      <div>
-                        <p className="text-sm font-semibold text-yellow-700">Aucune réception disponible</p>
-                        <p className="text-xs text-yellow-600 mt-1">
-                          Cette commande n'a pas de réception terminée non facturée.
-                          {purchaseOrders.length > 0 && ' Vérifiez que les réceptions sont terminées et non facturées.'}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="space-y-2 max-h-60 overflow-y-auto border rounded-lg p-3">
-                    {availableReceipts.map(receipt => (
-                      <label 
-                        key={receipt.id}
-                        className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-all ${
-                          selectedReceipts.find(r => r.id === receipt.id)
-                            ? 'bg-primary/10 border-2 border-primary'
-                            : 'bg-gray-50 border-2 border-transparent hover:bg-gray-100'
-                        }`}
-                      >
-                        <input
-                          type="checkbox"
-                          className="checkbox checkbox-primary"
-                          checked={!!selectedReceipts.find(r => r.id === receipt.id)}
-                          onChange={() => toggleReceiptSelection(receipt)}
-                        />
-                        <div className="flex-1">
-                          <div className="flex items-center gap-3">
-                            <span className="font-mono font-semibold">{receipt.receipt_number}</span>
-                            <span className="badge badge-success badge-sm">Terminée</span>
-                          </div>
-                          <div className="text-sm text-gray-500 mt-1">
-                            Montant: <span className="font-semibold text-gray-700">{receipt.total_received_amount?.toLocaleString()} FCFA</span>
-                            <span className="mx-2">•</span>
-                            Date: {new Date(receipt.receipt_date).toLocaleDateString()}
-                          </div>
-                        </div>
-                      </label>
-                    ))}
-                  </div>
-                )}
-
-                {selectedReceipts.length > 0 && (
-                  <div className="mt-3 p-3 bg-blue-50 rounded-lg border border-blue-100">
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-gray-600">
-                        <strong>{selectedReceipts.length}</strong> réception(s) sélectionnée(s)
-                      </span>
-                      <span className="text-sm font-semibold text-primary">
-                        Total: {calculateReceiptsTotal().toLocaleString()} FCFA
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedReceipts([])}
-                      className="btn btn-ghost btn-xs text-error gap-1 mt-1"
-                    >
-                      <Trash2 className="w-3 h-3" /> Tout désélectionner
-                    </button>
-                  </div>
-                )}
-              </div>
+          <div className="flex flex-wrap gap-3">
+            {isEditMode && (
+              <button onClick={fetchSupplier} className="btn btn-sm btn-outline gap-2">
+                <RefreshCw className="w-4 h-4" /> Actualiser
+              </button>
             )}
-
-            {/* Réceptions déjà facturées (en modification) */}
-            {isEdit && selectedReceipts.length > 0 && (
-              <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Réceptions facturées
-                </label>
-                <div className="space-y-2">
-                  {selectedReceipts.map(receipt => (
-                    <div key={receipt.id} className="flex items-center gap-3 p-3 bg-green-50 rounded-lg border border-green-200">
-                      <CheckCircle className="w-5 h-5 text-green-500" />
-                      <div>
-                        <span className="font-mono font-semibold">{receipt.receipt_number}</span>
-                        <span className="text-sm text-gray-500 ml-3">
-                          {receipt.total?.toLocaleString()} FCFA
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Numéro de facture */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                N° Facture <span className="text-error">*</span>
-              </label>
-              <input
-                type="text"
-                name="invoice_number"
-                className="input input-bordered w-full"
-                placeholder="FAC-2026-0001"
-                value={formData.invoice_number}
-                onChange={handleChange}
-                required
-              />
-            </div>
-
-            {/* Date facture */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Date facture <span className="text-error">*</span>
-              </label>
-              <input
-                type="date"
-                name="invoice_date"
-                className="input input-bordered w-full"
-                value={formData.invoice_date}
-                onChange={handleChange}
-                required
-              />
-            </div>
-
-            {/* Date échéance */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Date d'échéance <span className="text-error">*</span>
-              </label>
-              <input
-                type="date"
-                name="due_date"
-                className="input input-bordered w-full"
-                value={formData.due_date}
-                onChange={handleChange}
-                required
-              />
-            </div>
-
-            {/* Montant HT */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Montant HT <span className="text-error">*</span>
-              </label>
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">F</span>
-                <input
-                  type="number"
-                  name="amount"
-                  className="input input-bordered w-full pl-8"
-                  placeholder="0"
-                  value={formData.amount}
-                  onChange={handleChange}
-                  step="0.01"
-                  min="0"
-                  required
-                />
-              </div>
-              {selectedReceipts.length > 0 && !isEdit && (
-                <p className="text-xs text-gray-400 mt-1">
-                  💡 Suggéré: {calculateReceiptsTotal().toLocaleString()} FCFA
-                </p>
-              )}
-            </div>
-
-            {/* TVA */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                TVA
-              </label>
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">F</span>
-                <input
-                  type="number"
-                  name="tax_amount"
-                  className="input input-bordered w-full pl-8"
-                  placeholder="0"
-                  value={formData.tax_amount}
-                  onChange={handleChange}
-                  step="0.01"
-                  min="0"
-                />
-              </div>
-              <p className="text-xs text-gray-400 mt-1">Ex: 180000 pour 18%</p>
-            </div>
-
-            {/* Total TTC */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Total TTC <span className="text-error">*</span>
-              </label>
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">F</span>
-                <input
-                  type="number"
-                  name="total_amount"
-                  className="input input-bordered w-full pl-8 bg-gray-50"
-                  placeholder="0"
-                  value={formData.total_amount}
-                  onChange={handleChange}
-                  step="0.01"
-                  min="0"
-                  required
-                  readOnly={!!formData.amount && !!formData.tax_amount}
-                />
-              </div>
-              <p className="text-xs text-gray-400 mt-1">
-                {formData.amount && formData.tax_amount 
-                  ? '✅ Calcul automatique (HT + TVA)' 
-                  : 'Saisissez HT et TVA pour calcul auto'}
-              </p>
-            </div>
-
-            {/* Notes */}
-            <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Notes
-              </label>
-              <textarea
-                name="notes"
-                className="textarea textarea-bordered w-full"
-                rows="3"
-                placeholder="Notes supplémentaires..."
-                value={formData.notes}
-                onChange={handleChange}
-              />
-            </div>
-
-            {/* Informations */}
-            <div className="md:col-span-2 bg-blue-50 rounded-lg p-4 border border-blue-100">
-              <h4 className="font-semibold text-sm text-blue-700 flex items-center gap-2">
-                <FileText className="w-4 h-4" /> Informations
-              </h4>
-              <ul className="text-sm text-blue-600 space-y-1 mt-2">
-                <li>• La facture doit correspondre à une commande <strong>reçue</strong> ou <strong>partiellement reçue</strong></li>
-                <li>• Sélectionnez les <strong>réceptions</strong> que vous souhaitez facturer</li>
-                <li>• Une réception ne peut être facturée qu'une seule fois</li>
-                <li>• Le montant de la facture doit correspondre aux réceptions sélectionnées</li>
-                <li>• La date d'échéance détermine le délai de paiement</li>
-                <li>• 💡 Si aucune réception n'apparaît, vérifiez qu'elles sont terminées et non facturées</li>
-              </ul>
-            </div>
-          </div>
-
-          {/* Actions */}
-          <div className="flex flex-col sm:flex-row gap-3 mt-8 pt-6 border-t">
             <button
               type="button"
-              onClick={handleCancel}
-              className="btn btn-ghost flex-1 sm:flex-none order-2 sm:order-1"
+              onClick={handleSubmit}
+              className="btn btn-sm sm:btn-md bg-gradient-to-r from-primary to-primary/80 text-white border-none shadow-lg gap-2"
+              disabled={saving}
             >
-              Annuler
-            </button>
-            <button
-              type="submit"
-              className="btn bg-gradient-to-r from-primary to-primary/80 text-white border-none flex-1 sm:flex-none order-1 sm:order-2 gap-2"
-              disabled={loading || loadingOrders || (!isEdit && selectedReceipts.length === 0)}
-            >
-              {loading ? (
+              {saving ? (
                 <>
                   <span className="loading loading-spinner loading-sm"></span>
-                  {isEdit ? 'Modification...' : 'Création...'}
+                  Enregistrement...
                 </>
               ) : (
                 <>
-                  <Save className="w-4 h-4" />
-                  {isEdit ? 'Modifier' : 'Créer la facture'}
+                  <Save className="w-4 h-4" /> Enregistrer
                 </>
               )}
             </button>
           </div>
-        </form>
+        </div>
       </div>
+
+      {/* Tabs */}
+      <div className="tabs tabs-boxed bg-white p-1 rounded-xl shadow-sm overflow-x-auto">
+        <button className={`tab ${activeTab === 'general' ? 'tab-active' : ''}`} onClick={() => setActiveTab('general')}>
+          Informations générales
+        </button>
+        <button className={`tab ${activeTab === 'contacts' ? 'tab-active' : ''}`} onClick={() => setActiveTab('contacts')}>
+          Contacts ({contacts.length})
+        </button>
+        <button className={`tab ${activeTab === 'products' ? 'tab-active' : ''}`} onClick={() => setActiveTab('products')}>
+          Produits ({products.length})
+        </button>
+        {isEditMode && (
+          <button className={`tab ${activeTab === 'details' ? 'tab-active' : ''}`} onClick={() => setActiveTab('details')}>
+            Détails & statistiques
+          </button>
+        )}
+      </div>
+
+      {/* Formulaire */}
+      <form onSubmit={handleSubmit}>
+        {activeTab === 'general' && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Identification */}
+            <div className="bg-white rounded-xl shadow-md overflow-hidden">
+              <div className="bg-gray-50 px-6 py-3 border-b">
+                <h3 className="font-semibold flex items-center gap-2">
+                  <Building2 className="w-4 h-4 text-primary" /> Identification
+                </h3>
+              </div>
+              <div className="p-6 space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="label label-text">Code *</label>
+                    <input
+                      name="code"
+                      value={formData.code}
+                      onChange={handleChange}
+                      className="input input-bordered w-full font-mono"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="label label-text">Type *</label>
+                    <select name="type" value={formData.type} onChange={handleChange} className="select select-bordered w-full" required>
+                      <option value="local">Local</option>
+                      <option value="international">International</option>
+                      <option value="importateur">Importateur</option>
+                      <option value="distributeur">Distributeur</option>
+                      <option value="fabricant">Fabricant</option>
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label className="label label-text">Nom / Raison sociale *</label>
+                  <input name="name" value={formData.name} onChange={handleChange} className="input input-bordered w-full" required />
+                </div>
+                <div>
+                  <label className="label label-text">Nom commercial</label>
+                  <input name="commercial_name" value={formData.commercial_name} onChange={handleChange} className="input input-bordered w-full" />
+                </div>
+                <div>
+                  <label className="label label-text">Personne de contact</label>
+                  <input name="contact_person" value={formData.contact_person} onChange={handleChange} className="input input-bordered w-full" />
+                </div>
+                <div className="flex flex-wrap gap-6 pt-2">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input name="is_active" type="checkbox" checked={formData.is_active} onChange={handleChange} className="checkbox checkbox-success" />
+                    <span className="label-text">Actif</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input name="is_preferred" type="checkbox" checked={formData.is_preferred} onChange={handleChange} className="checkbox checkbox-warning" />
+                    <span className="label-text">Fournisseur privilégié</span>
+                    <Star className="w-4 h-4 text-warning" />
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            {/* Contact */}
+            <div className="bg-white rounded-xl shadow-md overflow-hidden">
+              <div className="bg-gray-50 px-6 py-3 border-b">
+                <h3 className="font-semibold flex items-center gap-2">
+                  <Phone className="w-4 h-4 text-primary" /> Coordonnées
+                </h3>
+              </div>
+              <div className="p-6 space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="label label-text">Téléphone *</label>
+                    <input name="phone" value={formData.phone} onChange={handleChange} className="input input-bordered w-full" required />
+                  </div>
+                  <div>
+                    <label className="label label-text">Mobile</label>
+                    <input name="mobile" value={formData.mobile} onChange={handleChange} className="input input-bordered w-full" />
+                  </div>
+                </div>
+                <div>
+                  <label className="label label-text">Email *</label>
+                  <input name="email" type="email" value={formData.email} onChange={handleChange} className="input input-bordered w-full" required />
+                </div>
+                <div>
+                  <label className="label label-text">Site web</label>
+                  <input name="website" value={formData.website} onChange={handleChange} className="input input-bordered w-full" placeholder="https://..." />
+                </div>
+                <div>
+                  <label className="label label-text">Adresse *</label>
+                  <textarea name="address" value={formData.address} onChange={handleChange} className="textarea textarea-bordered w-full" rows="2" required></textarea>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div>
+                    <label className="label label-text">Ville *</label>
+                    <input name="city" value={formData.city} onChange={handleChange} className="input input-bordered w-full" required />
+                  </div>
+                  <div>
+                    <label className="label label-text">Pays</label>
+                    <input name="country" value={formData.country} onChange={handleChange} className="input input-bordered w-full" />
+                  </div>
+                  <div>
+                    <label className="label label-text">Code postal</label>
+                    <input name="postal_code" value={formData.postal_code} onChange={handleChange} className="input input-bordered w-full" />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Informations fiscales */}
+            <div className="bg-white rounded-xl shadow-md overflow-hidden">
+              <div className="bg-gray-50 px-6 py-3 border-b">
+                <h3 className="font-semibold flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-primary" /> Informations fiscales & légales
+                </h3>
+              </div>
+              <div className="p-6 space-y-4">
+                <div>
+                  <label className="label label-text">N° Identification fiscale</label>
+                  <input name="tax_id" value={formData.tax_id} onChange={handleChange} className="input input-bordered w-full" />
+                </div>
+                <div>
+                  <label className="label label-text">N° Registre de commerce</label>
+                  <input name="registration_number" value={formData.registration_number} onChange={handleChange} className="input input-bordered w-full" />
+                </div>
+              </div>
+            </div>
+
+            {/* Conditions commerciales */}
+            <div className="bg-white rounded-xl shadow-md overflow-hidden">
+              <div className="bg-gray-50 px-6 py-3 border-b">
+                <h3 className="font-semibold flex items-center gap-2">
+                  <Star className="w-4 h-4 text-primary" /> Conditions commerciales
+                </h3>
+              </div>
+              <div className="p-6 space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="label label-text">Délai de paiement</label>
+                    <select name="payment_terms" value={formData.payment_terms} onChange={handleChange} className="select select-bordered w-full">
+                      <option value="cash">Comptant</option>
+                      <option value="15">15 jours</option>
+                      <option value="30">30 jours</option>
+                      <option value="45">45 jours</option>
+                      <option value="60">60 jours</option>
+                      <option value="90">90 jours</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="label label-text">Délai de livraison (jours)</label>
+                    <input name="delivery_lead_time" type="number" value={formData.delivery_lead_time} onChange={handleChange} className="input input-bordered w-full" />
+                  </div>
+                </div>
+                <div>
+                  <label className="label label-text">Commande minimum</label>
+                  <input name="minimum_order" type="number" value={formData.minimum_order} onChange={handleChange} className="input input-bordered w-full" />
+                </div>
+                <div>
+                  <label className="label label-text">Notes</label>
+                  <textarea name="notes" value={formData.notes} onChange={handleChange} className="textarea textarea-bordered w-full" rows="3"></textarea>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'contacts' && (
+          <div className="bg-white rounded-xl shadow-md overflow-hidden">
+            <div className="p-4 border-b flex justify-between items-center">
+              <h3 className="font-semibold flex items-center gap-2">
+                <User className="w-4 h-4 text-primary" /> Contacts ({contacts.length})
+              </h3>
+              <button type="button" className="btn btn-primary btn-sm gap-2" onClick={() => { setEditingContact(null); setContactForm({ name: '', position: '', phone: '', mobile: '', email: '', is_primary: false, notes: '' }); setShowContactModal(true); }}>
+                <Plus className="w-4 h-4" /> Ajouter un contact
+              </button>
+            </div>
+            <div className="overflow-x-auto">
+              {contacts.length === 0 ? (
+                <div className="text-center py-12">
+                  <User className="w-16 h-16 text-gray-300 mx-auto mb-3" />
+                  <p className="text-gray-500">Aucun contact enregistré</p>
+                  <button type="button" className="btn btn-primary btn-sm mt-3 gap-2" onClick={() => { setEditingContact(null); setContactForm({ name: '', position: '', phone: '', mobile: '', email: '', is_primary: false, notes: '' }); setShowContactModal(true); }}>
+                    <Plus className="w-4 h-4" /> Ajouter un contact
+                  </button>
+                </div>
+              ) : (
+                <table className="table w-full">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th>Nom</th>
+                      <th>Poste</th>
+                      <th>Téléphone</th>
+                      <th>Email</th>
+                      <th className="text-center">Principal</th>
+                      <th className="text-center">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {contacts.map(contact => (
+                      <tr key={contact.id}>
+                        <td className="font-medium">{contact.name}</td>
+                        <td>{contact.position || '-'}</td>
+                        <td>{contact.phone}</td>
+                        <td>{contact.email}</td>
+                        <td className="text-center">
+                          {contact.is_primary && <CheckCircle className="w-5 h-5 text-success mx-auto" />}
+                        </td>
+                        <td className="text-center">
+                          <div className="flex justify-center gap-1">
+                            <button type="button" className="btn btn-ghost btn-sm btn-circle" onClick={() => handleEditContact(contact)}>
+                              <Edit className="w-4 h-4" />
+                            </button>
+                            <button type="button" className="btn btn-ghost btn-sm btn-circle text-error" onClick={() => handleDeleteContact(contact.id)}>
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'products' && (
+          <div className="bg-white rounded-xl shadow-md overflow-hidden">
+            <div className="p-4 border-b flex justify-between items-center">
+              <h3 className="font-semibold flex items-center gap-2">
+                <Package className="w-4 h-4 text-primary" /> Produits associés ({products.length})
+              </h3>
+              <button type="button" className="btn btn-primary btn-sm gap-2" onClick={() => { setEditingProduct(null); setProductForm({ product: '', supplier_sku: '', purchase_price: 0, lead_time: 7, minimum_order: 1, is_active: true, notes: '' }); setProductSearch(''); setShowProductModal(true); }}>
+                <Plus className="w-4 h-4" /> Associer un produit
+              </button>
+            </div>
+            <div className="overflow-x-auto">
+              {products.length === 0 ? (
+                <div className="text-center py-12">
+                  <Package className="w-16 h-16 text-gray-300 mx-auto mb-3" />
+                  <p className="text-gray-500">Aucun produit associé</p>
+                  <button type="button" className="btn btn-primary btn-sm mt-3 gap-2" onClick={() => { setEditingProduct(null); setProductForm({ product: '', supplier_sku: '', purchase_price: 0, lead_time: 7, minimum_order: 1, is_active: true, notes: '' }); setProductSearch(''); setShowProductModal(true); }}>
+                    <Plus className="w-4 h-4" /> Associer un produit
+                  </button>
+                </div>
+              ) : (
+                <table className="table w-full">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th>Produit</th>
+                      <th>Réf. fournisseur</th>
+                      <th className="text-right">Prix achat</th>
+                      <th className="text-center">Délai (j)</th>
+                      <th className="text-center">Min</th>
+                      <th className="text-center">Statut</th>
+                      <th className="text-center">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {products.map(product => (
+                      <tr key={product.id}>
+                        <td>
+                          <div>
+                            <p className="font-medium">{product.product_name}</p>
+                            <p className="text-xs text-gray-500">{product.product_code}</p>
+                          </div>
+                        </td>
+                        <td>{product.supplier_sku || '-'}</td>
+                        <td className="text-right font-semibold">{product.purchase_price?.toLocaleString()} F</td>
+                        <td className="text-center">{product.lead_time}</td>
+                        <td className="text-center">{product.minimum_order}</td>
+                        <td className="text-center">
+                          {product.is_active ? (
+                            <span className="badge badge-success">Actif</span>
+                          ) : (
+                            <span className="badge badge-error">Inactif</span>
+                          )}
+                        </td>
+                        <td className="text-center">
+                          <div className="flex justify-center gap-1">
+                            <button type="button" className="btn btn-ghost btn-sm btn-circle" onClick={() => handleEditProduct(product)}>
+                              <Edit className="w-4 h-4" />
+                            </button>
+                            <button type="button" className="btn btn-ghost btn-sm btn-circle text-error" onClick={() => handleDeleteProduct(product.id)}>
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'details' && isEditMode && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="bg-white rounded-xl shadow-md p-6">
+              <h3 className="font-semibold flex items-center gap-2 mb-4">
+                <Truck className="w-4 h-4 text-primary" /> Statistiques
+              </h3>
+              <div className="space-y-2">
+                <div className="flex justify-between py-2 border-b">
+                  <span className="text-gray-500">Total commandes</span>
+                  <span className="font-semibold">{formData.total_orders || 0}</span>
+                </div>
+                <div className="flex justify-between py-2 border-b">
+                  <span className="text-gray-500">Total achats</span>
+                  <span className="font-semibold text-primary">{(formData.total_purchases || 0).toLocaleString()} F</span>
+                </div>
+                <div className="flex justify-between py-2 border-b">
+                  <span className="text-gray-500">Note</span>
+                  <div className="flex gap-0.5">
+                    {[...Array(5)].map((_, i) => (
+                      <Star key={i} className={`w-4 h-4 ${i < Math.round(formData.rating || 0) ? 'text-warning fill-warning' : 'text-gray-300'}`} />
+                    ))}
+                  </div>
+                </div>
+                <div className="flex justify-between py-2 border-b">
+                  <span className="text-gray-500">Taux livraison à temps</span>
+                  <span className="font-semibold">{formData.on_time_delivery_rate || 0}%</span>
+                </div>
+                <div className="flex justify-between py-2 border-b">
+                  <span className="text-gray-500">Dette totale</span>
+                  <span className="font-semibold text-error">{(formData.total_debt || 0).toLocaleString()} F</span>
+                </div>
+                <div className="flex justify-between py-2">
+                  <span className="text-gray-500">Dette en retard</span>
+                  <span className="font-semibold text-error">{(formData.overdue_debt || 0).toLocaleString()} F</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-xl shadow-md p-6">
+              <h3 className="font-semibold flex items-center gap-2 mb-4">
+                <Calendar className="w-4 h-4 text-primary" /> Informations système
+              </h3>
+              <div className="space-y-2">
+                <div className="flex justify-between py-2 border-b">
+                  <span className="text-gray-500">Créé le</span>
+                  <span className="text-sm">{formData.created_at ? new Date(formData.created_at).toLocaleString() : '-'}</span>
+                </div>
+                <div className="flex justify-between py-2 border-b">
+                  <span className="text-gray-500">Créé par</span>
+                  <span className="text-sm">{formData.created_by?.full_name || formData.created_by?.username || '-'}</span>
+                </div>
+                <div className="flex justify-between py-2">
+                  <span className="text-gray-500">Dernière modification</span>
+                  <span className="text-sm">{formData.updated_at ? new Date(formData.updated_at).toLocaleString() : '-'}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </form>
     </div>
   );
 };
 
-export default FactureFournisseurForm;
+export default FournisseursForm;
