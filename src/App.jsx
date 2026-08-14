@@ -140,6 +140,11 @@ import PaiementFournisseurDetail from './components/achatsfournisseurs/PaiementF
 import PaiementsFournisseursList from './components/achatsfournisseurs/PaiementsFournisseursList';
 import PaiementFournisseurForm from './components/achatsfournisseurs/PaiementFournisseurForm';
 
+
+import ClientFacturesPDF from './components/ventesclients/ClientFacturesPDF';
+
+
+
 import Utilisateurs from './components/users/Utilisateurs';
 import UtilisateurForm from './components/users/UtilisateurForm';
 import UtilisateurDetails from './components/users/UtilisateurDetail';
@@ -323,7 +328,10 @@ function App() {
                 <Route path="/fournisseurs/:id/modifier" element={<FournisseursForm />} />
                 <Route path="/fournisseurs/:id" element={<FournisseursDetails />} />
 
-                
+             
+
+// Ajoutez cette route
+<Route path="/clients/:id/factures-pdf" element={<ClientFacturesPDF />} />
 
  {/* Commandes fournisseurs */}
                 <Route path="/commandes-fournisseurs" element={<CommandesList />} />
