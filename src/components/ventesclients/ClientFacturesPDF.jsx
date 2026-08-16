@@ -182,10 +182,10 @@ const ClientFacturesPDF = async (client, factures, options = {}) => {
 
     // ========== INFORMATIONS DE L'ENTREPRISE ==========
     const company = {
-      name: 'SEYDI GROUP',
+      name: 'SODEPCI PARA',
       address: 'Dakar, Sénégal',
       phone: '+221 33 800 00 00',
-      email: 'contact@seydigroup.sn',
+      email: 'contactsodepci@gmail.com',
       rccm: '2025/G/001',
       nif: '123456789',
       capital: '50 000 000 FCFA'

@@ -1,18 +1,54 @@
 // src/components/pos/TicketPOS.jsx
 import jsPDF from 'jspdf';
+import AxiosInstance from '../AxiosInstance';
 
 /**
  * Génère un ticket de caisse format 80mm
- * @param {Object} vente - Objet vente provenant de l'API
+ * @param {Object} vente - Objet vente provenant de l'API ou ID de la vente
  * @param {Object} options - Options supplémentaires
  * @returns {Promise<jsPDF>}
  */
-const TicketPOS = async (vente, options = {}) => {
-  if (!vente || typeof vente !== 'object') {
-    throw new Error('Données de la vente invalides');
-  }
-
+const TicketPOS = async (venteOrId, options = {}) => {
   try {
+    // ============================================================
+    // RÉCUPÉRATION DES DONNÉES SI SEUL L'ID EST PASSÉ
+    // ============================================================
+    let vente = venteOrId;
+    
+    // Si c'est un ID (string ou number), on récupère les données
+    if (typeof venteOrId === 'string' || typeof venteOrId === 'number') {
+      const token = localStorage.getItem('Token');
+      if (!token) {
+        throw new Error('Session expirée');
+      }
+      
+      const response = await AxiosInstance.get(`/sales/${venteOrId}/`, {
+        headers: { Authorization: `Token ${token}` }
+      });
+      vente = response.data;
+    }
+
+    if (!vente || typeof vente !== 'object') {
+      throw new Error('Données de la vente invalides');
+    }
+
+    // ============================================================
+    // VÉRIFICATION ET NORMALISATION DES LIGNES
+    // ============================================================
+    // Les lignes peuvent être dans vente.lines ou vente.lignes
+    let lines = vente.lines || vente.lignes || [];
+    
+    // Normaliser les lignes pour avoir des noms de propriétés cohérents
+    lines = lines.map(line => ({
+      quantity: line.quantity || line.qte || 0,
+      unit_price: line.unit_price || line.prix_unitaire || line.price || 0,
+      total: line.total || 0,
+      discount: line.discount || line.remise || 0,
+      product_name: line.product_name || line.nom_produit || line.product?.name || 'Produit',
+      product_code: line.product_code || line.code_produit || line.product?.code || '',
+      product: line.product || null
+    }));
+
     // ============================================================
     // FORMAT 80mm x 210mm
     // ============================================================
@@ -107,8 +143,6 @@ const TicketPOS = async (vente, options = {}) => {
     // ============================================================
     // DONNEES
     // ============================================================
-    const lines = vente.lines || [];
-    
     // Informations de la boutique (paramétrables)
     const shopName = options.shopName || 'BOUTIQUE STATION SODEPCI DE PARA';
     const shopPhone = options.shopPhone || '07 47 55 71 69 / 07 08 42 96 09';
@@ -126,27 +160,28 @@ const TicketPOS = async (vente, options = {}) => {
     y = sectionSpacer(2);
 
     // --- NUMERO ET DATE ---
-    const ticketNumber = vente.invoice_number || '---';
+    const ticketNumber = vente.invoice_number || vente.numero_facture || '---';
     y = centerText('TICKET N° ' + ticketNumber, 10, 'bold');
-    y = centerText(formatDate(vente.sale_date), 7, 'normal');
+    y = centerText(formatDate(vente.sale_date || vente.date_vente), 7, 'normal');
     y = sectionSpacer(2);
 
     y = separator('-');
     y = sectionSpacer(2);
 
     // --- CLIENT ---
-    if (vente.client_name) {
-      y = leftText('Client: ' + vente.client_name, 8, 'bold');
+    const clientName = vente.client_name || vente.client?.name || 'Client anonyme';
+    y = leftText('Client: ' + clientName, 8, 'bold');
+    
+    if (vente.client_phone || vente.client?.phone) {
+      y = leftText('Tél: ' + (vente.client_phone || vente.client?.phone), 7, 'normal');
     }
-    if (vente.client_phone) {
-      y = leftText('Tél: ' + vente.client_phone, 7, 'normal');
+    if (vente.client_email || vente.client?.email) {
+      y = leftText('Email: ' + (vente.client_email || vente.client?.email), 7, 'normal');
     }
-    if (vente.client_email) {
-      y = leftText('Email: ' + vente.client_email, 7, 'normal');
-    }
-    if (vente.client_address) {
-      const address = vente.client_address.length > 25 ? vente.client_address.substring(0, 25) + '...' : vente.client_address;
-      y = leftText('Adresse: ' + address, 7, 'normal');
+    if (vente.client_address || vente.client?.address) {
+      const address = (vente.client_address || vente.client?.address || '');
+      const shortAddress = address.length > 25 ? address.substring(0, 25) + '...' : address;
+      y = leftText('Adresse: ' + shortAddress, 7, 'normal');
     }
     y = sectionSpacer(1);
     y = separator('-');
@@ -176,32 +211,64 @@ const TicketPOS = async (vente, options = {}) => {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7);
 
-    // AFFICHAGE DES PRODUITS
+    // ============================================================
+    // AFFICHAGE DES PRODUITS - VERSION CORRIGÉE
+    // ============================================================
     if (lines && lines.length > 0) {
       lines.forEach((line, index) => {
-        const qty = line.quantity || 0;
-        const price = line.unit_price || 0;
-        const total = line.total || 0;
-        const productName = line.product_name || 'Produit';
+        // Récupération des valeurs avec des fallbacks
+        const qty = parseFloat(line.quantity) || 0;
+        const price = parseFloat(line.unit_price) || 0;
+        const total = parseFloat(line.total) || 0;
+        let productName = line.product_name || 'Produit';
+        
+        // Si productName est vide ou trop court, essayer d'autres sources
+        if (!productName || productName === 'Produit') {
+          if (line.product && line.product.name) {
+            productName = line.product.name;
+          } else if (line.nom) {
+            productName = line.nom;
+          }
+        }
+        
+        // Tronquer le nom si trop long
         const shortName = productName.length > 18 ? productName.substring(0, 16) + '..' : productName;
 
+        // Afficher la quantité
         doc.text(String(qty), colQte, y);
+        
+        // Afficher le nom du produit
         doc.text(shortName, colDesignation, y);
+        
+        // Afficher le prix unitaire
         doc.text(formatNumber(price), colPrix, y, { align: 'right' });
+        
+        // Afficher le total (en gras)
         doc.setFont('helvetica', 'bold');
         doc.text(formatNumber(total), colTotal, y, { align: 'right' });
         doc.setFont('helvetica', 'normal');
 
-        y += 4;
+        y += 4.5;
 
+        // Gestion de la pagination
         if (y > 170) {
           doc.addPage();
           y = margins.top + 10;
+          // Réafficher les en-têtes sur la nouvelle page
+          doc.setFontSize(7);
+          doc.setFont('helvetica', 'bold');
+          doc.text('Qté', colQte, y);
+          doc.text('Produit', colDesignation, y);
+          doc.text('Prix', colPrix, y, { align: 'right' });
+          doc.text('Total', colTotal, y, { align: 'right' });
+          y += 2.5;
+          doc.setFont('helvetica', 'normal');
         }
       });
     } else {
-      y = leftText('Aucun produit', 7);
-      y = leftText('Vérifiez les données', 6);
+      // Si aucune ligne n'est trouvée, afficher un message
+      y = leftText('Aucun produit trouvé', 7, 'bold');
+      y = leftText('Vérifiez les données de la vente', 6);
     }
 
     y = sectionSpacer(1.5);
@@ -211,14 +278,14 @@ const TicketPOS = async (vente, options = {}) => {
     // ============================================================
     // 3. TOTAUX
     // ============================================================
-    const subtotal = vente.subtotal || 0;
-    const discountAmount = vente.discount_amount || 0;
-    const taxAmount = vente.tax_amount || 0;
-    const taxRate = vente.tax_rate || 0;
-    const shippingFee = vente.shipping_fee || 0;
-    const total = vente.total || 0;
-    const amountPaid = vente.amount_paid || 0;
-    const amountDue = vente.amount_due || 0;
+    const subtotal = parseFloat(vente.subtotal) || 0;
+    const discountAmount = parseFloat(vente.discount_amount) || 0;
+    const taxAmount = parseFloat(vente.tax_amount) || 0;
+    const taxRate = parseFloat(vente.tax_rate) || 0;
+    const shippingFee = parseFloat(vente.shipping_fee) || 0;
+    const total = parseFloat(vente.total) || 0;
+    const amountPaid = parseFloat(vente.amount_paid) || 0;
+    const amountDue = parseFloat(vente.amount_due) || 0;
 
     // Sous-total
     twoColumnText('Sous-total', formatCurrency(subtotal), 8);
@@ -345,7 +412,7 @@ const TicketPOS = async (vente, options = {}) => {
 
     // Code barre / Numéro
     doc.setFontSize(5);
-    const barCode = vente.invoice_number || 'TICKET';
+    const barCode = ticketNumber || 'TICKET';
     y = centerText('*' + barCode + '*', 5, 'normal');
 
     y = sectionSpacer(2);
@@ -372,7 +439,7 @@ const TicketPOS = async (vente, options = {}) => {
     // ============================================================
     // SAUVEGARDE
     // ============================================================
-    const fileName = 'Ticket_' + (vente.invoice_number || 'ticket') + '.pdf';
+    const fileName = 'Ticket_' + (ticketNumber || 'ticket') + '.pdf';
     doc.save(fileName);
     return doc;
 

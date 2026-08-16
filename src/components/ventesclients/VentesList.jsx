@@ -1,4 +1,8 @@
 // src/components/ventes/VentesList.jsx
+// ============================================================
+// CORRECTION : Récupérer les données complètes avant d'imprimer
+// ============================================================
+
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import AxiosInstance from '../AxiosInstance';
@@ -31,6 +35,7 @@ const VentesList = () => {
   const [viewMode, setViewMode] = useState('list');
   const [printing, setPrinting] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+  const [printingId, setPrintingId] = useState(null); // Pour suivre quel ticket est en cours
 
   const showNotification = (message, type) => {
     setNotification({ show: true, message, type });
@@ -92,6 +97,78 @@ const VentesList = () => {
   useEffect(() => {
     fetchVentes();
   }, [statusFilter, paymentFilter, dateFrom, dateTo]);
+
+  // ============================================================
+  // ✅ FONCTION POUR RÉCUPÉRER LES DONNÉES COMPLÈTES D'UNE VENTE
+  // ============================================================
+  const fetchCompleteSale = async (saleId) => {
+    try {
+      const token = getToken();
+      if (!token) {
+        showNotification('Session expirée', 'error');
+        return null;
+      }
+
+      const response = await AxiosInstance.get(`/sales/${saleId}/`, {
+        headers: { 'Authorization': `Token ${token}` }
+      });
+      
+      return response.data;
+    } catch (error) {
+      console.error('Erreur récupération vente complète:', error);
+      showNotification('Erreur lors de la récupération des données', 'error');
+      return null;
+    }
+  };
+
+  // ============================================================
+  // ✅ FONCTION D'IMPRESSION TICKET CORRIGÉE
+  // ============================================================
+  const handlePrintTicket = async (vente) => {
+    const saleId = vente.id;
+    setPrintingId(saleId);
+    setPrinting(true);
+    
+    try {
+      // 1. Récupérer les données complètes de la vente (avec les lignes)
+      const completeVente = await fetchCompleteSale(saleId);
+      
+      if (!completeVente) {
+        showNotification('Impossible de récupérer les données de la vente', 'error');
+        setPrintingId(null);
+        setPrinting(false);
+        return;
+      }
+
+      // 2. Vérifier que les lignes sont présentes
+      if (!completeVente.lines || completeVente.lines.length === 0) {
+        console.warn('⚠️ Aucune ligne trouvée pour cette vente');
+        showNotification('Cette vente ne contient aucun produit', 'warning');
+        setPrintingId(null);
+        setPrinting(false);
+        return;
+      }
+
+      console.log('✅ Impression ticket avec', completeVente.lines.length, 'produits');
+
+      // 3. Générer le ticket avec les données complètes
+      await TicketPOS(completeVente, {
+        companyName: 'ETABLISSEMENTS BAH SOULEYMANE ET FILS',
+        companySlogan: 'E.B.S.F',
+        companyPhone: '+224 626 53 32 53',
+        companyEmail: 'ebsfservices@gmail.com',
+        companyAddress: 'Pita Centre – Grand Marché, Guinée'
+      });
+      
+      showNotification('Ticket imprimé avec succès', 'success');
+    } catch (error) {
+      console.error('Erreur impression ticket:', error);
+      showNotification('Erreur lors de l\'impression du ticket', 'error');
+    } finally {
+      setPrintingId(null);
+      setPrinting(false);
+    }
+  };
 
   const handleDelete = async () => {
     if (!venteToDelete) return;
@@ -230,25 +307,6 @@ const VentesList = () => {
     navigate(`/ventes/${id}/pdf`);
   };
 
-  const handlePrintTicket = async (vente) => {
-    setPrinting(true);
-    try {
-      await TicketPOS(vente, {
-        companyName: 'ETABLISSEMENTS BAH SOULEYMANE ET FILS',
-        companySlogan: 'E.B.S.F',
-        companyPhone: '+224 626 53 32 53',
-        companyEmail: 'ebsfservices@gmail.com',
-        companyAddress: 'Pita Centre – Grand Marché, Guinée'
-      });
-      showNotification('Ticket imprimé avec succès', 'success');
-    } catch (error) {
-      console.error('Erreur impression ticket:', error);
-      showNotification('Erreur lors de l\'impression du ticket', 'error');
-    } finally {
-      setPrinting(false);
-    }
-  };
-
   const filteredVentes = ventes.filter(vente => {
     const matchesSearch = !searchTerm || 
       (vente.invoice_number?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
@@ -260,7 +318,6 @@ const VentesList = () => {
   const startIndex = (currentPage - 1) * itemsPerPage;
   const paginatedVentes = filteredVentes.slice(startIndex, startIndex + itemsPerPage);
 
-  // ✅ CORRECTION : conversion explicite en nombre pour éviter concaténation de chaînes
   const stats = {
     total: ventes.length,
     draft: ventes.filter(v => v.status === 'draft').length,
@@ -294,7 +351,6 @@ const VentesList = () => {
     return <span className={`badge ${config.className}`}>{config.label}</span>;
   };
 
-  // ✅ CORRECTION : formatCurrency robuste pour nombres et chaînes
   const formatCurrency = (amount) => {
     if (!amount && amount !== 0) return '0 FCFA';
     const num = typeof amount === 'string' ? parseFloat(amount) : amount;
@@ -333,9 +389,9 @@ const VentesList = () => {
       {/* Notification */}
       {notification.show && (
         <div className="fixed top-20 right-4 z-50 animate-slideDown">
-          <div className={`alert ${notification.type === 'success' ? 'alert-success' : 'alert-error'} shadow-xl rounded-xl`}>
+          <div className={`alert ${notification.type === 'success' ? 'alert-success' : notification.type === 'warning' ? 'alert-warning' : 'alert-error'} shadow-xl rounded-xl`}>
             <div className="flex items-center gap-2">
-              {notification.type === 'success' ? <CheckCircle className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+              {notification.type === 'success' ? <CheckCircle className="w-4 h-4" /> : notification.type === 'warning' ? <AlertTriangle className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
               <span className="font-medium">{notification.message}</span>
             </div>
             <button className="btn btn-ghost btn-xs btn-circle" onClick={() => setNotification({ ...notification, show: false })}>
@@ -578,14 +634,18 @@ const VentesList = () => {
                           <Download className="w-4 h-4" />
                         </button>
 
-                        {/* Imprimer Ticket */}
+                        {/* ✅ Imprimer Ticket - CORRIGÉ */}
                         <button 
                           className="btn btn-ghost btn-sm btn-circle tooltip text-secondary"
                           data-tip="Imprimer ticket"
                           onClick={() => handlePrintTicket(vente)}
                           disabled={printing || actionLoading}
                         >
-                          {printing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Printer className="w-4 h-4" />}
+                          {printingId === vente.id ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <Printer className="w-4 h-4" />
+                          )}
                         </button>
 
                         {/* Annuler */}
