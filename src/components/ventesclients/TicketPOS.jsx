@@ -1,4 +1,4 @@
-// src/components/pos/TicketPOS.jsx
+// src/components/ventesclients/TicketPOS.jsx
 import jsPDF from 'jspdf';
 import AxiosInstance from '../AxiosInstance';
 
@@ -6,16 +6,17 @@ import AxiosInstance from '../AxiosInstance';
  * Génère un ticket de caisse format 80mm
  * @param {Object} vente - Objet vente provenant de l'API ou ID de la vente
  * @param {Object} options - Options supplémentaires
- * @returns {Promise<jsPDF>}
+ * @param {boolean} options.openInBrowser - Si true, ouvre le PDF dans le navigateur
+ * @param {boolean} options.autoPrint - Si true, imprime automatiquement
+ * @returns {Promise<jsPDF|string|void>}
  */
 const TicketPOS = async (venteOrId, options = {}) => {
   try {
     // ============================================================
-    // RÉCUPÉRATION DES DONNÉES SI SEUL L'ID EST PASSÉ
+    // RÉCUPÉRATION DES DONNÉES
     // ============================================================
     let vente = venteOrId;
     
-    // Si c'est un ID (string ou number), on récupère les données
     if (typeof venteOrId === 'string' || typeof venteOrId === 'number') {
       const token = localStorage.getItem('Token');
       if (!token) {
@@ -32,13 +33,8 @@ const TicketPOS = async (venteOrId, options = {}) => {
       throw new Error('Données de la vente invalides');
     }
 
-    // ============================================================
-    // VÉRIFICATION ET NORMALISATION DES LIGNES
-    // ============================================================
-    // Les lignes peuvent être dans vente.lines ou vente.lignes
+    // Normalisation des lignes
     let lines = vente.lines || vente.lignes || [];
-    
-    // Normaliser les lignes pour avoir des noms de propriétés cohérents
     lines = lines.map(line => ({
       quantity: line.quantity || line.qte || 0,
       unit_price: line.unit_price || line.prix_unitaire || line.price || 0,
@@ -58,17 +54,12 @@ const TicketPOS = async (venteOrId, options = {}) => {
       format: [80, 210]
     });
 
-    // ============================================================
-    // CONFIGURATION
-    // ============================================================
     const pageWidth = 80;
     const margins = { left: 3, right: 3, top: 4, bottom: 4 };
     let y = margins.top;
     const lineHeight = 4.5;
 
-    // ============================================================
-    // FONCTIONS DE FORMATAGE
-    // ============================================================
+    // Fonctions de formatage
     const formatNumber = (n) => {
       const num = parseFloat(n) || 0;
       return Math.round(num).toString();
@@ -140,38 +131,29 @@ const TicketPOS = async (venteOrId, options = {}) => {
       return y;
     };
 
-    // ============================================================
     // DONNEES
-    // ============================================================
-    // Informations de la boutique (paramétrables)
     const shopName = options.shopName || 'BOUTIQUE STATION SODEPCI DE PARA';
     const shopPhone = options.shopPhone || '07 47 55 71 69 / 07 08 42 96 09';
     const shopFooter = options.shopFooter || 'MERCI ET LA PROCHAINE';
 
-    // ============================================================
-    // 1. EN-TETE - BOUTIQUE
-    // ============================================================
+    // EN-TETE
     y = centerText(shopName, 11, 'bold');
     y = sectionSpacer(1);
     y = centerText('Tél: ' + shopPhone, 7, 'normal');
     y = sectionSpacer(3);
-
     y = separator('-');
     y = sectionSpacer(2);
 
-    // --- NUMERO ET DATE ---
     const ticketNumber = vente.invoice_number || vente.numero_facture || '---';
     y = centerText('TICKET N° ' + ticketNumber, 10, 'bold');
     y = centerText(formatDate(vente.sale_date || vente.date_vente), 7, 'normal');
     y = sectionSpacer(2);
-
     y = separator('-');
     y = sectionSpacer(2);
 
-    // --- CLIENT ---
+    // CLIENT
     const clientName = vente.client_name || vente.client?.name || 'Client anonyme';
     y = leftText('Client: ' + clientName, 8, 'bold');
-    
     if (vente.client_phone || vente.client?.phone) {
       y = leftText('Tél: ' + (vente.client_phone || vente.client?.phone), 7, 'normal');
     }
@@ -187,9 +169,7 @@ const TicketPOS = async (venteOrId, options = {}) => {
     y = separator('-');
     y = sectionSpacer(2);
 
-    // ============================================================
-    // 2. TABLEAU DES PRODUITS
-    // ============================================================
+    // TABLEAU DES PRODUITS
     doc.setFontSize(7);
     doc.setFont('helvetica', 'bold');
 
@@ -211,18 +191,13 @@ const TicketPOS = async (venteOrId, options = {}) => {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7);
 
-    // ============================================================
-    // AFFICHAGE DES PRODUITS - VERSION CORRIGÉE
-    // ============================================================
     if (lines && lines.length > 0) {
-      lines.forEach((line, index) => {
-        // Récupération des valeurs avec des fallbacks
+      lines.forEach((line) => {
         const qty = parseFloat(line.quantity) || 0;
         const price = parseFloat(line.unit_price) || 0;
         const total = parseFloat(line.total) || 0;
         let productName = line.product_name || 'Produit';
         
-        // Si productName est vide ou trop court, essayer d'autres sources
         if (!productName || productName === 'Produit') {
           if (line.product && line.product.name) {
             productName = line.product.name;
@@ -231,30 +206,20 @@ const TicketPOS = async (venteOrId, options = {}) => {
           }
         }
         
-        // Tronquer le nom si trop long
         const shortName = productName.length > 18 ? productName.substring(0, 16) + '..' : productName;
 
-        // Afficher la quantité
         doc.text(String(qty), colQte, y);
-        
-        // Afficher le nom du produit
         doc.text(shortName, colDesignation, y);
-        
-        // Afficher le prix unitaire
         doc.text(formatNumber(price), colPrix, y, { align: 'right' });
-        
-        // Afficher le total (en gras)
         doc.setFont('helvetica', 'bold');
         doc.text(formatNumber(total), colTotal, y, { align: 'right' });
         doc.setFont('helvetica', 'normal');
 
         y += 4.5;
 
-        // Gestion de la pagination
         if (y > 170) {
           doc.addPage();
           y = margins.top + 10;
-          // Réafficher les en-têtes sur la nouvelle page
           doc.setFontSize(7);
           doc.setFont('helvetica', 'bold');
           doc.text('Qté', colQte, y);
@@ -266,18 +231,15 @@ const TicketPOS = async (venteOrId, options = {}) => {
         }
       });
     } else {
-      // Si aucune ligne n'est trouvée, afficher un message
       y = leftText('Aucun produit trouvé', 7, 'bold');
-      y = leftText('Vérifiez les données de la vente', 6);
+      y = leftText('Vérifiez les données', 6);
     }
 
     y = sectionSpacer(1.5);
     y = separator('-');
     y = sectionSpacer(1.5);
 
-    // ============================================================
-    // 3. TOTAUX
-    // ============================================================
+    // TOTAUX
     const subtotal = parseFloat(vente.subtotal) || 0;
     const discountAmount = parseFloat(vente.discount_amount) || 0;
     const taxAmount = parseFloat(vente.tax_amount) || 0;
@@ -287,20 +249,13 @@ const TicketPOS = async (venteOrId, options = {}) => {
     const amountPaid = parseFloat(vente.amount_paid) || 0;
     const amountDue = parseFloat(vente.amount_due) || 0;
 
-    // Sous-total
     twoColumnText('Sous-total', formatCurrency(subtotal), 8);
-
-    // Remise
     if (discountAmount > 0) {
       twoColumnText('Remise', '- ' + formatCurrency(discountAmount), 8);
     }
-
-    // TVA
     if (taxAmount > 0) {
       twoColumnText('TVA (' + taxRate + '%)', formatCurrency(taxAmount), 8);
     }
-
-    // Frais de livraison
     if (shippingFee > 0) {
       twoColumnText('Livraison', formatCurrency(shippingFee), 8);
     }
@@ -309,14 +264,12 @@ const TicketPOS = async (venteOrId, options = {}) => {
     y = doubleSeparator();
     y = sectionSpacer(1);
 
-    // TOTAL
     doc.setFontSize(10);
     doc.setFont('helvetica', 'bold');
     doc.text('TOTAL', margins.left, y);
     doc.text(formatCurrency(total), pageWidth - margins.right, y, { align: 'right' });
     y += lineHeight + 1;
 
-    // Montant payé
     if (amountPaid > 0) {
       doc.setFontSize(8);
       doc.setFont('helvetica', 'normal');
@@ -325,7 +278,6 @@ const TicketPOS = async (venteOrId, options = {}) => {
       y += lineHeight;
     }
 
-    // Montant dû
     if (amountDue > 0) {
       doc.setFontSize(8);
       doc.setFont('helvetica', 'bold');
@@ -334,7 +286,6 @@ const TicketPOS = async (venteOrId, options = {}) => {
       y += lineHeight;
     }
 
-    // Statut paiement
     if (vente.payment_status) {
       const statusMap = {
         'paid': '✓ Payé',
@@ -352,9 +303,7 @@ const TicketPOS = async (venteOrId, options = {}) => {
     y = separator('-');
     y = sectionSpacer(2);
 
-    // ============================================================
-    // 4. STATUT DE LA VENTE
-    // ============================================================
+    // STATUT
     if (vente.status) {
       const statusMap = {
         'draft': 'Brouillon',
@@ -371,7 +320,6 @@ const TicketPOS = async (venteOrId, options = {}) => {
       y += lineHeight;
     }
 
-    // Méthode de paiement
     if (vente.payment_method) {
       doc.setFontSize(7);
       doc.setFont('helvetica', 'normal');
@@ -381,9 +329,7 @@ const TicketPOS = async (venteOrId, options = {}) => {
 
     y = sectionSpacer(1);
 
-    // ============================================================
-    // 5. NOTES
-    // ============================================================
+    // NOTES
     if (vente.notes) {
       const notes = doc.splitTextToSize(vente.notes, pageWidth - margins.left - margins.right - 4);
       doc.setFontSize(7);
@@ -402,22 +348,17 @@ const TicketPOS = async (venteOrId, options = {}) => {
     y = separator('-');
     y = sectionSpacer(3);
 
-    // ============================================================
-    // 6. PIED DE PAGE
-    // ============================================================
+    // PIED DE PAGE
     y = centerText(shopFooter, 10, 'bold');
     y = centerText('À très bientôt !', 8, 'normal');
     y = centerText('Votre satisfaction est notre priorité', 7, 'normal');
     y = sectionSpacer(3);
 
-    // Code barre / Numéro
     doc.setFontSize(5);
     const barCode = ticketNumber || 'TICKET';
     y = centerText('*' + barCode + '*', 5, 'normal');
-
     y = sectionSpacer(2);
 
-    // Fin
     doc.setFontSize(4.5);
     doc.text('-'.repeat(30), pageWidth / 2, y, { align: 'center' });
     y += 2.5;
@@ -426,9 +367,6 @@ const TicketPOS = async (venteOrId, options = {}) => {
     const dateStr = now.toLocaleDateString('fr-FR') + ' ' + now.toLocaleTimeString('fr-FR');
     y = centerText('Imprimé le ' + dateStr, 4.5, 'normal');
 
-    // ============================================================
-    // 7. PAGES
-    // ============================================================
     const pageCount = doc.internal.getNumberOfPages();
     for (let i = 1; i <= pageCount; i++) {
       doc.setPage(i);
@@ -436,10 +374,73 @@ const TicketPOS = async (venteOrId, options = {}) => {
       doc.text('Page ' + i + '/' + pageCount, pageWidth - margins.right, 205, { align: 'right' });
     }
 
-    // ============================================================
-    // SAUVEGARDE
-    // ============================================================
     const fileName = 'Ticket_' + (ticketNumber || 'ticket') + '.pdf';
+    const pdfBlob = doc.output('blob');
+
+    // ============================================================
+    // GESTION DE LA SORTIE
+    // ============================================================
+    
+    // ✅ Impression automatique
+    if (options.autoPrint) {
+      return new Promise((resolve, reject) => {
+        try {
+          const url = URL.createObjectURL(pdfBlob);
+          
+          // Créer un iframe caché
+          const iframe = document.createElement('iframe');
+          iframe.style.position = 'fixed';
+          iframe.style.right = '-9999px';
+          iframe.style.top = '-9999px';
+          iframe.style.width = '0px';
+          iframe.style.height = '0px';
+          iframe.style.border = 'none';
+          
+          document.body.appendChild(iframe);
+          
+          iframe.onload = function() {
+            try {
+              // Lancer l'impression
+              iframe.contentWindow.print();
+              
+              // Nettoyer après l'impression
+              setTimeout(() => {
+                document.body.removeChild(iframe);
+                URL.revokeObjectURL(url);
+                resolve(true);
+              }, 1000);
+            } catch (err) {
+              document.body.removeChild(iframe);
+              URL.revokeObjectURL(url);
+              reject(err);
+            }
+          };
+          
+          iframe.onerror = function(err) {
+            document.body.removeChild(iframe);
+            URL.revokeObjectURL(url);
+            reject(err);
+          };
+          
+          iframe.src = url;
+          
+        } catch (err) {
+          reject(err);
+        }
+      });
+    }
+
+    // ✅ Ouverture dans le navigateur
+    if (options.openInBrowser) {
+      const url = URL.createObjectURL(pdfBlob);
+      window.open(url, '_blank');
+      setTimeout(() => {
+        URL.revokeObjectURL(url);
+      }, 10000);
+      return url;
+    }
+
+    // ✅ Téléchargement (par défaut)
     doc.save(fileName);
     return doc;
 

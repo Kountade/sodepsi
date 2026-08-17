@@ -1,12 +1,17 @@
 // src/components/ventes/VenteForm.jsx
-import React, { useEffect, useState } from 'react';
+// ============================================================
+// VERSION COMPLÈTE AVEC GESTION CORRECTE DES PRIX DÉTAIL/GROS
+// ============================================================
+
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import AxiosInstance from '../AxiosInstance';
 import {
   ArrowLeft, Plus, Trash2, Save, X,
   User, Calendar, DollarSign, FileText,
   Loader2, AlertCircle, CheckCircle, Package,
-  Percent, Truck, ShoppingCart, Warehouse
+  Percent, Truck, ShoppingCart, Warehouse,
+  Tag, Layers, Edit3, Eye
 } from 'lucide-react';
 
 const VenteForm = () => {
@@ -14,6 +19,10 @@ const VenteForm = () => {
   const { id } = useParams();
   const isEdit = !!id;
 
+  // ============================================================
+  // ÉTATS
+  // ============================================================
+  
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -23,6 +32,7 @@ const VenteForm = () => {
   const [lots, setLots] = useState([]);
   const [notification, setNotification] = useState(null);
 
+  // Formulaire principal
   const [formData, setFormData] = useState({
     client: '',
     warehouse: '',
@@ -40,15 +50,21 @@ const VenteForm = () => {
     lines: []
   });
 
+  // Formulaire de ligne
   const [lineForm, setLineForm] = useState({
     product: '',
     lot: '',
     quantity: 1,
     unit_price: 0,
     discount: 0,
-    tax_rate: 0
+    tax_rate: 0,
+    price_type: 'detail'  // 'detail' ou 'gros'
   });
 
+  // ============================================================
+  // FONCTIONS UTILITAIRES
+  // ============================================================
+  
   const getToken = () => localStorage.getItem('Token');
 
   const showNotification = (message, type) => {
@@ -56,7 +72,10 @@ const VenteForm = () => {
     setTimeout(() => setNotification(null), 4000);
   };
 
-  // Charger les données initiales
+  // ============================================================
+  // CHARGEMENT DES DONNÉES INITIALES
+  // ============================================================
+  
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -68,14 +87,31 @@ const VenteForm = () => {
         }
 
         const [clientsRes, productsRes, warehousesRes] = await Promise.all([
-          AxiosInstance.get('/clients/', { headers: { 'Authorization': `Token ${token}` } }),
-          AxiosInstance.get('/products/', { headers: { 'Authorization': `Token ${token}` } }),
-          AxiosInstance.get('/warehouses/?active=true', { headers: { 'Authorization': `Token ${token}` } })
+          AxiosInstance.get('/clients/', { 
+            headers: { 'Authorization': `Token ${token}` } 
+          }),
+          AxiosInstance.get('/products/?status=active', { 
+            headers: { 'Authorization': `Token ${token}` } 
+          }),
+          AxiosInstance.get('/warehouses/?active=true', { 
+            headers: { 'Authorization': `Token ${token}` } 
+          })
         ]);
 
         setClients(clientsRes.data || []);
-        setProducts(productsRes.data || []);
+        
+        // ✅ IMPORTANT : S'assurer que les prix sont bien récupérés
+        const productsData = productsRes.data || [];
+        console.log('Produits chargés:', productsData.map(p => ({
+          id: p.id,
+          name: p.name,
+          selling_price: p.selling_price,
+          wholesale_price: p.wholesale_price
+        })));
+        
+        setProducts(productsData);
         setWarehouses(warehousesRes.data || []);
+
       } catch (error) {
         console.error('Erreur chargement données:', error);
         showNotification('Erreur de chargement des données', 'error');
@@ -85,15 +121,19 @@ const VenteForm = () => {
     fetchData();
   }, []);
 
-  // Charger les lots lorsqu'un entrepôt est sélectionné
+  // ============================================================
+  // CHARGEMENT DES LOTS PAR ENTREPÔT
+  // ============================================================
+  
   useEffect(() => {
     if (formData.warehouse) {
       const fetchLots = async () => {
         try {
           const token = getToken();
-          const response = await AxiosInstance.get(`/lots/?warehouse=${formData.warehouse}&available=true`, {
-            headers: { 'Authorization': `Token ${token}` }
-          });
+          const response = await AxiosInstance.get(
+            `/lots/?warehouse=${formData.warehouse}&available=true`,
+            { headers: { 'Authorization': `Token ${token}` } }
+          );
           setLots(response.data || []);
         } catch (error) {
           console.error('Erreur chargement lots:', error);
@@ -106,7 +146,10 @@ const VenteForm = () => {
     }
   }, [formData.warehouse]);
 
-  // Charger la vente si en mode édition
+  // ============================================================
+  // CHARGEMENT DE LA VENTE EN MODIFICATION
+  // ============================================================
+  
   useEffect(() => {
     if (isEdit && id) {
       const fetchVente = async () => {
@@ -142,7 +185,8 @@ const VenteForm = () => {
               unit_price: line.unit_price || 0,
               discount: line.discount || 0,
               tax_rate: line.tax_rate || 0,
-              total: line.total || 0
+              total: line.total || 0,
+              price_type: line.price_type || 'detail'
             }))
           });
         } catch (error) {
@@ -158,11 +202,13 @@ const VenteForm = () => {
     }
   }, [id, isEdit]);
 
-  // Calculer les totaux
-  const calculateTotals = (lines) => {
+  // ============================================================
+  // CALCUL DES TOTAUX
+  // ============================================================
+  
+  const calculateTotals = useCallback((lines) => {
     let subtotal = 0;
     let totalDiscount = 0;
-    let totalTax = 0;
 
     (lines || []).forEach(line => {
       const lineTotal = (line.quantity * line.unit_price) - line.discount;
@@ -175,17 +221,57 @@ const VenteForm = () => {
       : formData.discount_value;
 
     const afterDiscount = subtotal - discountAmount;
-    totalTax = afterDiscount * (formData.tax_rate / 100);
+    const totalTax = afterDiscount * (formData.tax_rate / 100);
     const total = afterDiscount + totalTax + formData.shipping_fee;
 
     return { subtotal, discountAmount, totalTax, total };
+  }, [formData.discount_type, formData.discount_value, formData.tax_rate, formData.shipping_fee]);
+
+  const totals = useMemo(() => calculateTotals(formData.lines), [calculateTotals, formData.lines]);
+
+  // ============================================================
+  // GESTION DES PRODUITS ET PRIX - ✅ CORRIGÉ
+  // ============================================================
+  
+  // ✅ Obtenir les prix d'un produit à partir des données chargées
+  const getProductPrices = (productId) => {
+    const product = products.find(p => p.id === parseInt(productId));
+    if (!product) {
+      return { selling_price: 0, wholesale_price: 0 };
+    }
+    return {
+      selling_price: parseFloat(product.selling_price) || 0,
+      wholesale_price: parseFloat(product.wholesale_price) || 0
+    };
   };
 
-  const totals = calculateTotals(formData.lines);
+  // ✅ Obtenir le prix selon le type sélectionné
+  const getPriceByType = (productId, priceType) => {
+    const prices = getProductPrices(productId);
+    if (priceType === 'gros') {
+      // Si le prix de gros n'existe pas, on utilise le prix de détail
+      return prices.wholesale_price > 0 ? prices.wholesale_price : prices.selling_price;
+    }
+    return prices.selling_price;
+  };
 
-  // ✅ AJOUTER UNE LIGNE - VERSION CORRIGÉE
+  // ✅ Vérifier si un produit a un prix de gros défini (> 0)
+  const hasWholesalePrice = (productId) => {
+    const prices = getProductPrices(productId);
+    return prices.wholesale_price > 0;
+  };
+
+  // ✅ Récupérer un produit par son ID
+  const getProductById = (productId) => {
+    return products.find(p => p.id === parseInt(productId)) || null;
+  };
+
+  // ============================================================
+  // GESTION DES LIGNES
+  // ============================================================
+  
+  // ✅ AJOUTER UNE LIGNE
   const addLine = () => {
-    // Empêcher les clics multiples
     if (adding) return;
 
     // 1. Validation du produit
@@ -203,13 +289,13 @@ const VenteForm = () => {
 
     // 3. Récupérer le produit
     const productId = parseInt(lineForm.product);
-    const product = products.find(p => p.id === productId);
+    const product = getProductById(productId);
     if (!product) {
       showNotification('Produit non trouvé', 'error');
       return;
     }
 
-    // 4. ✅ VÉRIFICATION DES DOUBLONS - CORRIGÉE
+    // 4. Vérification des doublons
     const productExists = formData.lines.some(
       line => parseInt(line.product) === productId
     );
@@ -223,18 +309,31 @@ const VenteForm = () => {
     const lotId = lineForm.lot ? parseInt(lineForm.lot) : null;
     const lot = lotId ? lots.find(l => l.id === lotId) : null;
     
-    // Si le produit a des lots et qu'aucun lot n'est sélectionné
     const productLots = lots.filter(l => l.product === productId);
     if (productLots.length > 0 && !lotId) {
       showNotification('Veuillez sélectionner un lot pour ce produit', 'error');
       return;
     }
 
-    // 6. Calculs
-    const unitPrice = parseFloat(lineForm.unit_price) || 0;
+    // 6. ✅ GESTION DU PRIX SELON LE TYPE
+    const priceType = lineForm.price_type || 'detail';
+    let unitPrice = parseFloat(lineForm.unit_price) || 0;
+    
+    // Si l'utilisateur n'a pas saisi de prix, on prend le prix par défaut
+    if (unitPrice <= 0) {
+      unitPrice = getPriceByType(productId, priceType);
+    }
+    
     if (unitPrice <= 0) {
       showNotification('Le prix unitaire doit être supérieur à 0', 'error');
       return;
+    }
+
+    // Vérifier que le produit a un prix de gros si le type est 'gros'
+    if (priceType === 'gros' && !hasWholesalePrice(productId)) {
+      showNotification(`Le produit "${product.name}" n'a pas de prix de gros défini. Utilisation du prix de détail.`, 'warning');
+      // On utilise quand même le prix de détail
+      unitPrice = getPriceByType(productId, 'detail');
     }
 
     const discount = parseFloat(lineForm.discount) || 0;
@@ -251,29 +350,28 @@ const VenteForm = () => {
       unit_price: unitPrice,
       discount: discount,
       tax_rate: taxRate,
-      total: total
+      total: total,
+      price_type: priceType
     };
 
-    // 8. Désactiver le bouton pendant l'ajout
     setAdding(true);
 
-    // 9. Mettre à jour le state
     setFormData(prev => ({
       ...prev,
       lines: [...prev.lines, newLine]
     }));
 
-    // 10. Réinitialiser le formulaire de ligne
+    // 8. Réinitialiser le formulaire de ligne
     setLineForm({
       product: '',
       lot: '',
       quantity: 1,
       unit_price: 0,
       discount: 0,
-      tax_rate: 0
+      tax_rate: 0,
+      price_type: 'detail'
     });
 
-    // 11. Réactiver le bouton après un court délai
     setTimeout(() => setAdding(false), 300);
   };
 
@@ -290,7 +388,6 @@ const VenteForm = () => {
 
     if (field === 'quantity' || field === 'unit_price' || field === 'discount') {
       newLines[index][field] = newValue;
-      // Recalculer le total
       newLines[index].total = (newLines[index].quantity * newLines[index].unit_price) - newLines[index].discount;
     } else {
       newLines[index][field] = newValue;
@@ -299,16 +396,38 @@ const VenteForm = () => {
     setFormData({ ...formData, lines: newLines });
   };
 
-  // Sélectionner un produit
+  // ============================================================
+  // GESTION DU FORMULAIRE DE LIGNE
+  // ============================================================
+  
+  // ✅ GÉRER LA SÉLECTION DU PRODUIT
   const handleProductSelect = (productId) => {
-    const product = products.find(p => p.id === parseInt(productId));
-    if (product) {
-      setLineForm({
-        ...lineForm,
-        product: productId,
-        unit_price: product.selling_price || 0
-      });
+    const id = parseInt(productId);
+    // Déterminer le prix par défaut selon le type sélectionné
+    const defaultPrice = getPriceByType(id, lineForm.price_type);
+    
+    setLineForm({
+      ...lineForm,
+      product: productId,
+      unit_price: defaultPrice
+    });
+  };
+
+  // ✅ GÉRER LE CHANGEMENT DE TYPE DE PRIX
+  const handlePriceTypeChange = (type) => {
+    const productId = lineForm.product ? parseInt(lineForm.product) : null;
+    let newUnitPrice = lineForm.unit_price;
+    
+    if (productId) {
+      // Mettre à jour le prix selon le nouveau type
+      newUnitPrice = getPriceByType(productId, type);
     }
+    
+    setLineForm({
+      ...lineForm,
+      price_type: type,
+      unit_price: newUnitPrice
+    });
   };
 
   // Filtrer les lots disponibles pour le produit sélectionné
@@ -321,7 +440,13 @@ const VenteForm = () => {
     );
   };
 
-  // Soumettre le formulaire
+  // Récupérer les informations du produit sélectionné
+  const selectedProduct = lineForm.product ? getProductById(lineForm.product) : null;
+
+  // ============================================================
+  // SOUMISSION DU FORMULAIRE
+  // ============================================================
+  
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (saving) return;
@@ -367,7 +492,8 @@ const VenteForm = () => {
           quantity: line.quantity,
           unit_price: line.unit_price,
           discount: line.discount,
-          tax_rate: line.tax_rate
+          tax_rate: line.tax_rate,
+          price_type: line.price_type || 'detail'
         }))
       };
 
@@ -388,13 +514,11 @@ const VenteForm = () => {
     } catch (error) {
       console.error('Erreur sauvegarde:', error);
       
-      // Gérer les erreurs de validation du backend
       let errorMessage = 'Erreur lors de la sauvegarde';
       
       if (error.response?.data) {
         const data = error.response.data;
         
-        // Erreur de validation des doublons
         if (data.lines && Array.isArray(data.lines)) {
           errorMessage = data.lines[0] || 'Erreur de validation des produits';
         } else if (data.detail) {
@@ -402,7 +526,6 @@ const VenteForm = () => {
         } else if (data.message) {
           errorMessage = data.message;
         } else if (typeof data === 'object') {
-          // Récupérer la première erreur
           const firstError = Object.values(data).flat()[0];
           if (firstError) {
             errorMessage = firstError;
@@ -416,6 +539,10 @@ const VenteForm = () => {
     }
   };
 
+  // ============================================================
+  // RENDU
+  // ============================================================
+  
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[calc(100vh-200px)] bg-gray-50">
@@ -472,7 +599,9 @@ const VenteForm = () => {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
-        {/* Informations générales */}
+        {/* ========================================================== */}
+        {/* INFORMATIONS GÉNÉRALES */}
+        {/* ========================================================== */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
           <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
             <FileText className="w-5 h-5 text-primary" /> Informations générales
@@ -542,14 +671,17 @@ const VenteForm = () => {
           </div>
         </div>
 
-        {/* Lignes */}
+        {/* ========================================================== */}
+        {/* PRODUITS - AVEC SÉLECTION DU TYPE DE PRIX */}
+        {/* ========================================================== */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
           <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
             <Package className="w-5 h-5 text-primary" /> Produits
           </h2>
 
           {/* Formulaire d'ajout de ligne */}
-          <div className="grid grid-cols-2 md:grid-cols-7 gap-3 mb-4 p-4 bg-gray-50 rounded-xl">
+          <div className="grid grid-cols-2 md:grid-cols-9 gap-3 mb-4 p-4 bg-gray-50 rounded-xl">
+            {/* Produit */}
             <div className="col-span-2">
               <select
                 className="select select-bordered w-full"
@@ -564,6 +696,8 @@ const VenteForm = () => {
                 ))}
               </select>
             </div>
+
+            {/* Lot */}
             <div>
               <select
                 className="select select-bordered w-full"
@@ -579,6 +713,8 @@ const VenteForm = () => {
                 ))}
               </select>
             </div>
+
+            {/* Quantité */}
             <div>
               <input
                 type="number"
@@ -589,16 +725,63 @@ const VenteForm = () => {
                 min="1"
               />
             </div>
+
+            {/* ✅ TYPE DE PRIX - DÉTAIL / GROS AVEC AFFICHAGE DES PRIX */}
+            <div className="col-span-2">
+              <div className="flex rounded-lg border border-gray-200 overflow-hidden h-[42px]">
+                <button
+                  type="button"
+                  className={`flex-1 px-3 py-2 text-sm font-medium transition-colors flex items-center justify-center gap-1 ${
+                    lineForm.price_type === 'detail'
+                      ? 'bg-primary text-white'
+                      : 'bg-white text-gray-600 hover:bg-gray-100'
+                  }`}
+                  onClick={() => handlePriceTypeChange('detail')}
+                >
+                  <Tag className="w-4 h-4" />
+                  Détail
+                  {selectedProduct && (
+                    <span className="text-xs opacity-75">
+                      ({selectedProduct.selling_price?.toLocaleString('fr-FR') || 0} FCFA)
+                    </span>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  className={`flex-1 px-3 py-2 text-sm font-medium transition-colors flex items-center justify-center gap-1 ${
+                    lineForm.price_type === 'gros'
+                      ? 'bg-primary text-white'
+                      : 'bg-white text-gray-600 hover:bg-gray-100'
+                  }`}
+                  onClick={() => handlePriceTypeChange('gros')}
+                >
+                  <Layers className="w-4 h-4" />
+                  Gros
+                  {selectedProduct && selectedProduct.wholesale_price > 0 && (
+                    <span className="text-xs opacity-75">
+                      ({selectedProduct.wholesale_price?.toLocaleString('fr-FR') || 0} FCFA)
+                    </span>
+                  )}
+                  {selectedProduct && (!selectedProduct.wholesale_price || selectedProduct.wholesale_price <= 0) && (
+                    <span className="text-xs text-warning">(Prix détail utilisé)</span>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {/* Prix unitaire */}
             <div>
               <input
                 type="number"
-                placeholder="Prix"
+                placeholder="Prix unit."
                 className="input input-bordered w-full"
                 value={lineForm.unit_price}
                 onChange={(e) => setLineForm({ ...lineForm, unit_price: parseFloat(e.target.value) || 0 })}
                 step="0.01"
               />
             </div>
+
+            {/* Remise */}
             <div>
               <input
                 type="number"
@@ -609,11 +792,13 @@ const VenteForm = () => {
                 step="0.01"
               />
             </div>
+
+            {/* Bouton Ajouter */}
             <div>
               <button
                 type="button"
                 onClick={addLine}
-                className="btn btn-primary w-full gap-2"
+                className="btn btn-primary w-full gap-2 h-[42px]"
                 disabled={adding}
               >
                 {adding ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
@@ -622,6 +807,37 @@ const VenteForm = () => {
             </div>
           </div>
 
+          {/* ✅ Affichage des prix du produit sélectionné - CORRIGÉ */}
+          {selectedProduct && (
+            <div className="flex items-center gap-6 mb-4 p-3 bg-blue-50 rounded-lg border border-blue-100 text-sm">
+              <div className="flex items-center gap-2">
+                <Tag className="w-4 h-4 text-blue-600" />
+                <span className="font-medium text-gray-700">Prix détail:</span>
+                <span className="font-bold text-blue-600">
+                  {selectedProduct.selling_price?.toLocaleString('fr-FR') || 0} FCFA
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Layers className="w-4 h-4 text-green-600" />
+                <span className="font-medium text-gray-700">Prix gros:</span>
+                <span className={`font-bold ${selectedProduct.wholesale_price > 0 ? 'text-green-600' : 'text-gray-400'}`}>
+                  {selectedProduct.wholesale_price > 0 
+                    ? selectedProduct.wholesale_price.toLocaleString('fr-FR') + ' FCFA'
+                    : 'Non défini'}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 ml-auto">
+                <span className="text-gray-500">Prix sélectionné:</span>
+                <span className="font-bold text-primary">
+                  {lineForm.unit_price.toLocaleString('fr-FR') || 0} FCFA
+                </span>
+                <span className={`badge ${lineForm.price_type === 'gros' ? 'badge-primary' : 'badge-ghost'} text-xs`}>
+                  {lineForm.price_type === 'gros' ? 'Gros' : 'Détail'}
+                </span>
+              </div>
+            </div>
+          )}
+
           {/* Liste des lignes */}
           <div className="overflow-x-auto">
             <table className="table w-full">
@@ -629,6 +845,7 @@ const VenteForm = () => {
                 <tr>
                   <th className="text-left">Produit</th>
                   <th className="text-center">Lot</th>
+                  <th className="text-center">Type</th>
                   <th className="text-center">Qté</th>
                   <th className="text-right">Prix unit.</th>
                   <th className="text-right">Remise</th>
@@ -637,58 +854,67 @@ const VenteForm = () => {
                 </tr>
               </thead>
               <tbody>
-                {(formData.lines || []).map((line, index) => (
-                  <tr key={index} className="border-b">
-                    <td>
-                      <span className="font-medium">{line.product_name}</span>
-                    </td>
-                    <td className="text-center">
-                      <span className="text-sm text-gray-500">{line.lot_number || '-'}</span>
-                    </td>
-                    <td>
-                      <input
-                        type="number"
-                        className="input input-bordered input-sm w-16 text-center"
-                        value={line.quantity}
-                        onChange={(e) => updateLine(index, 'quantity', e.target.value)}
-                        min="1"
-                      />
-                    </td>
-                    <td>
-                      <input
-                        type="number"
-                        className="input input-bordered input-sm w-24 text-right"
-                        value={line.unit_price}
-                        onChange={(e) => updateLine(index, 'unit_price', e.target.value)}
-                        step="0.01"
-                      />
-                    </td>
-                    <td>
-                      <input
-                        type="number"
-                        className="input input-bordered input-sm w-20 text-right"
-                        value={line.discount}
-                        onChange={(e) => updateLine(index, 'discount', e.target.value)}
-                        step="0.01"
-                      />
-                    </td>
-                    <td className="text-right font-semibold text-primary">
-                      {line.total.toLocaleString('fr-FR')} FCFA
-                    </td>
-                    <td className="text-center">
-                      <button
-                        type="button"
-                        onClick={() => removeLine(index)}
-                        className="btn btn-ghost btn-sm btn-circle text-error"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {(formData.lines || []).map((line, index) => {
+                  // Récupérer le produit pour afficher les prix
+                  const product = getProductById(line.product);
+                  return (
+                    <tr key={index} className="border-b hover:bg-gray-50">
+                      <td>
+                        <span className="font-medium">{line.product_name}</span>
+                      </td>
+                      <td className="text-center">
+                        <span className="text-sm text-gray-500">{line.lot_number || '-'}</span>
+                      </td>
+                      <td className="text-center">
+                        <span className={`badge ${line.price_type === 'gros' ? 'badge-primary' : 'badge-ghost'}`}>
+                          {line.price_type === 'gros' ? 'Gros' : 'Détail'}
+                        </span>
+                      </td>
+                      <td>
+                        <input
+                          type="number"
+                          className="input input-bordered input-sm w-16 text-center"
+                          value={line.quantity}
+                          onChange={(e) => updateLine(index, 'quantity', e.target.value)}
+                          min="1"
+                        />
+                      </td>
+                      <td>
+                        <input
+                          type="number"
+                          className="input input-bordered input-sm w-24 text-right"
+                          value={line.unit_price}
+                          onChange={(e) => updateLine(index, 'unit_price', e.target.value)}
+                          step="0.01"
+                        />
+                      </td>
+                      <td>
+                        <input
+                          type="number"
+                          className="input input-bordered input-sm w-20 text-right"
+                          value={line.discount}
+                          onChange={(e) => updateLine(index, 'discount', e.target.value)}
+                          step="0.01"
+                        />
+                      </td>
+                      <td className="text-right font-semibold text-primary">
+                        {line.total.toLocaleString('fr-FR')} FCFA
+                      </td>
+                      <td className="text-center">
+                        <button
+                          type="button"
+                          onClick={() => removeLine(index)}
+                          className="btn btn-ghost btn-sm btn-circle text-error"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
                 {(!formData.lines || formData.lines.length === 0) && (
                   <tr>
-                    <td colSpan="7" className="text-center py-8 text-gray-400">
+                    <td colSpan="8" className="text-center py-8 text-gray-400">
                       Aucun produit ajouté
                     </td>
                   </tr>
@@ -701,7 +927,7 @@ const VenteForm = () => {
           {formData.lines && formData.lines.length > 0 && (
             <div className="mt-4 border-t pt-4">
               <div className="flex justify-end">
-                <div className="w-72 space-y-2">
+                <div className="w-80 space-y-2">
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600">Sous-total</span>
                     <span className="font-semibold">{totals.subtotal.toLocaleString('fr-FR')} FCFA</span>
@@ -728,7 +954,9 @@ const VenteForm = () => {
           )}
         </div>
 
-        {/* Remises et taxes */}
+        {/* ========================================================== */}
+        {/* REMISES ET TAXES */}
+        {/* ========================================================== */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
           <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
             <DollarSign className="w-5 h-5 text-primary" /> Remises et taxes
@@ -790,7 +1018,9 @@ const VenteForm = () => {
           </div>
         </div>
 
-        {/* Livraison et paiement */}
+        {/* ========================================================== */}
+        {/* LIVRAISON ET PAIEMENT */}
+        {/* ========================================================== */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
           <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
             <Truck className="w-5 h-5 text-primary" /> Livraison et paiement
@@ -844,7 +1074,9 @@ const VenteForm = () => {
           </div>
         </div>
 
-        {/* Notes */}
+        {/* ========================================================== */}
+        {/* NOTES */}
+        {/* ========================================================== */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
           <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
             <FileText className="w-5 h-5 text-primary" /> Notes
@@ -877,7 +1109,9 @@ const VenteForm = () => {
           </div>
         </div>
 
-        {/* Actions */}
+        {/* ========================================================== */}
+        {/* ACTIONS */}
+        {/* ========================================================== */}
         <div className="flex justify-end gap-3">
           <button
             type="button"

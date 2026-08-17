@@ -1,4 +1,8 @@
 // src/components/pos/PosForm.jsx
+// ============================================================
+// VERSION AVEC GESTION DES PRIX DÉTAIL/GROS
+// ============================================================
+
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import AxiosInstance from '../AxiosInstance';
@@ -9,7 +13,7 @@ import {
   Package, AlertTriangle, Clock, DollarSign, Warehouse,
   User, CreditCard, Phone, Receipt, Loader,
   Check, Box, Settings, LogOut, Percent, Barcode,
-  Save
+  Save, Tag, Layers
 } from 'lucide-react';
 
 const PosForm = () => {
@@ -36,6 +40,9 @@ const PosForm = () => {
   const [sortField, setSortField] = useState('name');
   const [sortDirection, setSortDirection] = useState('asc');
   const [newCustomer, setNewCustomer] = useState({ first_name: '', last_name: '', phone: '', email: '' });
+  
+  // ✅ NOUVEAU : Type de prix par défaut pour le POS
+  const [priceType, setPriceType] = useState('detail'); // 'detail' ou 'gros'
 
   const getToken = () => localStorage.getItem('Token');
 
@@ -75,14 +82,20 @@ const PosForm = () => {
         AxiosInstance.get('/warehouses/?active=true', { headers })
       ]);
 
-      const productsWithImages = (productsRes.data || []).map(product => ({
+      // ✅ Récupérer tous les prix : selling_price ET wholesale_price
+      const productsWithData = (productsRes.data || []).map(product => ({
         ...product,
         image_url: product.image_url || getImageUrl(product.image),
         stock_quantity: product.current_stock || 0,
-        selling_price: product.selling_price || 0
+        selling_price: parseFloat(product.selling_price) || 0,
+        wholesale_price: parseFloat(product.wholesale_price) || 0,
+        // Prix affiché selon le type sélectionné
+        display_price: priceType === 'gros' 
+          ? (parseFloat(product.wholesale_price) || parseFloat(product.selling_price) || 0)
+          : (parseFloat(product.selling_price) || 0)
       }));
 
-      setProducts(productsWithImages);
+      setProducts(productsWithData);
       setCategories(categoriesRes.data || []);
       setCustomers(customersRes.data || []);
       setWarehouses(warehousesRes.data || []);
@@ -103,6 +116,18 @@ const PosForm = () => {
     fetchData();
     setTimeout(() => searchInputRef.current?.focus(), 500);
   }, []);
+
+  // ✅ Mettre à jour l'affichage quand le type de prix change
+  useEffect(() => {
+    setProducts(prevProducts => 
+      prevProducts.map(product => ({
+        ...product,
+        display_price: priceType === 'gros'
+          ? (product.wholesale_price || product.selling_price || 0)
+          : (product.selling_price || 0)
+      }))
+    );
+  }, [priceType]);
 
   // ============================================================
   // 2. Filtrage et tri des produits
@@ -129,7 +154,7 @@ const PosForm = () => {
       let aVal = a[sortField] || '';
       let bVal = b[sortField] || '';
       
-      if (sortField === 'stock_quantity' || sortField === 'selling_price') {
+      if (sortField === 'stock_quantity' || sortField === 'selling_price' || sortField === 'wholesale_price') {
         aVal = parseFloat(aVal) || 0;
         bVal = parseFloat(bVal) || 0;
       }
@@ -161,6 +186,16 @@ const PosForm = () => {
       return;
     }
 
+    // ✅ Utiliser le bon prix selon le type sélectionné
+    const unitPrice = priceType === 'gros'
+      ? (product.wholesale_price || product.selling_price || 0)
+      : (product.selling_price || 0);
+
+    if (unitPrice <= 0) {
+      showNotification(`Prix non défini pour ${product.name}`, 'error');
+      return;
+    }
+
     const existingIndex = cart.findIndex(item => item.product.id === product.id);
     if (existingIndex !== -1) {
       const newCart = [...cart];
@@ -170,18 +205,20 @@ const PosForm = () => {
         return;
       }
       newCart[existingIndex].quantity = newQty;
-      newCart[existingIndex].total = newQty * newCart[existingIndex].unit_price;
+      newCart[existingIndex].unit_price = unitPrice;
+      newCart[existingIndex].total = newQty * unitPrice;
       setCart(newCart);
     } else {
       setCart([...cart, {
         id: Date.now(),
         product: product,
         quantity: quantity,
-        unit_price: product.selling_price || 0,
-        total: (product.selling_price || 0) * quantity
+        unit_price: unitPrice,
+        price_type: priceType, // ✅ Stocker le type de prix utilisé
+        total: unitPrice * quantity
       }]);
     }
-    showNotification(`${product.name} ajouté au panier`, 'success');
+    showNotification(`${product.name} ajouté au panier (${priceType === 'gros' ? 'Gros' : 'Détail'})`, 'success');
   };
 
   const updateCartQuantity = (itemId, delta) => {
@@ -226,7 +263,7 @@ const PosForm = () => {
   }, [cart]);
 
   // ============================================================
-  // 5. VALIDER LA VENTE - VERSION CORRIGÉE (format YYYY-MM-DD)
+  // 5. VALIDER LA VENTE - AVEC PRICE_TYPE
   // ============================================================
   const validateSale = async () => {
     if (cart.length === 0) {
@@ -249,24 +286,19 @@ const PosForm = () => {
         return;
       }
 
-      // ✅ Format YYYY-MM-DD pour Django DateField
       const today = new Date();
       const dueDate = new Date(today);
       dueDate.setDate(dueDate.getDate() + 30);
       
-      // Formatage en YYYY-MM-DD
       const year = dueDate.getFullYear();
       const month = String(dueDate.getMonth() + 1).padStart(2, '0');
       const day = String(dueDate.getDate()).padStart(2, '0');
       const paymentDueDate = `${year}-${month}-${day}`;
 
-      // ✅ Format de livraison (peut être null)
-      const deliveryDate = null;
-
       const dataToSend = {
         client: selectedCustomer?.id || null,
         warehouse: selectedWarehouse.id,
-        delivery_date: deliveryDate,
+        delivery_date: null,
         payment_due_date: paymentDueDate,
         discount_type: 'percentage',
         discount_value: 0,
@@ -283,7 +315,8 @@ const PosForm = () => {
           quantity: item.quantity,
           unit_price: item.unit_price,
           discount: 0,
-          tax_rate: 0
+          tax_rate: 0,
+          price_type: item.price_type || 'detail' // ✅ Envoyer le type de prix
         }))
       };
 
@@ -546,7 +579,7 @@ const PosForm = () => {
         </div>
       </div>
 
-      {/* Sélecteur d'entrepôt et client */}
+      {/* Sélecteur d'entrepôt et client + TYPE DE PRIX */}
       <div className="bg-base-100 rounded-xl shadow-md border border-base-300 p-4 lg:p-6">
         <div className="flex flex-col lg:flex-row gap-4">
           <div className="flex-1 flex items-center gap-3">
@@ -592,6 +625,36 @@ const PosForm = () => {
               </button>
             )}
           </div>
+
+          {/* ✅ SÉLECTEUR DE TYPE DE PRIX - NOUVEAU */}
+          <div className="flex items-center gap-2">
+            <div className="flex rounded-lg border border-gray-200 overflow-hidden">
+              <button
+                type="button"
+                className={`px-3 py-2 text-sm font-medium transition-colors flex items-center gap-1 ${
+                  priceType === 'detail'
+                    ? 'bg-primary text-white'
+                    : 'bg-white text-gray-600 hover:bg-gray-100'
+                }`}
+                onClick={() => setPriceType('detail')}
+              >
+                <Tag className="w-4 h-4" />
+                Détail
+              </button>
+              <button
+                type="button"
+                className={`px-3 py-2 text-sm font-medium transition-colors flex items-center gap-1 ${
+                  priceType === 'gros'
+                    ? 'bg-primary text-white'
+                    : 'bg-white text-gray-600 hover:bg-gray-100'
+                }`}
+                onClick={() => setPriceType('gros')}
+              >
+                <Layers className="w-4 h-4" />
+                Gros
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -636,7 +699,8 @@ const PosForm = () => {
               onChange={(e) => setSortField(e.target.value)}
             >
               <option value="name">Trier par nom</option>
-              <option value="selling_price">Trier par prix</option>
+              <option value="selling_price">Trier par prix détail</option>
+              <option value="wholesale_price">Trier par prix gros</option>
               <option value="stock_quantity">Trier par stock</option>
             </select>
             
@@ -681,6 +745,17 @@ const PosForm = () => {
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         {/* Produits */}
         <div className="lg:col-span-3 bg-base-100 rounded-xl shadow-xl border border-base-300 overflow-hidden">
+          {/* ✅ AFFICHAGE DU TYPE DE PRIX ACTIF */}
+          <div className="p-3 bg-base-200 border-b border-base-300 flex items-center justify-between">
+            <span className="text-sm font-medium">
+              <Tag className="w-4 h-4 inline mr-2 text-primary" />
+              Prix affiché : <strong>{priceType === 'gros' ? 'Gros' : 'Détail'}</strong>
+            </span>
+            <span className="text-xs text-base-content/60">
+              {sortedProducts.length} produits disponibles
+            </span>
+          </div>
+
           {paginatedProducts.length === 0 ? (
             <div className="p-12 text-center">
               <Package className="w-20 h-20 mx-auto mb-4 text-base-content/20" />
@@ -720,7 +795,20 @@ const PosForm = () => {
                     </div>
                     <div className="font-medium text-sm truncate">{product.name}</div>
                     <div className="text-xs text-base-content/40 truncate">{product.code}</div>
-                    <div className="text-lg font-bold text-primary">{formatPrice(product.selling_price)}</div>
+                    
+                    {/* ✅ AFFICHAGE DES DEUX PRIX */}
+                    <div className="text-xs text-base-content/50">
+                      <span className="line-through">{formatPrice(product.selling_price)}</span>
+                      {product.wholesale_price > 0 && (
+                        <span className="ml-2 text-primary font-medium">{formatPrice(product.wholesale_price)}</span>
+                      )}
+                    </div>
+                    
+                    {/* ✅ PRIX AFFICHÉ SELON LE TYPE */}
+                    <div className="text-lg font-bold text-primary">
+                      {formatPrice(product.display_price)}
+                    </div>
+                    
                     <div className="flex items-center justify-center gap-2 mt-1">
                       {getStatusBadge(product)}
                       <span className="text-xs text-base-content/40">{product.stock_quantity} unités</span>
@@ -745,7 +833,8 @@ const PosForm = () => {
                   <tr>
                     <th>Produit</th>
                     <th>Code</th>
-                    <th>Prix</th>
+                    <th>Prix détail</th>
+                    <th>Prix gros</th>
                     <th>Stock</th>
                     <th>Statut</th>
                     <th>Action</th>
@@ -775,6 +864,9 @@ const PosForm = () => {
                       </td>
                       <td>{product.code}</td>
                       <td className="font-semibold">{formatPrice(product.selling_price)}</td>
+                      <td className="font-semibold text-primary">
+                        {product.wholesale_price > 0 ? formatPrice(product.wholesale_price) : '-'}
+                      </td>
                       <td>{product.stock_quantity}</td>
                       <td>{getStatusBadge(product)}</td>
                       <td>
@@ -861,6 +953,15 @@ const PosForm = () => {
                   <div className="flex-1">
                     <div className="font-medium text-sm truncate">{item.product.name}</div>
                     <div className="text-xs text-base-content/40">{item.product.code}</div>
+                    {/* ✅ AFFICHAGE DU TYPE DE PRIX DANS LE PANIER */}
+                    <div className="text-xs">
+                      <span className={`badge ${item.price_type === 'gros' ? 'badge-primary' : 'badge-ghost'}`}>
+                        {item.price_type === 'gros' ? 'Gros' : 'Détail'}
+                      </span>
+                      <span className="ml-2 font-semibold text-primary">
+                        {formatPrice(item.unit_price)}/unité
+                      </span>
+                    </div>
                     <div className="flex items-center gap-2 mt-1">
                       <button 
                         className="btn btn-ghost btn-xs btn-circle"
@@ -916,7 +1017,6 @@ const PosForm = () => {
               </div>
             </div>
 
-            {/* ✅ BOUTON VALIDER */}
             <button 
               className="btn btn-primary w-full mt-4 h-14 text-lg gap-2"
               onClick={validateSale}
