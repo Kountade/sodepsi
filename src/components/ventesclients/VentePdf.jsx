@@ -1,13 +1,161 @@
-// src/components/ventes/VentePdf.jsx
-import React, { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+// src/components/ventesclients/VentePdf.jsx
 import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
-import AxiosInstance from '../AxiosInstance';
 import logoSvg from '../../assets/logo.svg';
-import { Loader2, AlertCircle } from 'lucide-react';
 
-export const generateVentePdf = async (vente, companyInfo = null) => {
+// ========== FONCTION POUR ÉCRIRE LES NOMBRES EN LETTRES ==========
+const nombreEnLettres = (montant) => {
+  const unite = ['', 'un', 'deux', 'trois', 'quatre', 'cinq', 'six', 'sept', 'huit', 'neuf'];
+  const dizaine = ['', 'dix', 'vingt', 'trente', 'quarante', 'cinquante', 'soixante', 'soixante-dix', 'quatre-vingt', 'quatre-vingt-dix'];
+  const centaine = ['', 'cent', 'deux cents', 'trois cents', 'quatre cents', 'cinq cents', 'six cents', 'sept cents', 'huit cents', 'neuf cents'];
+
+  const sousBloc = (n) => {
+    if (n === 0) return '';
+    let lettres = '';
+    const cents = Math.floor(n / 100);
+    const reste = n % 100;
+    if (cents > 0) {
+      lettres += centaine[cents];
+      if (reste > 0) lettres += ' ';
+    }
+    if (reste > 0) {
+      if (reste < 10) lettres += unite[reste];
+      else if (reste < 20) {
+        const u = reste - 10;
+        if (u === 0) lettres += 'dix';
+        else if (u === 1) lettres += 'onze';
+        else if (u === 2) lettres += 'douze';
+        else if (u === 3) lettres += 'treize';
+        else if (u === 4) lettres += 'quatorze';
+        else if (u === 5) lettres += 'quinze';
+        else if (u === 6) lettres += 'seize';
+        else lettres += dizaine[1] + (u ? '-' + unite[u] : '');
+      } else {
+        const d = Math.floor(reste / 10);
+        const u = reste % 10;
+        if (d === 7 || d === 9) {
+          lettres += dizaine[d - 1] + '-' + (u === 0 ? '' : (u === 1 ? 'onze' : unite[u + 10]));
+        } else {
+          lettres += dizaine[d];
+          if (u === 1 && d !== 8) lettres += ' et un';
+          else if (u > 0) lettres += '-' + unite[u];
+        }
+      }
+    }
+    return lettres.trim();
+  };
+
+  const milliers = Math.floor(montant / 1000);
+  const resteMilliers = montant % 1000;
+  let result = '';
+  if (milliers > 0) {
+    if (milliers === 1) result += 'mille';
+    else result += sousBloc(milliers) + ' mille';
+    if (resteMilliers > 0) result += ' ';
+  }
+  if (resteMilliers > 0) result += sousBloc(resteMilliers);
+  if (result === '') result = 'zéro';
+  return result.charAt(0).toUpperCase() + result.slice(1) + ' Francs CFA';
+};
+
+// ========== FONCTIONS DE FORMATAGE ==========
+const formatNumber = (n) => {
+  const num = parseFloat(n) || 0;
+  return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+};
+
+const formatCurrency = (amt) => `${formatNumber(amt)} FCFA`;
+
+const formatDate = (d) => {
+  if (!d) return '-';
+  try {
+    const date = new Date(d);
+    return date.toLocaleDateString('fr-FR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric'
+    });
+  } catch {
+    return '-';
+  }
+};
+
+// ========== GESTION DES STATUTS ==========
+const getStatusInfo = (status) => {
+  const map = {
+    draft: { label: 'Brouillon', color: [158, 158, 158] },
+    confirmed: { label: 'Confirmée', color: [33, 150, 243] },
+    paid: { label: 'Payée', color: [76, 175, 80] },
+    delivered: { label: 'Livrée', color: [0, 150, 136] },
+    cancelled: { label: 'Annulée', color: [244, 67, 54] },
+    returned: { label: 'Retournée', color: [255, 152, 0] },
+    pending: { label: 'En attente', color: [255, 193, 7] },
+    completed: { label: 'Terminée', color: [76, 175, 80] },
+    processing: { label: 'En cours', color: [33, 150, 243] },
+    failed: { label: 'Échoué', color: [244, 67, 54] }
+  };
+  return map[status] || { label: '-', color: [158, 158, 158] };
+};
+
+// ========== FONCTION POUR AJOUTER UN FILIGRANE OBLIQUE ==========
+const addWatermark = (doc, text, options = {}) => {
+  const {
+    fontSize = 40,
+    color = [200, 200, 200],
+    opacity = 0.10,
+    angle = -45,
+    repeat = true,
+    spacing = 100
+  } = options;
+
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  
+  const currentFontSize = doc.internal.getFontSize();
+  const currentTextColor = doc.internal.getTextColor();
+  
+  doc.setFontSize(fontSize);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(color[0], color[1], color[2]);
+  
+  doc.setGState(new doc.GState({ opacity: opacity }));
+  
+  const diagonal = Math.sqrt(pageWidth * pageWidth + pageHeight * pageHeight);
+  const textWidth = doc.getTextWidth(text);
+  
+  const numX = Math.ceil((diagonal + textWidth) / (textWidth + spacing));
+  const numY = Math.ceil(diagonal / spacing);
+  
+  const offsetX = (pageWidth - numX * (textWidth + spacing)) / 2;
+  const offsetY = (pageHeight - numY * spacing) / 2;
+  
+  if (!repeat) {
+    const centerX = pageWidth / 2;
+    const centerY = pageHeight / 2;
+    doc.text(text, centerX, centerY, { 
+      align: 'center',
+      angle: angle,
+      baseline: 'middle'
+    });
+  } else {
+    for (let i = 0; i < numY; i++) {
+      for (let j = 0; j < numX; j++) {
+        const x = offsetX + j * (textWidth + spacing);
+        const y = offsetY + i * spacing;
+        doc.text(text, x, y, {
+          angle: angle,
+          baseline: 'middle'
+        });
+      }
+    }
+  }
+  
+  doc.setFontSize(currentFontSize);
+  doc.setTextColor(currentTextColor[0], currentTextColor[1], currentTextColor[2]);
+  doc.setGState(new doc.GState({ opacity: 1 }));
+};
+
+// ========== FONCTION DE GÉNÉRATION PDF ==========
+const generateVentePdf = async (vente, options = {}) => {
   if (!vente || typeof vente !== 'object') {
     throw new Error('Données de la vente invalides');
   }
@@ -16,61 +164,37 @@ export const generateVentePdf = async (vente, companyInfo = null) => {
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
     const pageWidth = 210;
     const pageHeight = 297;
-    const margins = { left: 12, right: 12, top: 5, bottom: 5 };
+    const margins = { left: 15, right: 15, top: 18, bottom: 18 };
     const contentWidth = pageWidth - margins.left - margins.right;
-    let yPosition = margins.top;
+    let y = margins.top;
 
-    // ============================================================
-    // INFORMATIONS DE LA SOCIÉTÉ
-    // ============================================================
-    const defaultCompany = {
-      name: 'ETABLISSEMENTS BAH SOULEYMANE ET FILS',
-      sigle: 'E.B.S.F',
-      address: 'Pita Centre – Grand Marché',
-      address2: 'République de Guinée',
-      phone1: '+224 626 53 32 53',
-      phone2: '+224 612 37 37 47',
-      email: 'ebsfservices@gmail.com',
-      rccm: 'GN.KAL.2018.A.083 913',
-      nif: '051501F',
-      bank_name: 'VISTA BANK GUINÉE S.A',
-      bank_account: '1604533019',
-      bank_currency: 'GNF',
-      ...companyInfo,
+    // ========== INFORMATIONS DE L'ENTREPRISE ==========
+    const company = {
+      name: 'BOUTIQUE STATION SODEPCI DE PARA',
+      address: 'Station SODEPCI, Para, Côte d\'Ivoire',
+      phone1: '07 47 55 71 69',
+      phone2: '07 08 42 96 09',
+      email: 'contact@sodepci.ci',
+      rccm: '2025/CI/001',
+      nif: '123456789',
+      capital: '100 000 000',
+      bank_name: 'BANQUE NATIONALE D\'INVESTISSEMENT',
+      bank_account: 'BNI-001-1234567',
+      bank_currency: 'FCFA'
     };
 
-    // ============================================================
-    // FONCTIONS DE FORMATAGE
-    // ============================================================
-    const formatCurrency = (amount) => {
-      if (!amount) return '0 GNF';
-      return amount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + ' GNF';
-    };
+    // ========== DONNÉES DE LA VENTE ==========
+    const statusInfo = getStatusInfo(vente.status);
+    const totalEnLettres = nombreEnLettres(parseFloat(vente.total) || 0);
+    const dateVente = vente.sale_date || vente.date_vente || new Date().toISOString().split('T')[0];
+    
+    // Informations client
+    const clientNom = vente.client_name || vente.client?.nom || 'Client anonyme';
+    const clientAdresse = vente.client_address || vente.client?.adresse || '';
+    const clientTelephone = vente.client_phone || vente.client?.telephone || '';
+    const clientEmail = vente.client_email || vente.client?.email || '';
 
-    const formatDate = (dateString) => {
-      if (!dateString) return '-';
-      try { 
-        return new Date(dateString).toLocaleDateString('fr-FR'); 
-      } catch { 
-        return '-'; 
-      }
-    };
-
-    const getStatusLabel = (status) => {
-      const map = {
-        draft: 'Brouillon',
-        confirmed: 'Confirmée',
-        paid: 'Payée',
-        delivered: 'Livrée',
-        cancelled: 'Annulée',
-        returned: 'Retournée'
-      };
-      return map[status] || status || '-';
-    };
-
-    // ============================================================
-    // CHARGEMENT DU LOGO
-    // ============================================================
+    // ========== CHARGEMENT DU LOGO ==========
     const loadLogo = (src) => new Promise((resolve) => {
       const img = new Image();
       img.crossOrigin = 'Anonymous';
@@ -78,409 +202,452 @@ export const generateVentePdf = async (vente, companyInfo = null) => {
         const canvas = document.createElement('canvas');
         canvas.width = img.width;
         canvas.height = img.height;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0);
+        canvas.getContext('2d').drawImage(img, 0, 0);
         resolve(canvas.toDataURL('image/png'));
       };
       img.onerror = () => resolve(null);
       img.src = src;
     });
-    
     let logoData = null;
-    try { 
-      logoData = await loadLogo(logoSvg); 
-    } catch { 
-      // Ignorer l'erreur
-    }
+    try { logoData = await loadLogo(logoSvg); } catch { /* ignore */ }
 
-    // ============================================================
-    // EN-TÊTE DU DOCUMENT
-    // ============================================================
-    const logoWidth = 25;
-    const logoHeight = 12;
+    // Filigrane
+    const watermarkText = options.watermark || 'FACTURE';
+    const watermarkOptions = {
+      fontSize: options.watermarkSize || 40,
+      color: options.watermarkColor || [200, 200, 200],
+      opacity: options.watermarkOpacity || 0.10,
+      angle: options.watermarkAngle || -45,
+      repeat: options.watermarkRepeat !== undefined ? options.watermarkRepeat : true,
+      spacing: options.watermarkSpacing || 100
+    };
+
+    // ================================================================
+    // EN-TÊTE
+    // ================================================================
+    const logoWidth = 26;
+    const logoHeight = 26;
     
     if (logoData) {
-      doc.addImage(logoData, 'PNG', margins.left, yPosition, logoWidth, logoHeight);
+      doc.addImage(logoData, 'PNG', margins.left, y, logoWidth, logoHeight);
     }
 
-    const textStartX = margins.left + (logoData ? logoWidth + 3 : 0);
+    const textStartX = margins.left + logoWidth + 7;
     
-    // Nom de la société
-    doc.setFontSize(8);
+    // Nom de l'entreprise
     doc.setFont('helvetica', 'bold');
-    doc.text(defaultCompany.name, textStartX, yPosition + 2.5);
-    
-    // Informations de contact
-    doc.setFontSize(5.5);
-    doc.setFont('helvetica', 'normal');
-    doc.text(`Adresse: ${defaultCompany.address}`, textStartX, yPosition + 6);
-    doc.text(`Tél: ${defaultCompany.phone1}`, textStartX, yPosition + 9);
-    doc.text(`Email: ${defaultCompany.email}`, textStartX, yPosition + 12);
-    doc.text(`RCCM: ${defaultCompany.rccm} | NIF: ${defaultCompany.nif}`, textStartX, yPosition + 15);
-    
-    // ✅ ESPACE AUGMENTÉ APRÈS L'EN-TÊTE
-    yPosition += 28;
-
-    // ============================================================
-    // TITRE DU DOCUMENT
-    // ============================================================
     doc.setFontSize(14);
-    doc.setFont('helvetica', 'bold');
-    doc.text('BON DE COMMANDE / FACTURE', pageWidth / 2, yPosition, { align: 'center' });
-    yPosition += 5;
+    doc.setTextColor(26, 35, 126);
+    doc.text(company.name, textStartX, y + 6);
     
-    doc.setFontSize(8);
+    // Sous-titres
+    doc.setFontSize(7.5);
     doc.setFont('helvetica', 'normal');
-    doc.text(`N° ${vente.invoice_number}`, pageWidth / 2, yPosition, { align: 'center' });
-    yPosition += 8;
+    doc.setTextColor(84, 110, 122);
+    doc.text(`S.A.R.L au capital de ${company.capital}`, textStartX, y + 12);
+    doc.text(`RC: ${company.rccm} - NIF: ${company.nif}`, textStartX, y + 16.5);
+    doc.text(company.address.toUpperCase(), textStartX, y + 21);
+    
+    // Titre du document
+    const titleX = pageWidth - margins.right;
+    const titleY = y + 4;
+    
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(16);
+    doc.setTextColor(26, 35, 126);
+    doc.text('FACTURE', titleX, titleY, { align: 'right' });
+    
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(84, 110, 122);
+    doc.text(`N° ${vente.invoice_number || '-'}`, titleX, titleY + 8, { align: 'right' });
+    doc.text(`Date: ${formatDate(dateVente)}`, titleX, titleY + 16, { align: 'right' });
 
-    // ============================================================
-    // INFORMATIONS DU DOCUMENT
-    // ============================================================
+    y += 32;
+    doc.setDrawColor(26, 35, 126);
+    doc.setLineWidth(0.4);
+    doc.line(margins.left, y, pageWidth - margins.right, y);
+    y += 8;
+
+    // ================================================================
+    // GRILLE D'INFORMATIONS
+    // ================================================================
+    const gridY = y;
+    doc.setFillColor(248, 249, 250);
+    doc.roundedRect(margins.left, gridY, contentWidth, 24, 2, 2, 'F');
+    doc.setDrawColor(224, 224, 224);
+    doc.setLineWidth(0.5);
+    doc.roundedRect(margins.left, gridY, contentWidth, 24, 2, 2, 'S');
+
+    const colWidth = contentWidth / 2;
+    const gridX1 = margins.left;
+    const gridX2 = margins.left + colWidth;
+
+    // Client
     doc.setFontSize(7);
-    
-    // Ligne 1: Client et Date
     doc.setFont('helvetica', 'bold');
-    doc.text('Client:', margins.left, yPosition);
-    doc.setFont('helvetica', 'normal');
-    doc.text(vente.client_name || '-', margins.left + 25, yPosition);
+    doc.setTextColor(120, 144, 156);
+    doc.text('CLIENT', gridX1 + 4, gridY + 4.5);
     
+    doc.setFontSize(9);
     doc.setFont('helvetica', 'bold');
-    doc.text('Date:', margins.left + 90, yPosition);
-    doc.setFont('helvetica', 'normal');
-    doc.text(formatDate(vente.sale_date), margins.left + 110, yPosition);
-    yPosition += 4.5;
+    doc.setTextColor(26, 35, 126);
+    doc.text(clientNom, gridX1 + 4, gridY + 11);
     
-    // Ligne 2: Adresse et Statut
-    doc.setFont('helvetica', 'bold');
-    doc.text('Adresse:', margins.left, yPosition);
+    doc.setFontSize(7);
     doc.setFont('helvetica', 'normal');
-    doc.text(vente.client_address || '-', margins.left + 25, yPosition);
-    
-    doc.setFont('helvetica', 'bold');
-    doc.text('Statut:', margins.left + 90, yPosition);
-    doc.setFont('helvetica', 'normal');
-    doc.text(getStatusLabel(vente.status), margins.left + 110, yPosition);
-    yPosition += 4.5;
-    
-    // Ligne 3: Téléphone et Échéance
-    doc.setFont('helvetica', 'bold');
-    doc.text('Tél:', margins.left, yPosition);
-    doc.setFont('helvetica', 'normal');
-    doc.text(vente.client_phone || '-', margins.left + 25, yPosition);
-    
-    doc.setFont('helvetica', 'bold');
-    doc.text('Échéance:', margins.left + 90, yPosition);
-    doc.setFont('helvetica', 'normal');
-    doc.text(formatDate(vente.payment_due_date), margins.left + 110, yPosition);
-    
-    yPosition += 8;
+    doc.setTextColor(84, 110, 122);
+    if (clientAdresse) doc.text(clientAdresse, gridX1 + 4, gridY + 17);
+    if (clientTelephone) doc.text(`Tél: ${clientTelephone}`, gridX1 + 4, gridY + 22);
 
-    // ============================================================
+    // Statut - Style épuré sans cadre
+    doc.setFontSize(7);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(120, 144, 156);
+    doc.text('STATUT', gridX2 + 4, gridY + 4.5);
+
+    // Statut affiché simplement en texte coloré sans cadre
+    const statusX = gridX2 + 4;
+    const statusY = gridY + 11;
+    
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(statusInfo.color[0], statusInfo.color[1], statusInfo.color[2]);
+    doc.text(statusInfo.label, statusX, statusY);
+
+    // Échéance
+    doc.setFontSize(7);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(120, 144, 156);
+    doc.text('ÉCHÉANCE', gridX2 + 4, gridY + 18);
+    
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(26, 35, 126);
+    doc.text(formatDate(vente.payment_due_date) || '-', gridX2 + 4, gridY + 24);
+
+    y = gridY + 28;
+
+    // ================================================================
     // TABLEAU DES PRODUITS
-    // ============================================================
-    const tableRows = [];
-    
-    // Lignes des produits
-    if (vente.lines && vente.lines.length > 0) {
-      vente.lines.forEach(line => {
-        tableRows.push([
-          line.product_name || '-',
-          String(line.quantity || 0),
-          formatCurrency(line.unit_price),
-          formatCurrency(line.discount || 0),
-          formatCurrency(line.total)
-        ]);
-      });
-    }
+    // ================================================================
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(26, 35, 126);
+    doc.text('DÉTAIL DES PRODUITS', margins.left, y);
+    y += 2;
+    doc.setDrawColor(224, 224, 224);
+    doc.setLineWidth(0.5);
+    doc.line(margins.left, y, pageWidth - margins.right, y);
+    y += 6;
 
-    // Lignes des totaux
-    tableRows.push(['', '', '', 'Sous-total', formatCurrency(vente.subtotal)]);
-    
-    if (vente.discount_amount > 0) {
-      tableRows.push(['', '', '', 'Remise', `-${formatCurrency(vente.discount_amount)}`]);
-    }
-    
-    if (vente.tax_amount > 0) {
-      tableRows.push(['', '', '', `TVA (${vente.tax_rate || 0}%)`, formatCurrency(vente.tax_amount)]);
-    }
-    
-    if (vente.shipping_fee > 0) {
-      tableRows.push(['', '', '', 'Frais livraison', formatCurrency(vente.shipping_fee)]);
-    }
-    
-    tableRows.push(['', '', '', 'TOTAL TTC', formatCurrency(vente.total)]);
+    // Colonnes
+    const colDescX = margins.left;
+    const colQtyX = margins.left + 60;
+    const colPriceX = margins.left + 90;
+    const colRemiseX = margins.left + 118;
+    const colTotalX = pageWidth - margins.right - 2;
 
-    // Génération du tableau
-    autoTable(doc, {
-      head: [['Produit', 'Qté', 'Prix unit.', 'Remise', 'Total']],
-      body: tableRows,
-      startY: yPosition,
-      margin: { left: margins.left, right: margins.right },
-      tableWidth: contentWidth,
-      styles: { 
-        fontSize: 6, 
-        cellPadding: 2,
-        valign: 'middle'
-      },
-      headStyles: { 
-        fillColor: [55, 65, 85], 
-        textColor: [255, 255, 255],
-        fontSize: 7,
-        fontStyle: 'bold',
-        halign: 'center'
-      },
-      alternateRowStyles: { fillColor: [248, 248, 248] },
-      columnStyles: {
-        0: { cellWidth: 'auto', halign: 'left' },
-        1: { cellWidth: 20, halign: 'center' },
-        2: { cellWidth: 30, halign: 'right' },
-        3: { cellWidth: 30, halign: 'right' },
-        4: { cellWidth: 30, halign: 'right' }
-      },
-      didParseCell: function(data) {
-        // Ligne du total
-        if (data.row.index === tableRows.length - 1) {
-          data.cell.styles.fillColor = [34, 197, 94];
-          data.cell.styles.textColor = [255, 255, 255];
-          data.cell.styles.fontStyle = 'bold';
-          data.cell.styles.fontSize = 7;
+    // En-tête
+    const headerY = y;
+    doc.setFillColor(26, 35, 126);
+    doc.roundedRect(colDescX, headerY, contentWidth, 7, 2, 2, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(7.5);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Désignation', colDescX + 3, headerY + 4.5);
+    doc.text('Qté', colQtyX + 3, headerY + 4.5);
+    doc.text('Prix unit.', colPriceX + 3, headerY + 4.5);
+    doc.text('Remise', colRemiseX + 3, headerY + 4.5);
+    doc.text('Total', colTotalX - 3, headerY + 4.5, { align: 'right' });
+
+    y = headerY + 7;
+    let currentY = y;
+    let rowIndex = 0;
+
+    const lines = vente.lines || vente.items || [];
+    
+    if (lines.length === 0) {
+      doc.setTextColor(150, 150, 150);
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'italic');
+      doc.text('Aucun article dans cette facture.', colDescX + 3, currentY + 5);
+      currentY += 10;
+    } else {
+      for (let idx = 0; idx < lines.length; idx++) {
+        const line = lines[idx];
+        const productName = line.product_name || line.product?.name || 'Produit inconnu';
+        const qty = line.quantity || 0;
+        const price = parseFloat(line.unit_price) || 0;
+        const remise = parseFloat(line.discount) || 0;
+        const lineTotal = parseFloat(line.total) || (qty * price - remise);
+
+        if (currentY > pageHeight - 60) {
+          doc.addPage();
+          addWatermark(doc, watermarkText, watermarkOptions);
+          
+          currentY = margins.top;
+          doc.setFillColor(26, 35, 126);
+          doc.roundedRect(colDescX, currentY, contentWidth, 7, 2, 2, 'F');
+          doc.setTextColor(255, 255, 255);
+          doc.setFontSize(7.5);
+          doc.setFont('helvetica', 'bold');
+          doc.text('Désignation', colDescX + 3, currentY + 4.5);
+          doc.text('Qté', colQtyX + 3, currentY + 4.5);
+          doc.text('Prix unit.', colPriceX + 3, currentY + 4.5);
+          doc.text('Remise', colRemiseX + 3, currentY + 4.5);
+          doc.text('Total', colTotalX - 3, currentY + 4.5, { align: 'right' });
+          currentY += 7;
         }
-        // Lignes des sous-totaux
-        if (data.section === 'body' && 
-            (data.cell.raw === 'Sous-total' || 
-             data.cell.raw === 'Remise' || 
-             data.cell.raw === 'TVA' || 
-             data.cell.raw === 'Frais livraison' ||
-             data.cell.raw === 'TOTAL TTC')) {
-          data.cell.styles.fontStyle = 'bold';
-        }
-      }
-    });
 
-    yPosition = doc.lastAutoTable.finalY + 8;
-
-    // ============================================================
-    // QR CODE
-    // ============================================================
-    const qrCodeData = vente.qr_code_url || vente.qr_code;
-    
-    if (qrCodeData) {
-      yPosition += 5;
-      
-      if (yPosition > pageHeight - margins.bottom - 55) {
-        doc.addPage();
-        yPosition = margins.top + 10;
-      }
-      
-      const qrSize = 30;
-      const qrX = pageWidth - margins.right - qrSize - 8;
-      const qrY = yPosition + 2;
-      
-      doc.setFillColor(248, 248, 248);
-      doc.rect(qrX - 4, qrY - 4, qrSize + 8, qrSize + 22, 'F');
-      doc.setDrawColor(200, 200, 200);
-      doc.rect(qrX - 4, qrY - 4, qrSize + 8, qrSize + 22, 'S');
-      
-      try {
-        let qrImageUrl = qrCodeData;
-        
-        if (qrCodeData.startsWith('/')) {
-          const baseUrl = window.location.origin || 'http://127.0.0.1:8000';
-          qrImageUrl = `${baseUrl}${qrCodeData}`;
+        if (rowIndex % 2 === 0) {
+          doc.setFillColor(248, 249, 250);
+          doc.rect(colDescX, currentY - 0.5, contentWidth, 6.5, 'F');
         }
-        
-        const qrImage = await new Promise((resolve, reject) => {
-          const img = new Image();
-          img.crossOrigin = 'Anonymous';
-          
-          const timeout = setTimeout(() => {
-            reject(new Error('Timeout QR Code'));
-          }, 5000);
-          
-          img.onload = () => {
-            clearTimeout(timeout);
-            resolve(img);
-          };
-          
-          img.onerror = () => {
-            clearTimeout(timeout);
-            reject(new Error('Erreur chargement QR Code'));
-          };
-          
-          img.src = qrImageUrl;
-        });
-        
-        const canvas = document.createElement('canvas');
-        canvas.width = qrImage.width;
-        canvas.height = qrImage.height;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(qrImage, 0, 0);
-        const dataUrl = canvas.toDataURL('image/png');
-        
-        doc.addImage(dataUrl, 'PNG', qrX, qrY, qrSize, qrSize);
-        
-        doc.setFontSize(4.5);
+
+        doc.setDrawColor(224, 224, 224);
+        doc.setLineWidth(0.1);
+        doc.line(colDescX, currentY, colDescX, currentY + 6);
+        doc.line(colQtyX, currentY, colQtyX, currentY + 6);
+        doc.line(colPriceX, currentY, colPriceX, currentY + 6);
+        doc.line(colRemiseX, currentY, colRemiseX, currentY + 6);
+        doc.line(colTotalX, currentY, colTotalX, currentY + 6);
+
+        doc.setTextColor(33, 33, 33);
+        doc.setFontSize(7.5);
         doc.setFont('helvetica', 'normal');
-        doc.setTextColor(100, 100, 100);
-        doc.text('Scanner pour détails', qrX + qrSize/2, qrY + qrSize + 4.5, { align: 'center' });
+        doc.text(productName, colDescX + 3, currentY + 4);
+        doc.text(qty.toString(), colQtyX + 3, currentY + 4);
+        doc.text(formatCurrency(price), colPriceX + 3, currentY + 4);
+        doc.text(remise > 0 ? formatCurrency(remise) : '-', colRemiseX + 3, currentY + 4);
         
-        doc.setFontSize(4);
-        doc.setTextColor(130, 130, 130);
-        doc.text('Facture', qrX + qrSize/2, qrY + qrSize + 8, { align: 'center' });
-        
-        doc.setFontSize(3.5);
-        doc.setTextColor(150, 150, 150);
-        doc.text(`N° ${vente.invoice_number}`, qrX + qrSize/2, qrY + qrSize + 11.5, { align: 'center' });
-        
-        yPosition += 42;
-        
-      } catch (error) {
-        console.error('Erreur QR Code:', error);
-        
-        doc.setFillColor(200, 200, 200);
-        doc.rect(qrX, qrY, qrSize, qrSize, 'F');
-        doc.setFontSize(7);
-        doc.setFont('helvetica', 'bold');
-        doc.setTextColor(100, 100, 100);
-        doc.text('QR', qrX + qrSize/2, qrY + qrSize/2 + 2.5, { align: 'center' });
-        
-        doc.setFontSize(4.5);
-        doc.setFont('helvetica', 'normal');
-        doc.setTextColor(100, 100, 100);
-        doc.text('Non disponible', qrX + qrSize/2, qrY + qrSize + 4.5, { align: 'center' });
-        doc.text(`N° ${vente.invoice_number}`, qrX + qrSize/2, qrY + qrSize + 8, { align: 'center' });
-        
-        yPosition += 42;
+        const totalText = formatCurrency(lineTotal);
+        const maxWidth = colTotalX - colRemiseX - 6;
+        if (doc.getTextWidth(totalText) > maxWidth) {
+          doc.setFontSize(6.5);
+          doc.text(totalText, colTotalX - 3, currentY + 4, { align: 'right' });
+          doc.setFontSize(7.5);
+        } else {
+          doc.text(totalText, colTotalX - 3, currentY + 4, { align: 'right' });
+        }
+
+        currentY += 6.5;
+        rowIndex++;
       }
     }
 
-    // ============================================================
-    // NOTES
-    // ============================================================
-    if (vente.notes) {
-      yPosition += 5;
+    doc.setDrawColor(180, 180, 190);
+    doc.setLineWidth(0.3);
+    doc.line(colDescX, currentY, pageWidth - margins.right, currentY);
+    y = currentY + 5;
+
+    // ================================================================
+    // TOTAUX
+    // ================================================================
+    let ay = y;
+
+    const subtotal = parseFloat(vente.subtotal) || 0;
+    const discountAmount = parseFloat(vente.discount_amount) || 0;
+    const taxAmount = parseFloat(vente.tax_amount) || 0;
+    const taxRate = parseFloat(vente.tax_rate) || 0;
+    const shippingFee = parseFloat(vente.shipping_fee) || 0;
+    const total = parseFloat(vente.total) || 0;
+
+    // 1. Bloc TOTAL
+    const amountBoxWidth = 70;
+    const amountBoxX = pageWidth - margins.right - amountBoxWidth;
+    const amountBoxHeight = 12;
+
+    doc.setFillColor(26, 35, 126);
+    doc.roundedRect(amountBoxX - 7, ay - 2, amountBoxWidth + 8, amountBoxHeight, 2, 2, 'F');
+
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(255, 255, 255);
+    doc.text('TOTAL', amountBoxX + 4, ay + 6);
+
+    const totalFormatted = formatCurrency(total);
+    doc.setFontSize(12);
+    doc.setTextColor(255, 255, 255);
+    let fontSizeTotal = 12;
+    let textWidthTotal = doc.getTextWidth(totalFormatted);
+    if (textWidthTotal > amountBoxWidth - 10) {
+      fontSizeTotal = 10;
+      doc.setFontSize(fontSizeTotal);
+      if (doc.getTextWidth(totalFormatted) > amountBoxWidth - 10) {
+        fontSizeTotal = 8;
+        doc.setFontSize(fontSizeTotal);
+      }
+    }
+    doc.text(totalFormatted, amountBoxX + amountBoxWidth, ay + 6, { align: 'right' });
+
+    ay += amountBoxHeight + 4;
+
+    // 2. Montant en toutes lettres
+    const lettresBoxHeight = 14;
+    doc.setFillColor(248, 249, 250);
+    doc.roundedRect(margins.left, ay, contentWidth, lettresBoxHeight, 2, 2, 'F');
+    doc.setDrawColor(224, 224, 224);
+    doc.setLineWidth(0.5);
+    doc.roundedRect(margins.left, ay, contentWidth, lettresBoxHeight, 2, 2, 'S');
+
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(84, 110, 122);
+    doc.text('Montant en toutes lettres :', margins.left + 6, ay + 9);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(33, 33, 33);
+
+    const lettresStartX = margins.left + 65;
+    const lettresAvailableWidth = contentWidth - 70;
+
+    let lettresFontSize = 8;
+    doc.setFontSize(lettresFontSize);
+    let lettresWidth = doc.getTextWidth(totalEnLettres);
+
+    while (lettresWidth > lettresAvailableWidth && lettresFontSize > 5) {
+      lettresFontSize -= 0.5;
+      doc.setFontSize(lettresFontSize);
+      lettresWidth = doc.getTextWidth(totalEnLettres);
+    }
+
+    if (lettresWidth > lettresAvailableWidth) {
+      const splitLettres = doc.splitTextToSize(totalEnLettres, lettresAvailableWidth);
+      doc.text(splitLettres, lettresStartX, ay + 5);
+    } else {
+      doc.text(totalEnLettres, lettresStartX, ay + 9);
+    }
+
+    ay += lettresBoxHeight + 6;
+
+    // 3. Notes
+    if (vente.notes && typeof vente.notes === 'string' && vente.notes.trim()) {
+      const notesBoxHeight = 20;
+      doc.setFillColor(255, 248, 230);
+      doc.roundedRect(margins.left, ay, contentWidth, notesBoxHeight, 2, 2, 'F');
+      doc.setDrawColor(255, 204, 128);
+      doc.setLineWidth(0.5);
+      doc.roundedRect(margins.left, ay, contentWidth, notesBoxHeight, 2, 2, 'S');
       
-      doc.setFontSize(6);
+      doc.setFontSize(8);
       doc.setFont('helvetica', 'bold');
-      doc.text('Notes:', margins.left, yPosition);
-      yPosition += 4;
+      doc.setTextColor(230, 81, 0);
+      doc.text('Notes', margins.left + 6, ay + 5);
       
       doc.setFont('helvetica', 'normal');
-      const splitNotes = doc.splitTextToSize(vente.notes, contentWidth);
-      splitNotes.forEach(line => {
-        doc.text(line, margins.left, yPosition);
-        yPosition += 3.5;
-      });
-      yPosition += 4;
+      doc.setTextColor(66, 66, 66);
+      const splitNotes = doc.splitTextToSize(vente.notes, contentWidth - 12);
+      doc.text(splitNotes, margins.left + 6, ay + 12);
+      
+      ay += notesBoxHeight + 6;
     }
 
-    // ============================================================
+    y = ay;
+
+    // ================================================================
     // SIGNATURES
-    // ============================================================
-    yPosition += 8;
-    
-    if (yPosition > pageHeight - margins.bottom - 35) {
-      doc.addPage();
-      yPosition = margins.top + 10;
-    }
+    // ================================================================
+    const signatureY = y + 8;
+    const signatureWidth = 85;
+    const signatureX1 = margins.left;
+    const signatureX2 = pageWidth - margins.right - signatureWidth;
 
-    doc.setDrawColor(200, 200, 200);
-    doc.line(margins.left, yPosition, pageWidth - margins.right, yPosition);
-    yPosition += 5;
+    doc.setDrawColor(66, 66, 66);
+    doc.setLineWidth(0.5);
+    doc.line(signatureX1, signatureY + 5, signatureX1 + signatureWidth, signatureY + 5);
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(84, 110, 122);
+    doc.text('Signature du client', signatureX1 + (signatureWidth / 2), signatureY, { align: 'center' });
+    doc.setFontSize(7);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(120, 144, 156);
+    doc.text(clientNom, signatureX1 + (signatureWidth / 2), signatureY + 12, { align: 'center' });
+    doc.text(`Date: ${formatDate(new Date().toISOString())}`, signatureX1 + (signatureWidth / 2), signatureY + 18, { align: 'center' });
+
+    doc.line(signatureX2, signatureY + 5, signatureX2 + signatureWidth, signatureY + 5);
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(84, 110, 122);
+    doc.text('Signature de l\'entreprise', signatureX2 + (signatureWidth / 2), signatureY, { align: 'center' });
+    doc.setFontSize(7);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(120, 144, 156);
+    doc.text(company.name, signatureX2 + (signatureWidth / 2), signatureY + 12, { align: 'center' });
+    doc.text('Responsable commercial', signatureX2 + (signatureWidth / 2), signatureY + 18, { align: 'center' });
+
+    y = signatureY + 24;
+
+    // ================================================================
+    // PIED DE PAGE
+    // ================================================================
+    const footerY = pageHeight - margins.bottom - 10;
+    doc.setDrawColor(224, 224, 224);
+    doc.setLineWidth(0.5);
+    doc.line(margins.left, footerY - 5, pageWidth - margins.right, footerY - 5);
     
     doc.setFontSize(7);
-    doc.setFont('helvetica', 'bold');
-    doc.text('VALIDATION', pageWidth / 2, yPosition, { align: 'center' });
-    yPosition += 7;
-    
-    const signatureWidth = (contentWidth - 8) / 2;
-    const signatureHeight = 22;
-    
-    // Signature Client
-    doc.rect(margins.left, yPosition, signatureWidth, signatureHeight, 'S');
-    doc.setFillColor(248, 248, 248);
-    doc.rect(margins.left, yPosition, signatureWidth, 4, 'F');
-    
-    doc.setFontSize(5.5);
-    doc.setFont('helvetica', 'bold');
-    doc.text("BON POUR COMMANDE", margins.left + signatureWidth / 2, yPosition + 3, { align: 'center' });
-    
-    let sigY = yPosition + 7;
-    doc.setFontSize(5);
     doc.setFont('helvetica', 'normal');
-    doc.text(`Client : ${vente.client_name || '________________'}`, margins.left + 3, sigY);
-    sigY += 5;
-    doc.text('Date : _______________', margins.left + 3, sigY);
-    sigY += 5;
-    doc.text('Signature : _______________', margins.left + 3, sigY);
+    doc.setTextColor(120, 144, 156);
+    doc.text(company.name, pageWidth / 2, footerY, { align: 'center' });
+    doc.text(`Tél: ${company.phone1} / ${company.phone2} - Email: ${company.email}`, pageWidth / 2, footerY + 4, { align: 'center' });
+    doc.text(`RC: ${company.rccm} - NIF: ${company.nif}`, pageWidth / 2, footerY + 8, { align: 'center' });
     
-    // Signature Société
-    const employerX = margins.left + signatureWidth + 8;
-    doc.rect(employerX, yPosition, signatureWidth, signatureHeight, 'S');
-    doc.setFillColor(248, 248, 248);
-    doc.rect(employerX, yPosition, signatureWidth, 4, 'F');
-    
-    doc.setFontSize(5.5);
-    doc.setFont('helvetica', 'bold');
-    doc.text("BON DE COMMANDE", employerX + signatureWidth / 2, yPosition + 3, { align: 'center' });
-    
-    sigY = yPosition + 7;
-    doc.setFontSize(5);
-    doc.setFont('helvetica', 'normal');
-    doc.text(`E.B.S.F`, employerX + 3, sigY);
-    sigY += 5;
-    doc.text('Date : _______________', employerX + 3, sigY);
-    sigY += 5;
-    doc.text('Signature : _______________', employerX + 3, sigY);
-    
-    yPosition += signatureHeight + 12;
+    doc.setFontSize(6);
+    doc.setTextColor(160, 160, 170);
+    doc.text(`Compte bancaire: ${company.bank_name} - ${company.bank_account}`, pageWidth / 2, footerY + 13, { align: 'center' });
+    doc.text('Merci pour votre confiance', pageWidth / 2, footerY + 17, { align: 'center' });
 
-    // ============================================================
-    // PIED DE PAGE
-    // ============================================================
-    if (yPosition < pageHeight - margins.bottom - 22) {
-      yPosition = pageHeight - margins.bottom - 22;
+    // ================================================================
+    // NUMÉROTATION DES PAGES ET FILIGRANE FINAL
+    // ================================================================
+    const pageCount = doc.internal.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i);
+      addWatermark(doc, watermarkText, watermarkOptions);
+      doc.setFontSize(7);
+      doc.setTextColor(160, 160, 170);
+      doc.text(`Page ${i}/${pageCount}`, pageWidth - margins.right, pageHeight - margins.bottom, { align: 'right' });
     }
-    
-    doc.setDrawColor(180, 180, 180);
-    doc.line(margins.left, yPosition, pageWidth - margins.right, yPosition);
-    yPosition += 3;
-    
-    doc.setFontSize(4.5);
-    doc.setFont('helvetica', 'bold');
-    doc.text('COORDONNÉES BANCAIRES', pageWidth / 2, yPosition + 1.5, { align: 'center' });
-    yPosition += 4;
-    
-    doc.setFontSize(4);
-    doc.setFont('helvetica', 'normal');
-    doc.text(
-      `${defaultCompany.bank_name} - Compte: ${defaultCompany.bank_account}`, 
-      pageWidth / 2, 
-      yPosition + 1.5, 
-      { align: 'center' }
-    );
-    yPosition += 4;
-    
-    doc.setFontSize(4);
-    doc.setFont('italic');
-    doc.text('Merci pour votre confiance', pageWidth / 2, yPosition + 1.5, { align: 'center' });
 
-    // ============================================================
-    // SAUVEGARDE DU PDF
-    // ============================================================
-    doc.save(`Bon_Commande_${vente.invoice_number}.pdf`);
+    // ================================================================
+    // SAUVEGARDE
+    // ================================================================
+    const filename = options.filename || `Facture_${vente.invoice_number || 'vente'}.pdf`;
+    doc.save(filename);
     return true;
-    
+
   } catch (error) {
     console.error('Erreur generateVentePdf:', error);
-    throw new Error('Génération PDF échouée : ' + error.message);
+    throw error;
   }
 };
 
-// ============================================================
-// COMPOSANT REACT
-// ============================================================
+// ========== FONCTION DE TÉLÉCHARGEMENT ==========
+export const downloadVentePdf = async (vente, filename = null) => {
+  try {
+    if (!vente || typeof vente !== 'object') {
+      throw new Error('Les données de la vente sont invalides');
+    }
+
+    const options = {};
+    if (filename) options.filename = filename;
+    
+    const result = await generateVentePdf(vente, options);
+    return result;
+  } catch (error) {
+    console.error('Erreur lors du téléchargement de la facture :', error);
+    throw error;
+  }
+};
+
+// ========== COMPOSANT REACT ==========
+import React, { useEffect, useState } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import AxiosInstance from '../AxiosInstance';
+import { Loader2, AlertCircle } from 'lucide-react';
+
 const VentePdf = () => {
   const { id } = useParams();
   const navigate = useNavigate();

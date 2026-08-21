@@ -1,13 +1,12 @@
 // src/components/tresorerie/TresorerieJournaliereDetail.jsx
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { PDFDownloadLink } from '@react-pdf/renderer';
 import AxiosInstance from '../AxiosInstance';
 import {
   ArrowLeft, Calendar, DollarSign, TrendingUp, TrendingDown,
   RefreshCw, FileText, AlertCircle, CheckCircle, X
 } from 'lucide-react';
-import TresorerieJournalPdf from './TresorerieJournalPdf';
+import { downloadTresorerieJournalPdf } from './TresorerieJournalPdf';
 
 const TresorerieJournaliereDetail = () => {
   const { id } = useParams();
@@ -17,6 +16,7 @@ const TresorerieJournaliereDetail = () => {
   const [error, setError] = useState(null);
   const [warehouseName, setWarehouseName] = useState('');
   const [notification, setNotification] = useState({ show: false, message: '', type: 'success' });
+  const [pdfLoading, setPdfLoading] = useState(false);
 
   const getToken = () => localStorage.getItem('Token');
 
@@ -58,6 +58,28 @@ const TresorerieJournaliereDetail = () => {
       fetchDetail();
     }
   }, [id]);
+
+  const handleExportPdf = async () => {
+    if (!data) {
+      showNotification('Aucune donnée à exporter', 'error');
+      return;
+    }
+    
+    setPdfLoading(true);
+    try {
+      await downloadTresorerieJournalPdf(
+        data,
+        warehouseName,
+        `tresorerie_journaliere_${data.date}_${warehouseName}.pdf`
+      );
+      showNotification('PDF exporté avec succès !', 'success');
+    } catch (error) {
+      console.error('Erreur export PDF:', error);
+      showNotification('Erreur lors de l\'export du PDF', 'error');
+    } finally {
+      setPdfLoading(false);
+    }
+  };
 
   const formatNumber = (num) => {
     if (num === undefined || num === null) return '0';
@@ -136,19 +158,18 @@ const TresorerieJournaliereDetail = () => {
             <button onClick={fetchDetail} className="btn btn-sm sm:btn-md btn-outline gap-2">
               <RefreshCw className="w-4 h-4" /> Actualiser
             </button>
-            {/* Bouton PDF avec PDFDownloadLink */}
-            <PDFDownloadLink
-              document={<TresorerieJournalPdf data={data} warehouseName={warehouseName} />}
-              fileName={`tresorerie_journaliere_${data.date}_${warehouseName}.pdf`}
+            <button
+              onClick={handleExportPdf}
+              disabled={pdfLoading}
               className="btn btn-sm sm:btn-md bg-gradient-to-r from-primary to-primary/80 text-white border-none shadow-lg gap-2"
             >
-              {({ loading }) => (
-                <>
-                  {loading ? <span className="loading loading-spinner loading-sm"></span> : <FileText className="w-4 h-4" />}
-                  Exporter PDF
-                </>
+              {pdfLoading ? (
+                <span className="loading loading-spinner loading-sm"></span>
+              ) : (
+                <FileText className="w-4 h-4" />
               )}
-            </PDFDownloadLink>
+              Exporter PDF
+            </button>
           </div>
         </div>
       </div>
