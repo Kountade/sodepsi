@@ -7,9 +7,7 @@ import {
   View,
   StyleSheet,
   Font,
-  Image
 } from '@react-pdf/renderer';
-import logoSvg from '../../assets/logo.svg';
 
 // Polices (optionnel)
 Font.register({
@@ -45,10 +43,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
-  logo: {
+  logoPlaceholder: {
     width: 50,
     height: 50,
     marginRight: 12,
+    backgroundColor: '#1a237e',
+    borderRadius: 25,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  logoText: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
   },
   companyInfo: {
     flexDirection: 'column',
@@ -77,14 +84,13 @@ const styles = StyleSheet.create({
     fontFamily: 'Helvetica',
     letterSpacing: 2,
     textTransform: 'uppercase',
-    paddingTop: 4,    // <--- AJOUT : padding top pour le titre
+    paddingTop: 4,
   },
   documentRef: {
     fontSize: 9,
     color: '#546e7a',
     marginTop: 2,
   },
-  // ... le reste des styles reste inchangé
   infoGrid: {
     flexDirection: 'row',
     marginBottom: 15,
@@ -279,7 +285,9 @@ const TresorerieJournalPdf = ({ data, warehouseName }) => {
           {/* Première ligne : logo + nom de l'entreprise */}
           <View style={styles.headerRow}>
             <View style={styles.headerLeft}>
-              <Image src={logoSvg} style={styles.logo} />
+              <View style={styles.logoPlaceholder}>
+                <Text style={styles.logoText}>S</Text>
+              </View>
               <View style={styles.companyInfo}>
                 <Text style={styles.companyName}>BOUTIQUE STATION SODEPCI DE PARA</Text>
                 <Text style={styles.companySub}>Station SODEPCI, Para – Tél: 07 47 55 71 69 / 07 08 42 96 09</Text>
@@ -288,7 +296,7 @@ const TresorerieJournalPdf = ({ data, warehouseName }) => {
           </View>
 
           {/* Deuxième ligne : titre à gauche, date et entrepôt à droite */}
-          <View style={[styles.headerRow, { marginTop: 10 }]}> {/* marginTop augmenté */}
+          <View style={[styles.headerRow, { marginTop: 10 }]}>
             <View style={styles.headerLeft}>
               <Text style={styles.documentTitle}>TRÉSORERIE JOURNALIÈRE</Text>
             </View>
