@@ -4,9 +4,8 @@ import { useNavigate, useParams } from 'react-router-dom';
 import AxiosInstance from '../AxiosInstance';
 import {
   ArrowLeft, Save, X, AlertCircle, CheckCircle,
-  User, Building2, Phone, Mail, MapPin,
-  CreditCard, FileText, Loader2, Users,
-  Star, Globe, Award
+  User, Building2, Phone, MapPin,
+  FileText, Loader2, Users
 } from 'lucide-react';
 
 const ClientForm = () => {
@@ -20,23 +19,10 @@ const ClientForm = () => {
   const [formData, setFormData] = useState({
     code: '',
     name: '',
-    commercial_name: '',
     type: 'particulier',
-    contact_person: '',
     phone: '',
-    mobile: '',
-    email: '',
-    website: '',
     address: '',
-    city: '',
-    country: 'Sénégal',
-    postal_code: '',
-    tax_id: '',
-    registration_number: '',
-    payment_terms: 'cash',
-    credit_limit: 0,
     statut: 'actif',
-    is_favorite: false,
     notes: ''
   });
   const [errors, setErrors] = useState({});
@@ -48,6 +34,7 @@ const ClientForm = () => {
     setTimeout(() => setNotification(null), 4000);
   };
 
+  // Générer un code client automatiquement
   const generateClientCode = async () => {
     try {
       const token = getToken();
@@ -62,6 +49,7 @@ const ClientForm = () => {
     }
   };
 
+  // Charger les données du client en édition
   const fetchClient = async () => {
     if (!isEdit) {
       const code = await generateClientCode();
@@ -80,23 +68,10 @@ const ClientForm = () => {
       setFormData({
         code: data.code || '',
         name: data.name || '',
-        commercial_name: data.commercial_name || '',
         type: data.type || 'particulier',
-        contact_person: data.contact_person || '',
         phone: data.phone || '',
-        mobile: data.mobile || '',
-        email: data.email || '',
-        website: data.website || '',
         address: data.address || '',
-        city: data.city || '',
-        country: data.country || 'Sénégal',
-        postal_code: data.postal_code || '',
-        tax_id: data.tax_id || '',
-        registration_number: data.registration_number || '',
-        payment_terms: data.payment_terms || 'cash',
-        credit_limit: data.credit_limit || 0,
         statut: data.statut || 'actif',
-        is_favorite: data.is_favorite || false,
         notes: data.notes || ''
       });
     } catch (error) {
@@ -112,6 +87,7 @@ const ClientForm = () => {
     fetchClient();
   }, [id]);
 
+  // Gestion des changements de champs
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
     setFormData(prev => ({
@@ -123,27 +99,18 @@ const ClientForm = () => {
     }
   };
 
+  // Validation du formulaire
   const validate = () => {
     const newErrors = {};
     if (!formData.code.trim()) newErrors.code = 'Le code est requis';
     if (!formData.name.trim()) newErrors.name = 'Le nom est requis';
     if (!formData.phone.trim()) newErrors.phone = 'Le téléphone est requis';
-    if (!formData.email.trim()) newErrors.email = 'L\'email est requis';
-    if (!formData.address.trim()) newErrors.address = 'L\'adresse est requise';
-    if (!formData.city.trim()) newErrors.city = 'La ville est requise';
-    
-    if (formData.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
-      newErrors.email = 'Email invalide';
-    }
-    
-    if (formData.credit_limit < 0) {
-      newErrors.credit_limit = 'La limite de crédit ne peut pas être négative';
-    }
     
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
+  // Soumission du formulaire
   const handleSubmit = async (e) => {
     e.preventDefault();
     
@@ -191,6 +158,11 @@ const ClientForm = () => {
     }
   };
 
+  // Annuler et retourner à la liste
+  const handleCancel = () => {
+    navigate('/clients');
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[calc(100vh-200px)] bg-gray-50">
@@ -224,7 +196,10 @@ const ClientForm = () => {
         <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
             <div className="flex items-center gap-4">
-              <button onClick={() => navigate('/clients')} className="btn btn-ghost btn-sm gap-2">
+              <button 
+                onClick={handleCancel} 
+                className="btn btn-ghost btn-sm gap-2"
+              >
                 <ArrowLeft className="w-4 h-4" /> Retour
               </button>
               <div className="flex items-center gap-3">
@@ -245,11 +220,11 @@ const ClientForm = () => {
         </div>
       </div>
 
-      {/* Formulaire - 100% largeur avec 3 colonnes */}
+      {/* Formulaire */}
       <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
         <form onSubmit={handleSubmit} className="space-y-6">
           
-          {/* Informations générales - 3 colonnes */}
+          {/* Informations générales */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
             <div className="bg-gray-50 px-6 py-3 border-b">
               <h3 className="font-semibold flex items-center gap-2">
@@ -257,8 +232,8 @@ const ClientForm = () => {
               </h3>
             </div>
             <div className="p-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {/* Code */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Code client */}
                 <div>
                   <label className="label text-sm font-medium text-gray-700">
                     Code client <span className="text-error">*</span>
@@ -270,11 +245,12 @@ const ClientForm = () => {
                     onChange={handleChange}
                     className={`input input-bordered w-full ${errors.code ? 'input-error' : ''}`}
                     readOnly={isEdit}
+                    placeholder="CLT-0001"
                   />
                   {errors.code && <p className="text-error text-xs mt-1">{errors.code}</p>}
                 </div>
 
-                {/* Nom */}
+                {/* Nom / Raison sociale */}
                 <div>
                   <label className="label text-sm font-medium text-gray-700">
                     Nom / Raison sociale <span className="text-error">*</span>
@@ -285,28 +261,15 @@ const ClientForm = () => {
                     value={formData.name}
                     onChange={handleChange}
                     className={`input input-bordered w-full ${errors.name ? 'input-error' : ''}`}
+                    placeholder="Nom du client"
                   />
                   {errors.name && <p className="text-error text-xs mt-1">{errors.name}</p>}
-                </div>
-
-                {/* Nom commercial */}
-                <div>
-                  <label className="label text-sm font-medium text-gray-700">
-                    Nom commercial
-                  </label>
-                  <input
-                    type="text"
-                    name="commercial_name"
-                    value={formData.commercial_name}
-                    onChange={handleChange}
-                    className="input input-bordered w-full"
-                  />
                 </div>
 
                 {/* Type */}
                 <div>
                   <label className="label text-sm font-medium text-gray-700">
-                    Type <span className="text-error">*</span>
+                    Type
                   </label>
                   <select
                     name="type"
@@ -321,24 +284,26 @@ const ClientForm = () => {
                   </select>
                 </div>
 
-                {/* Personne de contact */}
+                {/* Téléphone */}
                 <div>
                   <label className="label text-sm font-medium text-gray-700">
-                    Personne de contact
+                    Téléphone <span className="text-error">*</span>
                   </label>
                   <input
                     type="text"
-                    name="contact_person"
-                    value={formData.contact_person}
+                    name="phone"
+                    value={formData.phone}
                     onChange={handleChange}
-                    className="input input-bordered w-full"
+                    className={`input input-bordered w-full ${errors.phone ? 'input-error' : ''}`}
+                    placeholder="77 123 45 67"
                   />
+                  {errors.phone && <p className="text-error text-xs mt-1">{errors.phone}</p>}
                 </div>
 
                 {/* Statut */}
                 <div>
                   <label className="label text-sm font-medium text-gray-700">
-                    Statut <span className="text-error">*</span>
+                    Statut
                   </label>
                   <select
                     name="statut"
@@ -351,91 +316,11 @@ const ClientForm = () => {
                     <option value="bloque">Bloqué</option>
                   </select>
                 </div>
-
-                {/* Client favori */}
-                <div className="flex items-center gap-2 pt-6">
-                  <input
-                    type="checkbox"
-                    name="is_favorite"
-                    checked={formData.is_favorite}
-                    onChange={handleChange}
-                    className="checkbox checkbox-primary"
-                  />
-                  <label className="text-sm font-medium text-gray-700 flex items-center gap-1">
-                    <Star className="w-4 h-4 text-warning" /> Client favori
-                  </label>
-                </div>
               </div>
             </div>
           </div>
 
-          {/* Contacts - 3 colonnes */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-            <div className="bg-gray-50 px-6 py-3 border-b">
-              <h3 className="font-semibold flex items-center gap-2">
-                <Phone className="w-4 h-4 text-primary" /> Contacts
-              </h3>
-            </div>
-            <div className="p-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                <div>
-                  <label className="label text-sm font-medium text-gray-700">
-                    Téléphone <span className="text-error">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    name="phone"
-                    value={formData.phone}
-                    onChange={handleChange}
-                    className={`input input-bordered w-full ${errors.phone ? 'input-error' : ''}`}
-                  />
-                  {errors.phone && <p className="text-error text-xs mt-1">{errors.phone}</p>}
-                </div>
-
-                <div>
-                  <label className="label text-sm font-medium text-gray-700">
-                    Mobile
-                  </label>
-                  <input
-                    type="text"
-                    name="mobile"
-                    value={formData.mobile}
-                    onChange={handleChange}
-                    className="input input-bordered w-full"
-                  />
-                </div>
-
-                <div>
-                  <label className="label text-sm font-medium text-gray-700">
-                    Email <span className="text-error">*</span>
-                  </label>
-                  <input
-                    type="email"
-                    name="email"
-                    value={formData.email}
-                    onChange={handleChange}
-                    className={`input input-bordered w-full ${errors.email ? 'input-error' : ''}`}
-                  />
-                  {errors.email && <p className="text-error text-xs mt-1">{errors.email}</p>}
-                </div>
-
-                <div>
-                  <label className="label text-sm font-medium text-gray-700">
-                    Site web
-                  </label>
-                  <input
-                    type="url"
-                    name="website"
-                    value={formData.website}
-                    onChange={handleChange}
-                    className="input input-bordered w-full"
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Adresse - 3 colonnes */}
+          {/* Adresse */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
             <div className="bg-gray-50 px-6 py-3 border-b">
               <h3 className="font-semibold flex items-center gap-2">
@@ -443,149 +328,24 @@ const ClientForm = () => {
               </h3>
             </div>
             <div className="p-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                <div className="lg:col-span-3">
+              <div className="grid grid-cols-1 gap-4">
+                <div>
                   <label className="label text-sm font-medium text-gray-700">
-                    Adresse <span className="text-error">*</span>
+                    Adresse
                   </label>
                   <textarea
                     name="address"
                     value={formData.address}
                     onChange={handleChange}
-                    className={`textarea textarea-bordered w-full ${errors.address ? 'textarea-error' : ''}`}
-                    rows="2"
-                  />
-                  {errors.address && <p className="text-error text-xs mt-1">{errors.address}</p>}
-                </div>
-
-                <div>
-                  <label className="label text-sm font-medium text-gray-700">
-                    Ville <span className="text-error">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    name="city"
-                    value={formData.city}
-                    onChange={handleChange}
-                    className={`input input-bordered w-full ${errors.city ? 'input-error' : ''}`}
-                  />
-                  {errors.city && <p className="text-error text-xs mt-1">{errors.city}</p>}
-                </div>
-
-                <div>
-                  <label className="label text-sm font-medium text-gray-700">
-                    Pays
-                  </label>
-                  <input
-                    type="text"
-                    name="country"
-                    value={formData.country}
-                    onChange={handleChange}
-                    className="input input-bordered w-full"
-                  />
-                </div>
-
-                <div>
-                  <label className="label text-sm font-medium text-gray-700">
-                    Code postal
-                  </label>
-                  <input
-                    type="text"
-                    name="postal_code"
-                    value={formData.postal_code}
-                    onChange={handleChange}
-                    className="input input-bordered w-full"
+                    className="textarea textarea-bordered w-full min-h-[80px]"
+                    placeholder="Adresse complète du client"
                   />
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Informations fiscales - 3 colonnes */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-            <div className="bg-gray-50 px-6 py-3 border-b">
-              <h3 className="font-semibold flex items-center gap-2">
-                <FileText className="w-4 h-4 text-primary" /> Informations fiscales
-              </h3>
-            </div>
-            <div className="p-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                <div>
-                  <label className="label text-sm font-medium text-gray-700">
-                    N° Identification fiscale
-                  </label>
-                  <input
-                    type="text"
-                    name="tax_id"
-                    value={formData.tax_id}
-                    onChange={handleChange}
-                    className="input input-bordered w-full"
-                  />
-                </div>
-
-                <div>
-                  <label className="label text-sm font-medium text-gray-700">
-                    N° Registre de commerce
-                  </label>
-                  <input
-                    type="text"
-                    name="registration_number"
-                    value={formData.registration_number}
-                    onChange={handleChange}
-                    className="input input-bordered w-full"
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Conditions commerciales - 3 colonnes */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-            <div className="bg-gray-50 px-6 py-3 border-b">
-              <h3 className="font-semibold flex items-center gap-2">
-                <CreditCard className="w-4 h-4 text-primary" /> Conditions commerciales
-              </h3>
-            </div>
-            <div className="p-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                <div>
-                  <label className="label text-sm font-medium text-gray-700">
-                    Délai de paiement
-                  </label>
-                  <select
-                    name="payment_terms"
-                    value={formData.payment_terms}
-                    onChange={handleChange}
-                    className="select select-bordered w-full"
-                  >
-                    <option value="cash">Comptant</option>
-                    <option value="15">15 jours</option>
-                    <option value="30">30 jours</option>
-                    <option value="45">45 jours</option>
-                    <option value="60">60 jours</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="label text-sm font-medium text-gray-700">
-                    Limite de crédit (FCFA)
-                  </label>
-                  <input
-                    type="number"
-                    name="credit_limit"
-                    value={formData.credit_limit}
-                    onChange={handleChange}
-                    className={`input input-bordered w-full ${errors.credit_limit ? 'input-error' : ''}`}
-                    min="0"
-                    step="1000"
-                  />
-                  {errors.credit_limit && <p className="text-error text-xs mt-1">{errors.credit_limit}</p>}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Notes - 3 colonnes */}
+          {/* Notes */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
             <div className="bg-gray-50 px-6 py-3 border-b">
               <h3 className="font-semibold flex items-center gap-2">
@@ -611,7 +371,7 @@ const ClientForm = () => {
           <div className="flex flex-col sm:flex-row gap-3 justify-end">
             <button
               type="button"
-              onClick={() => navigate('/clients')}
+              onClick={handleCancel}
               className="btn btn-ghost gap-2"
               disabled={submitting}
             >

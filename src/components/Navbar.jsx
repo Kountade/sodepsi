@@ -101,6 +101,33 @@ import {
   Map,
   UserCheck,
   Route,
+  PackagePlus,
+  PlusCircle,
+  BadgeDollarSign,
+  Hash,
+  PenLine,
+  CalendarClock as CalendarClockIcon,
+  Building,
+  Store,
+  Home,
+  Layers as LayersIcon,
+  AlertTriangle as AlertTriangleIcon,
+  FileSpreadsheet as FileSpreadsheetIcon,
+  Handshake as HandshakeIcon,
+  FileCheck as FileCheckIcon,
+  RotateCcw as RotateCcwIcon,
+  Receipt as ReceiptIcon2,
+  CreditCard as CreditCardIcon2,
+  TrendingUp as TrendingUpIcon2,
+  BarChart as BarChartIcon,
+  Clipboard as ClipboardIcon,
+  AlertCircle as AlertCircleIcon2,
+  Archive as ArchiveIcon,
+  PackageOpen as PackageOpenIcon,
+  Truck as TruckIcon2,
+  Map as MapIcon,
+  UserCheck as UserCheckIcon,
+  Route as RouteIcon,
 } from 'lucide-react';
 
 import logo from '../assets/logo.svg';
@@ -124,12 +151,33 @@ const ROLE_CONFIG = {
     description: 'Accès total', 
     level: 100 
   },
+  gestionnaire: { 
+    label: 'Gestionnaire', 
+    color: 'warning', 
+    icon: UserCog, 
+    description: 'Gestion complète', 
+    level: 80 
+  },
   vendeur: { 
     label: 'Vendeur', 
     color: 'primary', 
     icon: ShoppingBag, 
     description: 'Ventes uniquement', 
     level: 60 
+  },
+  magasinier: { 
+    label: 'Magasinier', 
+    color: 'success', 
+    icon: Package, 
+    description: 'Gestion de stock', 
+    level: 70 
+  },
+  comptable: { 
+    label: 'Comptable', 
+    color: 'secondary', 
+    icon: Calculator, 
+    description: 'Gestion financière', 
+    level: 90 
   }
 };
 
@@ -148,7 +196,11 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
     'TABLEAU DE BORD': true,
     'VENTES': true,
     'PRODUITS & STOCKS': true,
-    'ACHATS & FOURNISSEURS': true,
+    'ACHATS & FOURNISSEURS': false,
+    'FINANCES': false,
+    'TRÉSORERIE': false,
+    'LIVRAISONS': false,
+    'PARAMÈTRES': false,
     'MON ESPACE': false
   });
   
@@ -198,7 +250,10 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
 
   // Permissions
   const isAdmin = role === 'admin';
+  const isGestionnaire = role === 'gestionnaire' || isAdmin;
   const isVendeur = role === 'vendeur';
+  const isMagasinier = role === 'magasinier' || isGestionnaire;
+  const isComptable = role === 'comptable' || isAdmin;
 
   // Initiale utilisateur
   useEffect(() => {
@@ -222,7 +277,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
         if (!token || !AxiosInstance) return;
 
         // Admin charge toutes les données
-        if (isAdmin) {
+        if (isAdmin || isGestionnaire) {
           // Achats - Commandes en attente
           const ordersRes = await AxiosInstance.get('/purchase-orders/?status=draft,sent', {
             headers: { Authorization: `Token ${token}` }
@@ -283,8 +338,8 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
           setInventairesEnCours(invRes.data?.length || 0);
         }
 
-        // Admin et Vendeur voient les ventes impayées
-        if (isAdmin || isVendeur) {
+        // Admin, Gestionnaire et Vendeur voient les ventes impayées
+        if (isAdmin || isGestionnaire || isVendeur) {
           const ventesRes = await AxiosInstance.get('/sales/?payment_status=pending', {
             headers: { Authorization: `Token ${token}` }
           }).catch(() => ({ data: [] }));
@@ -297,7 +352,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
     };
 
     loadData();
-  }, [role, isAdmin, isVendeur]);
+  }, [role, isAdmin, isGestionnaire, isVendeur]);
 
   // Gestion des sections
   const handleSectionToggle = (section) => {
@@ -319,55 +374,56 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
       icon: LayoutDashboard,
       items: [
         { id: 'dashboard', text: 'Dashboard', icon: LayoutDashboard, path: '/dashboard', permission: true },
-        { id: 'statistiques', text: 'Statistiques', icon: TrendingUp, path: '/statistiques', permission: isAdmin },
-        { id: 'analyses', text: 'Analyses', icon: BarChart3, path: '/analyses', permission: isAdmin }
+        { id: 'statistiques', text: 'Statistiques', icon: TrendingUp, path: '/statistiques', permission: isAdmin || isGestionnaire },
+        { id: 'analyses', text: 'Analyses', icon: BarChart3, path: '/analyses', permission: isAdmin || isGestionnaire }
       ]
     },
     {
       name: 'VENTES',
       icon: ShoppingCart,
       items: [
-        { id: 'pos', text: 'Point de Vente', icon: ShoppingBag, path: '/point-de-vente', permission: isAdmin || isVendeur },
-        { id: 'ventes', text: 'Ventes', icon: ShoppingCart, path: '/ventes', permission: isAdmin || isVendeur, badge: ventesImpayees > 0 ? ventesImpayees : 0 },
-        { id: 'clients', text: 'Clients', icon: Users, path: '/clients', permission: isAdmin || isVendeur },
-        { id: 'factures', text: 'Factures Clients', icon: Receipt, path: '/factures', permission: isAdmin || isVendeur },
-        { id: 'paiements', text: 'Paiements Clients', icon: CreditCard, path: '/paiements', permission: isAdmin || isVendeur },
-        { id: 'devis', text: 'Devis', icon: FileText, path: '/devis', permission: isAdmin || isVendeur },
-        { id: 'retours-clients', text: 'Retours Clients', icon: ReturnIcon, path: '/retours-clients', permission: isAdmin || isVendeur }
+        { id: 'pos', text: 'Point de Vente', icon: ShoppingBag, path: '/point-de-vente', permission: isAdmin || isGestionnaire || isVendeur },
+        { id: 'ventes', text: 'Ventes', icon: ShoppingCart, path: '/ventes', permission: isAdmin || isGestionnaire || isVendeur, badge: ventesImpayees > 0 ? ventesImpayees : 0 },
+        { id: 'clients', text: 'Clients', icon: Users, path: '/clients', permission: isAdmin || isGestionnaire || isVendeur },
+        { id: 'factures', text: 'Factures Clients', icon: Receipt, path: '/factures', permission: isAdmin || isGestionnaire || isVendeur },
+        { id: 'paiements', text: 'Paiements Clients', icon: CreditCard, path: '/paiements', permission: isAdmin || isGestionnaire || isVendeur },
+        { id: 'devis', text: 'Devis', icon: FileText, path: '/devis', permission: isAdmin || isGestionnaire || isVendeur },
+        { id: 'retours-clients', text: 'Retours Clients', icon: ReturnIcon, path: '/retours-clients', permission: isAdmin || isGestionnaire }
       ]
     },
     {
       name: 'PRODUITS & STOCKS',
       icon: Package,
       items: [
-        { id: 'categories', text: 'Catégories', icon: Tags, path: '/categories', permission: isAdmin },
+        { id: 'categories', text: 'Catégories', icon: Tags, path: '/categories', permission: isAdmin || isGestionnaire },
         { id: 'unites-mesure', text: 'Unités de Mesure', icon: Ruler, path: '/unites-mesure', permission: isAdmin },
-        { id: 'produits', text: 'Produits', icon: Package, path: '/produits', permission: isAdmin },
-        { id: 'stocks', text: 'Stocks', icon: Boxes, path: '/stocks', permission: isAdmin, badge: stocksFaibles > 0 ? stocksFaibles : 0 },
-        { id: 'entrepots', text: 'Entrepôts', icon: Warehouse, path: '/entrepots', permission: isAdmin },
-        { id: 'lots', text: 'Lots', icon: Layers, path: '/lots', permission: isAdmin, badge: lotsExpirant > 0 ? lotsExpirant : 0 },
-        { id: 'mouvements-stock', text: 'Mouvements Stock', icon: MoveHorizontal, path: '/mouvements-stock', permission: isAdmin },
-        { id: 'alertes-stock', text: 'Alertes Stock', icon: AlertOctagon, path: '/alertes-stock', permission: isAdmin, badge: alertesStockCount > 0 ? alertesStockCount : 0 },
-        { id: 'inventaires', text: 'Inventaires', icon: ClipboardCheck, path: '/inventaires', permission: isAdmin, badge: inventairesEnCours > 0 ? inventairesEnCours : 0 },
-        { id: 'transferts', text: 'Transferts', icon: ArrowLeftRight, path: '/transferts', permission: isAdmin }
+        { id: 'produits', text: 'Produits', icon: Package, path: '/produits', permission: isAdmin || isGestionnaire || isMagasinier },
+        { id: 'add-stock-manual', text: 'Ajout Manuel Stock', icon: PackagePlus, path: '/add-stock-manual', permission: isAdmin || isGestionnaire || isMagasinier },
+        { id: 'stocks', text: 'Stocks', icon: Boxes, path: '/stocks', permission: isAdmin || isGestionnaire || isMagasinier, badge: stocksFaibles > 0 ? stocksFaibles : 0 },
+        { id: 'entrepots', text: 'Entrepôts', icon: Warehouse, path: '/entrepots', permission: isAdmin || isGestionnaire },
+        { id: 'lots', text: 'Lots', icon: Layers, path: '/lots', permission: isAdmin || isGestionnaire || isMagasinier, badge: lotsExpirant > 0 ? lotsExpirant : 0 },
+        { id: 'mouvements-stock', text: 'Mouvements Stock', icon: MoveHorizontal, path: '/mouvements-stock', permission: isAdmin || isGestionnaire || isMagasinier },
+        { id: 'alertes-stock', text: 'Alertes Stock', icon: AlertOctagon, path: '/alertes-stock', permission: isAdmin || isGestionnaire, badge: alertesStockCount > 0 ? alertesStockCount : 0 },
+        { id: 'inventaires', text: 'Inventaires', icon: ClipboardCheck, path: '/inventaires', permission: isAdmin || isGestionnaire, badge: inventairesEnCours > 0 ? inventairesEnCours : 0 },
+        { id: 'transferts', text: 'Transferts', icon: ArrowLeftRight, path: '/transferts', permission: isAdmin || isGestionnaire }
       ]
     }
   ];
 
-  // Ajouter les sections Admin si l'utilisateur est admin
-  if (isAdmin) {
+  // Ajouter les sections Admin si l'utilisateur est admin ou gestionnaire
+  if (isAdmin || isGestionnaire) {
     // Insérer ACHATS & FOURNISSEURS
     menuSections.splice(3, 0, {
       name: 'ACHATS & FOURNISSEURS',
       icon: ShoppingBag,
       items: [
-        { id: 'fournisseurs', text: 'Fournisseurs', icon: Building2, path: '/fournisseurs', permission: isAdmin },
-        { id: 'commandes-fournisseurs', text: 'Commandes Fournisseurs', icon: FileText, path: '/commandes-fournisseurs', permission: isAdmin, badge: commandesEnAttente > 0 ? commandesEnAttente : 0 },
-        { id: 'receptions', text: 'Réceptions', icon: PackageCheck, path: '/receptions', permission: isAdmin, badge: receptionsEnAttente > 0 ? receptionsEnAttente : 0 },
-        { id: 'retours-fournisseurs', text: 'Retours Fournisseurs', icon: RotateCcw, path: '/retours-fournisseurs', permission: isAdmin, badge: retoursEnAttente > 0 ? retoursEnAttente : 0 },
-        { id: 'factures-fournisseurs', text: 'Factures Fournisseurs', icon: ReceiptIcon, path: '/factures-fournisseurs', permission: isAdmin, badge: facturesImpayees > 0 ? facturesImpayees : 0 },
-        { id: 'paiements-fournisseurs', text: 'Paiements Fournisseurs', icon: CreditCardIcon, path: '/paiements-fournisseurs', permission: isAdmin, badge: paiementsFournisseursEnAttente > 0 ? paiementsFournisseursEnAttente : 0 },
-        { id: 'dashboard-achats', text: 'Dashboard Achats', icon: BarChart, path: '/dashboard-achats', permission: isAdmin }
+        { id: 'fournisseurs', text: 'Fournisseurs', icon: Building2, path: '/fournisseurs', permission: isAdmin || isGestionnaire },
+        { id: 'commandes-fournisseurs', text: 'Commandes Fournisseurs', icon: FileText, path: '/commandes-fournisseurs', permission: isAdmin || isGestionnaire, badge: commandesEnAttente > 0 ? commandesEnAttente : 0 },
+        { id: 'receptions', text: 'Réceptions', icon: PackageCheck, path: '/receptions', permission: isAdmin || isGestionnaire, badge: receptionsEnAttente > 0 ? receptionsEnAttente : 0 },
+        { id: 'retours-fournisseurs', text: 'Retours Fournisseurs', icon: RotateCcw, path: '/retours-fournisseurs', permission: isAdmin || isGestionnaire, badge: retoursEnAttente > 0 ? retoursEnAttente : 0 },
+        { id: 'factures-fournisseurs', text: 'Factures Fournisseurs', icon: ReceiptIcon, path: '/factures-fournisseurs', permission: isAdmin || isGestionnaire || isComptable, badge: facturesImpayees > 0 ? facturesImpayees : 0 },
+        { id: 'paiements-fournisseurs', text: 'Paiements Fournisseurs', icon: CreditCardIcon, path: '/paiements-fournisseurs', permission: isAdmin || isGestionnaire || isComptable, badge: paiementsFournisseursEnAttente > 0 ? paiementsFournisseursEnAttente : 0 },
+        { id: 'dashboard-achats', text: 'Dashboard Achats', icon: BarChart, path: '/dashboard-achats', permission: isAdmin || isGestionnaire }
       ]
     });
 
@@ -376,15 +432,15 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
       name: 'FINANCES',
       icon: DollarSign,
       items: [
-        { id: 'comptes-comptables', text: 'Plan Comptable', icon: Grid3x3, path: '/comptes-comptables', permission: isAdmin },
-        { id: 'ecritures-comptables', text: 'Écritures Comptables', icon: BookOpen, path: '/ecritures-comptables', permission: isAdmin },
-        { id: 'journal-comptable', text: 'Journal Comptable', icon: ScrollText, path: '/journal-comptable', permission: isAdmin },
-        { id: 'grand-livre', text: 'Grand Livre', icon: Scale, path: '/grand-livre', permission: isAdmin },
-        { id: 'balance-generale', text: 'Balance Générale', icon: Scale, path: '/balance-generale', permission: isAdmin },
-        { id: 'budgets', text: 'Budgets', icon: PiggyBank, path: '/budgets', permission: isAdmin },
-        { id: 'depenses', text: 'Dépenses', icon: TrendingDown, path: '/depenses', permission: isAdmin },
-        { id: 'rapports-financiers', text: 'Rapports Financiers', icon: FileSpreadsheet, path: '/rapports-financiers', permission: isAdmin },
-        { id: 'dashboard-finances', text: 'Dashboard Finances', icon: PieChart, path: '/dashboard-finances', permission: isAdmin }
+        { id: 'comptes-comptables', text: 'Plan Comptable', icon: Grid3x3, path: '/comptes-comptables', permission: isAdmin || isComptable },
+        { id: 'ecritures-comptables', text: 'Écritures Comptables', icon: BookOpen, path: '/ecritures-comptables', permission: isAdmin || isComptable },
+        { id: 'journal-comptable', text: 'Journal Comptable', icon: ScrollText, path: '/journal-comptable', permission: isAdmin || isComptable },
+        { id: 'grand-livre', text: 'Grand Livre', icon: Scale, path: '/grand-livre', permission: isAdmin || isComptable },
+        { id: 'balance-generale', text: 'Balance Générale', icon: Scale, path: '/balance-generale', permission: isAdmin || isComptable },
+        { id: 'budgets', text: 'Budgets', icon: PiggyBank, path: '/budgets', permission: isAdmin || isComptable },
+        { id: 'depenses', text: 'Dépenses', icon: TrendingDown, path: '/depenses', permission: isAdmin || isComptable },
+        { id: 'rapports-financiers', text: 'Rapports Financiers', icon: FileSpreadsheet, path: '/rapports-financiers', permission: isAdmin || isComptable },
+        { id: 'dashboard-finances', text: 'Dashboard Finances', icon: PieChart, path: '/dashboard-finances', permission: isAdmin || isComptable }
       ]
     });
 
@@ -393,15 +449,15 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
       name: 'TRÉSORERIE',
       icon: Wallet,
       items: [
-        { id: 'dashboard-tresorerie', text: 'Tableau de Bord', icon: Gauge, path: '/dashboard-tresorerie', permission: isAdmin },
-        { id: 'caisses', text: 'Caisses', icon: Banknote, path: '/caisses', permission: isAdmin },
-        { id: 'comptes-bancaires', text: 'Comptes Bancaires', icon: Landmark, path: '/comptes-bancaires', permission: isAdmin },
-        { id: 'mouvements-tresorerie', text: 'Mouvements Trésorerie', icon: Coins, path: '/mouvements-tresorerie', permission: isAdmin },
-        { id: 'frais', text: 'Frais & Dépenses', icon: ReceiptText, path: '/frais', permission: isAdmin },
-        { id: 'previsions', text: 'Prévisions', icon: CalendarDays, path: '/previsions', permission: isAdmin },
-        { id: 'rapprochement-bancaire', text: 'Rapprochement Bancaire', icon: CheckCircle, path: '/rapprochement-bancaire', permission: isAdmin },
-        { id: 'tresorerie-journaliere', text: 'Trésorerie Journalière', icon: ClipboardList, path: '/tresorerie-journaliere', permission: isAdmin },
-        { id: 'alertes-tresorerie', text: 'Alertes Trésorerie', icon: AlertCircleIcon, path: '/alertes-tresorerie', permission: isAdmin }
+        { id: 'dashboard-tresorerie', text: 'Tableau de Bord', icon: Gauge, path: '/dashboard-tresorerie', permission: isAdmin || isComptable },
+        { id: 'caisses', text: 'Caisses', icon: Banknote, path: '/caisses', permission: isAdmin || isComptable },
+        { id: 'comptes-bancaires', text: 'Comptes Bancaires', icon: Landmark, path: '/comptes-bancaires', permission: isAdmin || isComptable },
+        { id: 'mouvements-tresorerie', text: 'Mouvements Trésorerie', icon: Coins, path: '/mouvements-tresorerie', permission: isAdmin || isComptable },
+        { id: 'frais', text: 'Frais & Dépenses', icon: ReceiptText, path: '/frais', permission: isAdmin || isComptable },
+        { id: 'previsions', text: 'Prévisions', icon: CalendarDays, path: '/previsions', permission: isAdmin || isComptable },
+        { id: 'rapprochement-bancaire', text: 'Rapprochement Bancaire', icon: CheckCircle, path: '/rapprochement-bancaire', permission: isAdmin || isComptable },
+        { id: 'tresorerie-journaliere', text: 'Trésorerie Journalière', icon: ClipboardList, path: '/tresorerie-journaliere', permission: isAdmin || isComptable },
+        { id: 'alertes-tresorerie', text: 'Alertes Trésorerie', icon: AlertCircleIcon, path: '/alertes-tresorerie', permission: isAdmin || isComptable }
       ]
     });
 
@@ -410,10 +466,10 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
       name: 'LIVRAISONS',
       icon: Truck,
       items: [
-        { id: 'livraisons', text: 'Livraisons', icon: TruckIcon, path: '/livraisons', permission: isAdmin },
-        { id: 'tournees', text: 'Tournées', icon: Route, path: '/tournees', permission: isAdmin },
-        { id: 'livreurs', text: 'Livreurs', icon: UserCheck, path: '/livreurs', permission: isAdmin },
-        { id: 'suivi-livraisons', text: 'Suivi Livraisons', icon: Map, path: '/suivi-livraisons', permission: isAdmin }
+        { id: 'livraisons', text: 'Livraisons', icon: TruckIcon, path: '/livraisons', permission: isAdmin || isGestionnaire },
+        { id: 'tournees', text: 'Tournées', icon: Route, path: '/tournees', permission: isAdmin || isGestionnaire },
+        { id: 'livreurs', text: 'Livreurs', icon: UserCheck, path: '/livreurs', permission: isAdmin || isGestionnaire },
+        { id: 'suivi-livraisons', text: 'Suivi Livraisons', icon: Map, path: '/suivi-livraisons', permission: isAdmin || isGestionnaire }
       ]
     });
 
@@ -423,39 +479,28 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
       icon: Settings,
       items: [
         { id: 'company-config', text: 'Configuration SODEPCI', icon: Building2, path: '/company-config', permission: isAdmin },
-        { id: 'notifications', text: 'Notifications', icon: Bell, path: '/notifications', permission: isAdmin, badge: notificationsCount > 0 ? notificationsCount : 0 },
+        { id: 'notifications', text: 'Notifications', icon: Bell, path: '/notifications', permission: isAdmin || isGestionnaire, badge: notificationsCount > 0 ? notificationsCount : 0 },
         { id: 'system-settings', text: 'Paramètres Système', icon: Cog, path: '/system-settings', permission: isAdmin },
-        { id: 'document-templates', text: 'Modèles Documents', icon: Printer, path: '/document-templates', permission: isAdmin },
+        { id: 'document-templates', text: 'Modèles Documents', icon: Printer, path: '/document-templates', permission: isAdmin || isGestionnaire },
         { id: 'backups', text: 'Sauvegardes', icon: Database, path: '/backups', permission: isAdmin },
         { id: 'audit', text: "Journal d'audit", icon: History, path: '/audit', permission: isAdmin },
         { id: 'utilisateurs', text: 'Utilisateurs', icon: Users, path: '/utilisateurs', permission: isAdmin },
         { id: 'roles', text: 'Rôles & Permissions', icon: Shield, path: '/roles', permission: isAdmin }
       ]
     });
-
-    // Insérer MON ESPACE à la fin
-    menuSections.push({
-      name: 'MON ESPACE',
-      icon: UserCircle,
-      items: [
-        { id: 'profile', text: 'Mon Profil', icon: UserCircle, path: '/profile', permission: true },
-        { id: 'my-notifications', text: 'Mes Notifications', icon: BellRing, path: '/my-notifications', permission: true, badge: notificationsCount > 0 ? notificationsCount : 0 },
-        { id: 'support', text: 'Support', icon: HelpCircle, path: '/support', permission: true },
-        { id: 'preferences', text: 'Préférences', icon: Settings, path: '/my-preferences', permission: true }
-      ]
-    });
-  } else {
-    // Si Vendeur, ajouter MON ESPACE avec support
-    menuSections.push({
-      name: 'MON ESPACE',
-      icon: UserCircle,
-      items: [
-        { id: 'profile', text: 'Mon Profil', icon: UserCircle, path: '/profile', permission: true },
-        { id: 'my-notifications', text: 'Mes Notifications', icon: BellRing, path: '/my-notifications', permission: true, badge: notificationsCount > 0 ? notificationsCount : 0 },
-        { id: 'support', text: 'Support', icon: HelpCircle, path: '/support', permission: true }
-      ]
-    });
   }
+
+  // Ajouter MON ESPACE à la fin (pour tous)
+  menuSections.push({
+    name: 'MON ESPACE',
+    icon: UserCircle,
+    items: [
+      { id: 'profile', text: 'Mon Profil', icon: UserCircle, path: '/profile', permission: true },
+      { id: 'my-notifications', text: 'Mes Notifications', icon: BellRing, path: '/my-notifications', permission: true, badge: notificationsCount > 0 ? notificationsCount : 0 },
+      { id: 'my-preferences', text: 'Mes Préférences', icon: Settings, path: '/my-preferences', permission: true },
+      { id: 'support', text: 'Support', icon: HelpCircle, path: '/support', permission: true }
+    ]
+  });
 
   // Filtrer les sections
   const visibleSections = menuSections
@@ -618,6 +663,9 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                 {isAdmin && (
                   <span className="badge badge-error badge-xs ml-1">Admin</span>
                 )}
+                {isGestionnaire && !isAdmin && (
+                  <span className="badge badge-warning badge-xs ml-1">Gestion</span>
+                )}
               </div>
 
               <button
@@ -657,6 +705,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                                 {roleConfig.label}
                               </span>
                               {isAdmin && <span className="badge badge-error badge-sm">Admin</span>}
+                              {isGestionnaire && !isAdmin && <span className="badge badge-warning badge-sm">Gestion</span>}
                             </div>
                           </div>
                         </div>
@@ -678,6 +727,14 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                         >
                           <Settings className="w-5 h-5 text-base-content/40" />
                           <span className="text-sm text-base-content">Mes préférences</span>
+                        </Link>
+                        <Link
+                          to="/support"
+                          onClick={() => setIsUserMenuOpen(false)}
+                          className="flex items-center gap-3 px-4 py-2.5 hover:bg-primary/5 transition-colors"
+                        >
+                          <HelpCircle className="w-5 h-5 text-base-content/40" />
+                          <span className="text-sm text-base-content">Support</span>
                         </Link>
                         <div className="border-t border-base-200 my-1"></div>
                         <button

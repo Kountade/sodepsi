@@ -31,6 +31,8 @@ import MouvementsStock from './components/logistique/MouvementsStock';
 import Transferts from './components/logistique/Transferts';
 import TransfertForm from './components/logistique/TransfertForm';
 import TransfertDetails from './components/logistique/TransfertDetails';
+import AddStockManual from './components/inventaire/AddStockManual';
+
 // Modules Entrepôts
 
 import FournisseursList from './components/achatsfournisseurs/FournisseursList';
@@ -271,6 +273,7 @@ function App() {
                 <Route path="/inventaire/:id" element={<InventaireDetails />} />
 
 
+<Route path="/add-stock-manual" element={<AddStockManual />} />
 <Route path="/mouvements-stock" element={<MouvementsStock />} />
               <Route path="/entrepots" element={<Entrepots />} />
 <Route path="/entrepots/nouveau" element={<EntrepotForm />} />
