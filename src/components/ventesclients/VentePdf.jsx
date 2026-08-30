@@ -170,16 +170,17 @@ const generateVentePdf = async (vente, options = {}) => {
 
     // ========== INFORMATIONS DE L'ENTREPRISE ==========
     const company = {
-      name: 'BOUTIQUE STATION SODEPCI DE PARA',
-      address: 'Station SODEPCI, Para, Côte d\'Ivoire',
-      phone1: '07 47 55 71 69',
-      phone2: '07 08 42 96 09',
-      email: 'contact@sodepci.ci',
-      rccm: '2025/CI/001',
-      nif: '123456789',
-      capital: '100 000 000',
-      bank_name: 'BANQUE NATIONALE D\'INVESTISSEMENT',
-      bank_account: 'BNI-001-1234567',
+      name: 'BOUTIQUE STATION SODEPCI',
+      address: 'PARA EN FACE DU GRAND HOPITAL DE PARA',
+      phone1: '070 84 26 909',
+      phone2: '074 75 57 169',
+      gérant: 'ZAKARIA',
+      email: '',
+      rccm: '',
+      nif: '',
+      capital: '',
+      bank_name: '',
+      bank_account: '',
       bank_currency: 'FCFA'
     };
 
@@ -244,9 +245,9 @@ const generateVentePdf = async (vente, options = {}) => {
     doc.setFontSize(7.5);
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(84, 110, 122);
-    doc.text(`S.A.R.L au capital de ${company.capital}`, textStartX, y + 12);
-    doc.text(`RC: ${company.rccm} - NIF: ${company.nif}`, textStartX, y + 16.5);
-    doc.text(company.address.toUpperCase(), textStartX, y + 21);
+    doc.text(company.address.toUpperCase(), textStartX, y + 12);
+    doc.text(`Tél: ${company.phone1} / ${company.phone2}`, textStartX, y + 16.5);
+    doc.text(`Gérant: ${company.gérant}`, textStartX, y + 21);
     
     // Titre du document
     const titleX = pageWidth - margins.right;
@@ -575,7 +576,7 @@ const generateVentePdf = async (vente, options = {}) => {
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(120, 144, 156);
     doc.text(company.name, signatureX2 + (signatureWidth / 2), signatureY + 12, { align: 'center' });
-    doc.text('Responsable commercial', signatureX2 + (signatureWidth / 2), signatureY + 18, { align: 'center' });
+    doc.text(`Gérant: ${company.gérant}`, signatureX2 + (signatureWidth / 2), signatureY + 18, { align: 'center' });
 
     y = signatureY + 24;
 
@@ -591,12 +592,12 @@ const generateVentePdf = async (vente, options = {}) => {
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(120, 144, 156);
     doc.text(company.name, pageWidth / 2, footerY, { align: 'center' });
-    doc.text(`Tél: ${company.phone1} / ${company.phone2} - Email: ${company.email}`, pageWidth / 2, footerY + 4, { align: 'center' });
-    doc.text(`RC: ${company.rccm} - NIF: ${company.nif}`, pageWidth / 2, footerY + 8, { align: 'center' });
+    doc.text(`Tél: ${company.phone1} / ${company.phone2}`, pageWidth / 2, footerY + 4, { align: 'center' });
+    doc.text(company.address, pageWidth / 2, footerY + 8, { align: 'center' });
     
     doc.setFontSize(6);
     doc.setTextColor(160, 160, 170);
-    doc.text(`Compte bancaire: ${company.bank_name} - ${company.bank_account}`, pageWidth / 2, footerY + 13, { align: 'center' });
+    doc.text(`Gérant: ${company.gérant}`, pageWidth / 2, footerY + 13, { align: 'center' });
     doc.text('Merci pour votre confiance', pageWidth / 2, footerY + 17, { align: 'center' });
 
     // ================================================================
