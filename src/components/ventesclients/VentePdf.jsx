@@ -172,7 +172,7 @@ const generateVentePdf = async (vente, options = {}) => {
     const company = {
       name: 'BOUTIQUE STATION SODEPCI',
       address: 'PARA EN FACE DU GRAND HOPITAL DE PARA',
-      phone1: '070 84 26 909',
+      phone1: '070 84 29 609',
       phone2: '074 75 57 169',
       gérant: 'ZAKARIA',
       email: '',
