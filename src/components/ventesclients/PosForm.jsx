@@ -1,6 +1,6 @@
 // src/components/pos/PosForm.jsx
 // ============================================================
-// VERSION AVEC GESTION DES PRIX DÉTAIL/GROS
+// VERSION CORRIGEE - BOUTON VALIDER FONCTIONNEL
 // ============================================================
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -8,17 +8,19 @@ import { useNavigate } from 'react-router-dom';
 import AxiosInstance from '../AxiosInstance';
 import {
   Plus, Minus, Trash2, Search, RefreshCw, Filter,
-  ShoppingCart, X, AlertCircle, CheckCircle, Eye,
+  ShoppingCart, X, AlertCircle, CheckCircle,
   ChevronLeft, ChevronRight, ArrowUpDown, LayoutGrid, List,
-  Package, AlertTriangle, Clock, DollarSign, Warehouse,
-  User, CreditCard, Phone, Receipt, Loader,
-  Check, Box, Settings, LogOut, Percent, Barcode,
+  Package, AlertTriangle, Warehouse,
+  User, Receipt, Loader,
+  Check, Barcode,
   Save, Tag, Layers
 } from 'lucide-react';
 
 const PosForm = () => {
   const navigate = useNavigate();
   const searchInputRef = useRef(null);
+  const barcodeInputRef = useRef(null);
+  const validateButtonRef = useRef(null);
 
   // États
   const [loading, setLoading] = useState(true);
@@ -40,14 +42,17 @@ const PosForm = () => {
   const [sortField, setSortField] = useState('name');
   const [sortDirection, setSortDirection] = useState('asc');
   const [newCustomer, setNewCustomer] = useState({ first_name: '', last_name: '', phone: '', email: '' });
-  
-  // ✅ NOUVEAU : Type de prix par défaut pour le POS
-  const [priceType, setPriceType] = useState('detail'); // 'detail' ou 'gros'
+  const [priceType, setPriceType] = useState('detail');
+  const [barcodeValue, setBarcodeValue] = useState('');
+  const [isBarcodeFocused, setIsBarcodeFocused] = useState(false);
+  const [lastBarcode, setLastBarcode] = useState('');
+  const [editingQuantity, setEditingQuantity] = useState(null);
+  const [quantityInput, setQuantityInput] = useState('');
 
   const getToken = () => localStorage.getItem('Token');
 
   // ============================================================
-  // 1. Chargement des données
+  // 1. CHARGEMENT DES DONNEES
   // ============================================================
   const getImageUrl = (imagePath) => {
     if (!imagePath) return null;
@@ -82,14 +87,13 @@ const PosForm = () => {
         AxiosInstance.get('/warehouses/?active=true', { headers })
       ]);
 
-      // ✅ Récupérer tous les prix : selling_price ET wholesale_price
       const productsWithData = (productsRes.data || []).map(product => ({
         ...product,
         image_url: product.image_url || getImageUrl(product.image),
         stock_quantity: product.current_stock || 0,
         selling_price: parseFloat(product.selling_price) || 0,
         wholesale_price: parseFloat(product.wholesale_price) || 0,
-        // Prix affiché selon le type sélectionné
+        barcode: product.barcode || '',
         display_price: priceType === 'gros' 
           ? (parseFloat(product.wholesale_price) || parseFloat(product.selling_price) || 0)
           : (parseFloat(product.selling_price) || 0)
@@ -114,10 +118,13 @@ const PosForm = () => {
 
   useEffect(() => {
     fetchData();
-    setTimeout(() => searchInputRef.current?.focus(), 500);
+    setTimeout(() => {
+      if (barcodeInputRef.current) {
+        barcodeInputRef.current.focus();
+      }
+    }, 500);
   }, []);
 
-  // ✅ Mettre à jour l'affichage quand le type de prix change
   useEffect(() => {
     setProducts(prevProducts => 
       prevProducts.map(product => ({
@@ -130,7 +137,56 @@ const PosForm = () => {
   }, [priceType]);
 
   // ============================================================
-  // 2. Filtrage et tri des produits
+  // 2. GESTION DU CODE-BARRES - SCAN AUTOMATIQUE
+  // ============================================================
+  const handleBarcodeScan = (e) => {
+    const value = e.target.value.trim();
+    setBarcodeValue(value);
+
+    if (value.length >= 8) {
+      if (value === lastBarcode) {
+        return;
+      }
+
+      const product = products.find(p => p.barcode === value);
+      
+      if (product) {
+        addToCart(product);
+        setBarcodeValue('');
+        e.target.value = '';
+        setLastBarcode(value);
+        showNotification(`${product.name} ajoute au panier (${priceType === 'gros' ? 'Gros' : 'Detail'})`, 'success');
+        
+        if (navigator.vibrate) {
+          navigator.vibrate(100);
+        }
+      } else {
+        showNotification(`Code-barres "${value}" non trouve`, 'error');
+        setTimeout(() => {
+          e.target.select();
+        }, 100);
+      }
+    }
+  };
+
+  const handleBarcodeKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      const value = e.target.value.trim();
+      if (value.length >= 8) {
+        handleBarcodeScan(e);
+      } else {
+        showNotification('Code-barres trop court', 'error');
+      }
+      e.preventDefault();
+    }
+    // Ne pas capturer Enter pour le focus
+    if (e.key === 'Enter') {
+      e.stopPropagation();
+    }
+  };
+
+  // ============================================================
+  // 3. FILTRAGE ET TRI DES PRODUITS
   // ============================================================
   const filteredProducts = React.useMemo(() => {
     let filtered = products;
@@ -178,35 +234,41 @@ const PosForm = () => {
   );
 
   // ============================================================
-  // 3. Gestion du panier
+  // 4. GESTION DU PANIER AVEC QUANTITE MODIFIABLE
   // ============================================================
   const addToCart = (product, quantity = 1) => {
     if (product.stock_quantity <= 0) {
-      showNotification(`Stock épuisé pour ${product.name}`, 'error');
+      showNotification(`Stock epuise pour ${product.name}`, 'error');
       return;
     }
 
-    // ✅ Utiliser le bon prix selon le type sélectionné
     const unitPrice = priceType === 'gros'
       ? (product.wholesale_price || product.selling_price || 0)
       : (product.selling_price || 0);
 
     if (unitPrice <= 0) {
-      showNotification(`Prix non défini pour ${product.name}`, 'error');
+      showNotification(`Prix non defini pour ${product.name}`, 'error');
       return;
     }
 
     const existingIndex = cart.findIndex(item => item.product.id === product.id);
+    let currentQty = 0;
+    if (existingIndex !== -1) {
+      currentQty = cart[existingIndex].quantity;
+    }
+    
+    const totalQty = currentQty + quantity;
+    if (totalQty > product.stock_quantity) {
+      showNotification(`Stock insuffisant pour ${product.name}`, 'error');
+      return;
+    }
+
     if (existingIndex !== -1) {
       const newCart = [...cart];
-      const newQty = newCart[existingIndex].quantity + quantity;
-      if (newQty > product.stock_quantity) {
-        showNotification(`Stock insuffisant pour ${product.name}`, 'error');
-        return;
-      }
-      newCart[existingIndex].quantity = newQty;
+      newCart[existingIndex].quantity = totalQty;
       newCart[existingIndex].unit_price = unitPrice;
-      newCart[existingIndex].total = newQty * unitPrice;
+      newCart[existingIndex].price_type = priceType;
+      newCart[existingIndex].total = totalQty * unitPrice;
       setCart(newCart);
     } else {
       setCart([...cart, {
@@ -214,11 +276,33 @@ const PosForm = () => {
         product: product,
         quantity: quantity,
         unit_price: unitPrice,
-        price_type: priceType, // ✅ Stocker le type de prix utilisé
+        price_type: priceType,
         total: unitPrice * quantity
       }]);
     }
-    showNotification(`${product.name} ajouté au panier (${priceType === 'gros' ? 'Gros' : 'Détail'})`, 'success');
+  };
+
+  const updateCartQuantityDirect = (itemId, newQuantity) => {
+    const itemIndex = cart.findIndex(i => i.id === itemId);
+    if (itemIndex === -1) return;
+
+    let qty = parseInt(newQuantity);
+    if (isNaN(qty) || qty < 1) {
+      qty = 1;
+    }
+
+    const product = cart[itemIndex].product;
+    if (qty > product.stock_quantity) {
+      showNotification(`Stock insuffisant pour ${product.name}`, 'error');
+      return;
+    }
+
+    const newCart = [...cart];
+    newCart[itemIndex].quantity = qty;
+    newCart[itemIndex].total = qty * newCart[itemIndex].unit_price;
+    setCart(newCart);
+    setEditingQuantity(null);
+    setQuantityInput('');
   };
 
   const updateCartQuantity = (itemId, delta) => {
@@ -241,6 +325,30 @@ const PosForm = () => {
     setCart(newCart);
   };
 
+  const startQuantityEdit = (itemId, currentQuantity) => {
+    setEditingQuantity(itemId);
+    setQuantityInput(String(currentQuantity));
+    setTimeout(() => {
+      const input = document.getElementById(`qty-input-${itemId}`);
+      if (input) {
+        input.focus();
+        input.select();
+      }
+    }, 50);
+  };
+
+  const handleQuantityKeyDown = (e, itemId) => {
+    if (e.key === 'Enter') {
+      updateCartQuantityDirect(itemId, e.target.value);
+      e.preventDefault();
+    }
+    if (e.key === 'Escape') {
+      setEditingQuantity(null);
+      setQuantityInput('');
+      e.preventDefault();
+    }
+  };
+
   const removeCartItem = (itemId) => {
     setCart(cart.filter(i => i.id !== itemId));
   };
@@ -249,11 +357,12 @@ const PosForm = () => {
     if (cart.length === 0) return;
     if (window.confirm('Vider le panier ?')) {
       setCart([]);
+      showNotification('Panier vide', 'success');
     }
   };
 
   // ============================================================
-  // 4. Calcul des totaux
+  // 5. CALCUL DES TOTAUX
   // ============================================================
   const totals = React.useMemo(() => {
     const subtotal = cart.reduce((sum, item) => sum + item.total, 0);
@@ -263,16 +372,21 @@ const PosForm = () => {
   }, [cart]);
 
   // ============================================================
-  // 5. VALIDER LA VENTE - AVEC PRICE_TYPE
+  // 6. VALIDATION DE LA VENTE - CORRIGEE
   // ============================================================
   const validateSale = async () => {
+    // Empêcher le focus sur le champ barcode
+    if (barcodeInputRef.current) {
+      barcodeInputRef.current.blur();
+    }
+
     if (cart.length === 0) {
       showNotification('Ajoutez au moins un produit au panier', 'error');
       return;
     }
 
     if (!selectedWarehouse) {
-      showNotification('Sélectionnez un entrepôt', 'error');
+      showNotification('Selectionnez un entrepot', 'error');
       return;
     }
 
@@ -281,7 +395,7 @@ const PosForm = () => {
     try {
       const token = getToken();
       if (!token) {
-        showNotification('Session expirée', 'error');
+        showNotification('Session expiree', 'error');
         setTimeout(() => navigate('/login'), 2000);
         return;
       }
@@ -316,27 +430,28 @@ const PosForm = () => {
           unit_price: item.unit_price,
           discount: 0,
           tax_rate: 0,
-          price_type: item.price_type || 'detail' // ✅ Envoyer le type de prix
+          price_type: item.price_type || 'detail'
         }))
       };
-
-      console.log('📤 Données POS (validation):', dataToSend);
 
       const response = await AxiosInstance.post('/sales/', dataToSend, {
         headers: { 'Authorization': `Token ${token}` }
       });
 
-      showNotification(`Vente ${response.data.invoice_number} enregistrée avec succès !`, 'success');
+      showNotification(`Vente ${response.data.invoice_number} enregistree avec succes !`, 'success');
       
       setCart([]);
       setSelectedCustomer(null);
       
+      // Ne pas re-focus automatiquement sur le barcode
+      // Laisse l'utilisateur naviguer
+
       setTimeout(() => {
         navigate(`/ventes/${response.data.id}`);
-      }, 1500);
+      }, 2000);
 
     } catch (error) {
-      console.error('❌ Erreur validation:', error);
+      console.error('Erreur validation:', error);
       
       let errorMessage = 'Erreur lors de l\'enregistrement';
       
@@ -359,15 +474,17 @@ const PosForm = () => {
       
       showNotification(errorMessage, 'error');
       setSubmitting(false);
+    } finally {
+      setSubmitting(false);
     }
   };
 
   // ============================================================
-  // 6. Gestion des clients
+  // 7. GESTION DES CLIENTS
   // ============================================================
   const handleCreateCustomer = async () => {
     if (!newCustomer.first_name || !newCustomer.last_name) {
-      showNotification('Nom et prénom requis', 'error');
+      showNotification('Nom et prenom requis', 'error');
       return;
     }
 
@@ -392,15 +509,15 @@ const PosForm = () => {
       setSelectedCustomer(response.data);
       setShowCustomerModal(false);
       setNewCustomer({ first_name: '', last_name: '', phone: '', email: '' });
-      showNotification('Client créé avec succès', 'success');
+      showNotification('Client cree avec succes', 'success');
     } catch (error) {
-      console.error('Erreur création client:', error);
-      showNotification('Erreur lors de la création du client', 'error');
+      console.error('Erreur creation client:', error);
+      showNotification('Erreur lors de la creation du client', 'error');
     }
   };
 
   // ============================================================
-  // 7. Notification
+  // 8. NOTIFICATION
   // ============================================================
   const showNotification = (message, type = 'success') => {
     setNotification({ show: true, message, type });
@@ -408,7 +525,7 @@ const PosForm = () => {
   };
 
   // ============================================================
-  // 8. Formatage
+  // 9. FORMATAGE
   // ============================================================
   const formatPrice = (price) => {
     if (!price) return '0 FCFA';
@@ -445,7 +562,7 @@ const PosForm = () => {
   };
 
   // ============================================================
-  // 9. Rendu
+  // 10. RENDU
   // ============================================================
   if (loading) {
     return (
@@ -479,21 +596,14 @@ const PosForm = () => {
       {showCustomerModal && (
         <div className="modal modal-open">
           <div className="modal-box max-w-md">
-            <h3 className="font-bold text-lg mb-4">Sélectionner un client</h3>
+            <h3 className="font-bold text-lg mb-4">Selectionner un client</h3>
             
             <div className="form-control mb-3">
               <label className="label label-text">Rechercher un client</label>
               <input
                 type="text"
                 className="input input-bordered"
-                placeholder="Nom, téléphone..."
-                onChange={(e) => {
-                  const term = e.target.value.toLowerCase();
-                  const filtered = customers.filter(c => 
-                    c.name?.toLowerCase().includes(term) ||
-                    c.phone?.includes(term)
-                  );
-                }}
+                placeholder="Nom, telephone..."
               />
             </div>
 
@@ -505,7 +615,7 @@ const PosForm = () => {
                   onClick={() => {
                     setSelectedCustomer(customer);
                     setShowCustomerModal(false);
-                    showNotification(`Client ${customer.name} sélectionné`, 'success');
+                    showNotification(`Client ${customer.name} selectionne`, 'success');
                   }}
                 >
                   <User className="w-5 h-5 text-primary" />
@@ -517,13 +627,13 @@ const PosForm = () => {
               ))}
             </div>
 
-            <div className="divider">Créer un nouveau client</div>
+            <div className="divider">Creer un nouveau client</div>
             
             <div className="grid grid-cols-2 gap-2">
               <input
                 type="text"
                 className="input input-bordered"
-                placeholder="Prénom"
+                placeholder="Prenom"
                 value={newCustomer.first_name}
                 onChange={(e) => setNewCustomer({...newCustomer, first_name: e.target.value})}
               />
@@ -537,7 +647,7 @@ const PosForm = () => {
               <input
                 type="text"
                 className="input input-bordered col-span-2"
-                placeholder="Téléphone"
+                placeholder="Telephone"
                 value={newCustomer.phone}
                 onChange={(e) => setNewCustomer({...newCustomer, phone: e.target.value})}
               />
@@ -553,20 +663,20 @@ const PosForm = () => {
             <div className="modal-action">
               <button className="btn btn-ghost" onClick={() => setShowCustomerModal(false)}>Fermer</button>
               <button className="btn btn-primary" onClick={handleCreateCustomer}>
-                <User className="w-4 h-4" /> Créer le client
+                <User className="w-4 h-4" /> Creer le client
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* En-tête */}
+      {/* En-tete */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div>
           <h1 className="text-4xl font-black text-base-content bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
             Point de Vente
           </h1>
-          <p className="text-base text-base-content/60">Vente rapide et intuitive</p>
+          <p className="text-base text-base-content/60">Vente rapide - Scannez les produits</p>
         </div>
         
         <div className="flex flex-wrap gap-3">
@@ -579,7 +689,80 @@ const PosForm = () => {
         </div>
       </div>
 
-      {/* Sélecteur d'entrepôt et client + TYPE DE PRIX */}
+      {/* SCANNER DE CODE-BARRES */}
+      <div className="bg-base-100 rounded-xl shadow-md border border-base-300 p-4 lg:p-6">
+        <div className="flex flex-col lg:flex-row gap-4">
+          <div className="flex-1">
+            <div className="relative">
+              <div className="absolute left-4 top-1/2 -translate-y-1/2">
+                <Barcode className="w-5 h-5 text-primary" />
+              </div>
+              <input
+                ref={barcodeInputRef}
+                type="text"
+                placeholder="Scanner un code-barres ici..."
+                className="input input-bordered w-full pl-12 text-lg font-mono bg-base-200 border-2 border-primary/30 focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
+                value={barcodeValue}
+                onChange={handleBarcodeScan}
+                onKeyDown={handleBarcodeKeyDown}
+                onFocus={() => setIsBarcodeFocused(true)}
+                onBlur={() => setIsBarcodeFocused(false)}
+                autoFocus
+              />
+              {barcodeValue.length > 0 && (
+                <button
+                  className="absolute right-3 top-1/2 -translate-y-1/2 btn btn-ghost btn-xs btn-circle"
+                  onClick={() => {
+                    setBarcodeValue('');
+                    if (barcodeInputRef.current) {
+                      barcodeInputRef.current.value = '';
+                      barcodeInputRef.current.focus();
+                    }
+                  }}
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+            <div className="mt-2 flex items-center gap-4 text-xs text-base-content/50">
+              <span>Scannez un code-barres pour ajouter automatiquement le produit</span>
+              <span className="badge badge-ghost">Support lecteurs USB</span>
+              <span className="badge badge-ghost">Entree pour valider</span>
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-2">
+            <div className="flex rounded-lg border border-gray-200 overflow-hidden">
+              <button
+                type="button"
+                className={`px-3 py-2 text-sm font-medium transition-colors flex items-center gap-1 ${
+                  priceType === 'detail'
+                    ? 'bg-primary text-white'
+                    : 'bg-white text-gray-600 hover:bg-gray-100'
+                }`}
+                onClick={() => setPriceType('detail')}
+              >
+                <Tag className="w-4 h-4" />
+                Detail
+              </button>
+              <button
+                type="button"
+                className={`px-3 py-2 text-sm font-medium transition-colors flex items-center gap-1 ${
+                  priceType === 'gros'
+                    ? 'bg-primary text-white'
+                    : 'bg-white text-gray-600 hover:bg-gray-100'
+                }`}
+                onClick={() => setPriceType('gros')}
+              >
+                <Layers className="w-4 h-4" />
+                Gros
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Selection entrepot et client */}
       <div className="bg-base-100 rounded-xl shadow-md border border-base-300 p-4 lg:p-6">
         <div className="flex flex-col lg:flex-row gap-4">
           <div className="flex-1 flex items-center gap-3">
@@ -592,7 +775,7 @@ const PosForm = () => {
                 setSelectedWarehouse(warehouse);
               }}
             >
-              <option value="">Sélectionner un entrepôt</option>
+              <option value="">Selectionner un entrepot</option>
               {warehouses.map(w => (
                 <option key={w.id} value={w.id}>
                   {w.name} ({w.code})
@@ -600,7 +783,7 @@ const PosForm = () => {
               ))}
             </select>
             {!selectedWarehouse && (
-              <span className="text-xs text-error">⚠️ Entrepôt requis</span>
+              <span className="text-xs text-error">Entrepot requis</span>
             )}
           </div>
           
@@ -624,36 +807,6 @@ const PosForm = () => {
                 <X className="w-4 h-4" />
               </button>
             )}
-          </div>
-
-          {/* ✅ SÉLECTEUR DE TYPE DE PRIX - NOUVEAU */}
-          <div className="flex items-center gap-2">
-            <div className="flex rounded-lg border border-gray-200 overflow-hidden">
-              <button
-                type="button"
-                className={`px-3 py-2 text-sm font-medium transition-colors flex items-center gap-1 ${
-                  priceType === 'detail'
-                    ? 'bg-primary text-white'
-                    : 'bg-white text-gray-600 hover:bg-gray-100'
-                }`}
-                onClick={() => setPriceType('detail')}
-              >
-                <Tag className="w-4 h-4" />
-                Détail
-              </button>
-              <button
-                type="button"
-                className={`px-3 py-2 text-sm font-medium transition-colors flex items-center gap-1 ${
-                  priceType === 'gros'
-                    ? 'bg-primary text-white'
-                    : 'bg-white text-gray-600 hover:bg-gray-100'
-                }`}
-                onClick={() => setPriceType('gros')}
-              >
-                <Layers className="w-4 h-4" />
-                Gros
-              </button>
-            </div>
           </div>
         </div>
       </div>
@@ -687,7 +840,7 @@ const PosForm = () => {
                 setCurrentPage(1);
               }}
             >
-              <option value="">Toutes catégories</option>
+              <option value="">Toutes categories</option>
               {categories.map(cat => (
                 <option key={cat.id} value={cat.id}>{cat.name}</option>
               ))}
@@ -699,7 +852,7 @@ const PosForm = () => {
               onChange={(e) => setSortField(e.target.value)}
             >
               <option value="name">Trier par nom</option>
-              <option value="selling_price">Trier par prix détail</option>
+              <option value="selling_price">Trier par prix detail</option>
               <option value="wholesale_price">Trier par prix gros</option>
               <option value="stock_quantity">Trier par stock</option>
             </select>
@@ -720,7 +873,7 @@ const PosForm = () => {
               }}
             >
               <Filter className="w-4 h-4" />
-              Réinitialiser
+              Reinitialiser
             </button>
             
             <div className="join">
@@ -745,26 +898,32 @@ const PosForm = () => {
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         {/* Produits */}
         <div className="lg:col-span-3 bg-base-100 rounded-xl shadow-xl border border-base-300 overflow-hidden">
-          {/* ✅ AFFICHAGE DU TYPE DE PRIX ACTIF */}
           <div className="p-3 bg-base-200 border-b border-base-300 flex items-center justify-between">
             <span className="text-sm font-medium">
               <Tag className="w-4 h-4 inline mr-2 text-primary" />
-              Prix affiché : <strong>{priceType === 'gros' ? 'Gros' : 'Détail'}</strong>
+              Prix affiche : <strong>{priceType === 'gros' ? 'Gros' : 'Detail'}</strong>
+              <span className="ml-4 text-xs text-base-content/40">
+                ({sortedProducts.length} produits disponibles)
+              </span>
             </span>
             <span className="text-xs text-base-content/60">
-              {sortedProducts.length} produits disponibles
+              <Barcode className="w-3 h-3 inline mr-1" />
+              Scan rapide avec le champ ci-dessus
             </span>
           </div>
 
           {paginatedProducts.length === 0 ? (
             <div className="p-12 text-center">
               <Package className="w-20 h-20 mx-auto mb-4 text-base-content/20" />
-              <p className="text-base-content/60 text-lg">Aucun produit trouvé</p>
+              <p className="text-base-content/60 text-lg">Aucun produit trouve</p>
               <button 
                 className="btn btn-primary mt-4"
                 onClick={() => {
                   setSearchTerm('');
                   setSelectedCategory('');
+                  if (barcodeInputRef.current) {
+                    barcodeInputRef.current.focus();
+                  }
                 }}
               >
                 Voir tous les produits
@@ -779,7 +938,7 @@ const PosForm = () => {
                   onClick={() => addToCart(product)}
                 >
                   <div className="card-body p-3 text-center">
-                    <div className="w-full h-24 bg-base-300 rounded-lg flex items-center justify-center mb-2 overflow-hidden">
+                    <div className="w-full h-24 bg-base-300 rounded-lg flex items-center justify-center mb-2 overflow-hidden relative">
                       {product.image_url ? (
                         <img 
                           src={product.image_url} 
@@ -792,11 +951,15 @@ const PosForm = () => {
                       ) : (
                         <Package className="w-12 h-12 text-base-content/30" />
                       )}
+                      {product.barcode && (
+                        <div className="absolute top-1 right-1 bg-primary/80 text-white text-[8px] px-1 rounded">
+                          <Barcode className="w-3 h-3 inline" />
+                        </div>
+                      )}
                     </div>
                     <div className="font-medium text-sm truncate">{product.name}</div>
                     <div className="text-xs text-base-content/40 truncate">{product.code}</div>
                     
-                    {/* ✅ AFFICHAGE DES DEUX PRIX */}
                     <div className="text-xs text-base-content/50">
                       <span className="line-through">{formatPrice(product.selling_price)}</span>
                       {product.wholesale_price > 0 && (
@@ -804,14 +967,13 @@ const PosForm = () => {
                       )}
                     </div>
                     
-                    {/* ✅ PRIX AFFICHÉ SELON LE TYPE */}
                     <div className="text-lg font-bold text-primary">
                       {formatPrice(product.display_price)}
                     </div>
                     
                     <div className="flex items-center justify-center gap-2 mt-1">
                       {getStatusBadge(product)}
-                      <span className="text-xs text-base-content/40">{product.stock_quantity} unités</span>
+                      <span className="text-xs text-base-content/40">{product.stock_quantity} unites</span>
                     </div>
                     <button 
                       className="btn btn-primary btn-sm w-full mt-2 gap-1"
@@ -833,7 +995,8 @@ const PosForm = () => {
                   <tr>
                     <th>Produit</th>
                     <th>Code</th>
-                    <th>Prix détail</th>
+                    <th>Code-barres</th>
+                    <th>Prix detail</th>
                     <th>Prix gros</th>
                     <th>Stock</th>
                     <th>Statut</th>
@@ -863,6 +1026,15 @@ const PosForm = () => {
                         </div>
                       </td>
                       <td>{product.code}</td>
+                      <td>
+                        {product.barcode ? (
+                          <span className="badge badge-ghost gap-1 text-xs font-mono">
+                            <Barcode className="w-3 h-3" /> {product.barcode}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-base-content/30">-</span>
+                        )}
+                      </td>
                       <td className="font-semibold">{formatPrice(product.selling_price)}</td>
                       <td className="font-semibold text-primary">
                         {product.wholesale_price > 0 ? formatPrice(product.wholesale_price) : '-'}
@@ -888,7 +1060,7 @@ const PosForm = () => {
           {totalPages > 1 && (
             <div className="flex items-center justify-between p-4 border-t border-base-300">
               <div className="text-sm text-base-content/60">
-                Affichage de {((currentPage - 1) * itemsPerPage) + 1} à {Math.min(currentPage * itemsPerPage, sortedProducts.length)} sur {sortedProducts.length}
+                Affichage de {((currentPage - 1) * itemsPerPage) + 1} a {Math.min(currentPage * itemsPerPage, sortedProducts.length)} sur {sortedProducts.length}
               </div>
               <div className="join">
                 <button 
@@ -928,7 +1100,7 @@ const PosForm = () => {
           )}
         </div>
 
-        {/* Panier */}
+        {/* Panier avec quantite modifiable */}
         <div className="lg:col-span-1 bg-base-100 rounded-xl shadow-xl border border-base-300 p-4 flex flex-col h-[600px]">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-bold flex items-center gap-2">
@@ -945,31 +1117,68 @@ const PosForm = () => {
             </button>
           </div>
 
-          {/* Liste du panier */}
+          {/* Liste du panier avec quantite modifiable */}
           <div className="flex-1 overflow-y-auto space-y-2">
             {cart.map(item => (
-              <div key={item.id} className="bg-base-200 rounded-lg p-3">
+              <div key={item.id} className="bg-base-200 rounded-lg p-3 border border-base-300/50">
                 <div className="flex justify-between items-start">
-                  <div className="flex-1">
-                    <div className="font-medium text-sm truncate">{item.product.name}</div>
-                    <div className="text-xs text-base-content/40">{item.product.code}</div>
-                    {/* ✅ AFFICHAGE DU TYPE DE PRIX DANS LE PANIER */}
-                    <div className="text-xs">
-                      <span className={`badge ${item.price_type === 'gros' ? 'badge-primary' : 'badge-ghost'}`}>
-                        {item.price_type === 'gros' ? 'Gros' : 'Détail'}
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-sm truncate flex items-center gap-2">
+                      {item.product.name}
+                      {item.product.barcode && (
+                        <span className="badge badge-ghost text-[8px] gap-0.5">
+                          <Barcode className="w-3 h-3" />
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-xs text-base-content/40 truncate">{item.product.code}</div>
+                    <div className="text-xs flex items-center gap-2 flex-wrap">
+                      <span className={`badge ${item.price_type === 'gros' ? 'badge-primary' : 'badge-ghost'} text-[10px]`}>
+                        {item.price_type === 'gros' ? 'Gros' : 'Detail'}
                       </span>
-                      <span className="ml-2 font-semibold text-primary">
-                        {formatPrice(item.unit_price)}/unité
+                      <span className="font-semibold text-primary text-xs">
+                        {formatPrice(item.unit_price)}/unite
                       </span>
                     </div>
-                    <div className="flex items-center gap-2 mt-1">
+                    
+                    {/* Controle de quantite modifiable */}
+                    <div className="flex items-center gap-2 mt-2">
                       <button 
                         className="btn btn-ghost btn-xs btn-circle"
                         onClick={() => updateCartQuantity(item.id, -1)}
                       >
                         <Minus className="w-3 h-3" />
                       </button>
-                      <span className="font-bold w-6 text-center text-sm">{item.quantity}</span>
+                      
+                      {editingQuantity === item.id ? (
+                        <input
+                          id={`qty-input-${item.id}`}
+                          type="number"
+                          min="1"
+                          max={item.product.stock_quantity}
+                          className="input input-bordered input-xs w-16 text-center font-bold"
+                          value={quantityInput}
+                          onChange={(e) => setQuantityInput(e.target.value)}
+                          onKeyDown={(e) => handleQuantityKeyDown(e, item.id)}
+                          onBlur={() => {
+                            if (quantityInput) {
+                              updateCartQuantityDirect(item.id, quantityInput);
+                            } else {
+                              setEditingQuantity(null);
+                              setQuantityInput('');
+                            }
+                          }}
+                        />
+                      ) : (
+                        <span 
+                          className="font-bold w-12 text-center text-sm cursor-pointer hover:text-primary transition-colors"
+                          onClick={() => startQuantityEdit(item.id, item.quantity)}
+                          title="Cliquer pour modifier"
+                        >
+                          {item.quantity}
+                        </span>
+                      )}
+                      
                       <button 
                         className="btn btn-ghost btn-xs btn-circle"
                         onClick={() => updateCartQuantity(item.id, 1)}
@@ -978,7 +1187,7 @@ const PosForm = () => {
                       </button>
                     </div>
                   </div>
-                  <div className="text-right">
+                  <div className="text-right ml-2">
                     <div className="font-bold text-primary text-sm">{formatPrice(item.total)}</div>
                     <button 
                       className="btn btn-ghost btn-xs text-error"
@@ -995,17 +1204,22 @@ const PosForm = () => {
               <div className="text-center py-12">
                 <ShoppingCart className="w-12 h-12 mx-auto mb-3 text-base-content/20" />
                 <p className="text-base-content/40">Panier vide</p>
-                <p className="text-xs text-base-content/30">Ajoutez des produits</p>
+                <p className="text-xs text-base-content/30">Scannez un produit ou ajoutez-le manuellement</p>
+                <div className="mt-4 flex justify-center">
+                  <div className="animate-pulse">
+                    <Barcode className="w-8 h-8 text-base-content/20" />
+                  </div>
+                </div>
               </div>
             )}
           </div>
 
-          {/* Totaux et validation */}
+          {/* Totaux et validation - BOUTON VALIDER CORRIGE */}
           <div className="border-t border-base-300 pt-4 mt-4">
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
                 <span className="text-base-content/60">Sous-total</span>
-                <span>{formatPrice(totals.subtotal)}</span>
+                <span className="font-semibold">{formatPrice(totals.subtotal)}</span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-base-content/60">TVA (0%)</span>
@@ -1017,9 +1231,16 @@ const PosForm = () => {
               </div>
             </div>
 
+            {/* BOUTON VALIDER - CORRIGE */}
             <button 
+              ref={validateButtonRef}
+              type="button"
               className="btn btn-primary w-full mt-4 h-14 text-lg gap-2"
-              onClick={validateSale}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                validateSale();
+              }}
               disabled={cart.length === 0 || !selectedWarehouse || submitting}
             >
               {submitting ? (
@@ -1031,12 +1252,18 @@ const PosForm = () => {
             </button>
 
             <button 
+              type="button"
               className="btn btn-ghost w-full mt-2 h-12 text-base gap-2"
               onClick={() => setShowCustomerModal(true)}
             >
               <User className="w-4 h-4" />
               {selectedCustomer ? 'Changer de client' : 'Ajouter un client'}
             </button>
+
+            <div className="mt-2 flex items-center justify-center gap-2 text-xs text-base-content/30">
+              <div className={`w-2 h-2 rounded-full ${isBarcodeFocused ? 'bg-success animate-pulse' : 'bg-base-content/20'}`}></div>
+              <span>{isBarcodeFocused ? 'Pret a scanner' : 'Cliquez sur le champ de scan'}</span>
+            </div>
           </div>
         </div>
       </div>
@@ -1044,9 +1271,9 @@ const PosForm = () => {
       {/* Raccourcis clavier */}
       <div className="fixed bottom-4 right-4 bg-base-100/90 backdrop-blur rounded-2xl shadow-lg p-3 text-xs text-base-content/60 border border-base-300 hidden lg:block">
         <div className="flex items-center gap-4">
+          <span><kbd className="px-2 py-1 bg-base-200 rounded">Barcode</kbd> Scan automatique</span>
           <span><kbd className="px-2 py-1 bg-base-200 rounded">Esc</kbd> Fermer</span>
-          <span><kbd className="px-2 py-1 bg-base-200 rounded">Ctrl+Shift+P</kbd> Recherche</span>
-          <span><kbd className="px-2 py-1 bg-base-200 rounded">Enter</kbd> Valider</span>
+          <span><kbd className="px-2 py-1 bg-base-200 rounded">Click quantite</kbd> Modifier</span>
         </div>
       </div>
     </div>
