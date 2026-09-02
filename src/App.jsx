@@ -145,7 +145,7 @@ import PaiementFournisseurForm from './components/achatsfournisseurs/PaiementFou
 
 import ClientFacturesPDF from './components/ventesclients/ClientFacturesPDF';
 
-
+import EtablissementSettings from './components/settings/EtablissementSettings';
 
 import Utilisateurs from './components/users/Utilisateurs';
 import UtilisateurForm from './components/users/UtilisateurForm';
@@ -414,6 +414,7 @@ function App() {
 
 
                 */}
+  <Route path="/company-config" element={<EtablissementSettings />} />
 
                 {/* ==================== LIVRAISONS ==================== 
                 <Route path="/livraisons" element={<DeliveriesList />} />

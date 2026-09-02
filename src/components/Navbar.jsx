@@ -1,4 +1,4 @@
-// src/components/Navbar.jsx - Version SODEPCI COMPLÈTE avec tous les menus et routes mises à jour
+// src/components/Navbar.jsx - Version SODEPCI avec Logo Dynamique corrigé
 
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
@@ -128,19 +128,10 @@ import {
   Map as MapIcon,
   UserCheck as UserCheckIcon,
   Route as RouteIcon,
+  GraduationCap
 } from 'lucide-react';
 
-import logo from '../assets/logo.svg';
-
-let AxiosInstance = null;
-let GlobalAlerts = null;
-
-try {
-  AxiosInstance = require('./AxiosInstance').default;
-  GlobalAlerts = require('./common/GlobalAlerts').default;
-} catch (error) {
-  console.warn('Modules optionnels non trouvés:', error.message);
-}
+import axiosInstance from './AxiosInstance';
 
 // Configuration des rôles
 const ROLE_CONFIG = {
@@ -206,9 +197,13 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
   
   const [userInitial, setUserInitial] = useState('U');
   const [userFullName, setUserFullName] = useState('Utilisateur');
-  const [userRole, setUserRole] = useState('vendeur');
   const [currentTime, setCurrentTime] = useState(new Date());
-  
+
+  // État pour l'établissement
+  const [etablissement, setEtablissement] = useState(null);
+  const [loadingEtab, setLoadingEtab] = useState(true);
+  const [logoUrl, setLogoUrl] = useState(null);
+
   // États des compteurs
   const [ventesImpayees, setVentesImpayees] = useState(0);
   const [notificationsCount, setNotificationsCount] = useState(0);
@@ -269,70 +264,113 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
   const roleConfig = ROLE_CONFIG[role] || ROLE_CONFIG.vendeur;
   const RoleIcon = roleConfig.icon;
 
-  // Charger les données
+  // Fonction pour construire l'URL complète du logo
+  const getLogoUrl = (logoPath) => {
+    if (!logoPath) return null;
+    
+    // Si l'URL est déjà complète (http ou https)
+    if (logoPath.startsWith('http://') || logoPath.startsWith('https://')) {
+      return logoPath;
+    }
+    
+    // Si l'URL commence par /media/ ou /static/
+    if (logoPath.startsWith('/media/') || logoPath.startsWith('/static/')) {
+      // Récupérer l'URL de base depuis l'instance axios
+      const baseURL = axiosInstance.defaults.baseURL || '';
+      return `${baseURL}${logoPath}`;
+    }
+    
+    // Si l'URL est relative
+    const baseURL = axiosInstance.defaults.baseURL || '';
+    return `${baseURL}${logoPath.startsWith('/') ? '' : '/'}${logoPath}`;
+  };
+
+  // Chargement des données de l'établissement
+  useEffect(() => {
+    const fetchEtablissement = async () => {
+      try {
+        const response = await axiosInstance.get('/etablissements/unique/');
+        if (response.data) {
+          setEtablissement(response.data);
+          // Construire l'URL complète du logo
+          if (response.data.logo) {
+            const fullLogoUrl = getLogoUrl(response.data.logo);
+            setLogoUrl(fullLogoUrl);
+          }
+        }
+      } catch (error) {
+        console.error('Erreur chargement établissement :', error);
+      } finally {
+        setLoadingEtab(false);
+      }
+    };
+    fetchEtablissement();
+  }, []);
+
+  // Charger les autres données
   useEffect(() => {
     const loadData = async () => {
       try {
         const token = localStorage.getItem('Token');
-        if (!token || !AxiosInstance) return;
+        if (!token) return;
 
         // Admin charge toutes les données
         if (isAdmin || isGestionnaire) {
           // Achats - Commandes en attente
-          const ordersRes = await AxiosInstance.get('/purchase-orders/?status=draft,sent', {
+          const ordersRes = await axiosInstance.get('/purchase-orders/?status=draft,sent', {
             headers: { Authorization: `Token ${token}` }
           }).catch(() => ({ data: [] }));
           setCommandesEnAttente(ordersRes.data?.length || 0);
 
           // Achats - Factures impayées
-          const invoicesRes = await AxiosInstance.get('/supplier-invoices/?paiement_status=unpaid,partial,overdue', {
+          const invoicesRes = await axiosInstance.get('/supplier-invoices/?paiement_status=unpaid,partial,overdue', {
             headers: { Authorization: `Token ${token}` }
           }).catch(() => ({ data: [] }));
           setFacturesImpayees(invoicesRes.data?.length || 0);
 
           // Achats - Réceptions en attente
-          const receiptsRes = await AxiosInstance.get('/receipts/?status=pending,in_progress', {
+          const receiptsRes = await axiosInstance.get('/receipts/?status=pending,in_progress', {
             headers: { Authorization: `Token ${token}` }
           }).catch(() => ({ data: [] }));
           setReceptionsEnAttente(receiptsRes.data?.length || 0);
 
           // Achats - Retours en attente
-          const returnsRes = await AxiosInstance.get('/purchase-returns/?status=requested', {
+          const returnsRes = await axiosInstance.get('/purchase-returns/?status=requested', {
             headers: { Authorization: `Token ${token}` }
           }).catch(() => ({ data: [] }));
           setRetoursEnAttente(returnsRes.data?.length || 0);
 
           // Achats - Paiements fournisseurs en attente
-          const paymentsRes = await AxiosInstance.get('/fournisseur-paiements/?status=pending', {
+          const paymentsRes = await axiosInstance.get('/fournisseur-paiements/?status=pending', {
             headers: { Authorization: `Token ${token}` }
           }).catch(() => ({ data: [] }));
           setPaiementsFournisseursEnAttente(paymentsRes.data?.length || 0);
 
           // Notifications
-          const notifRes = await AxiosInstance.get('/notifications/unread-count/', {
+          const notifRes = await axiosInstance.get('/notifications/unread-count/', {
             headers: { Authorization: `Token ${token}` }
           }).catch(() => ({ data: { unread_count: 0 } }));
           setNotificationsCount(notifRes.data?.unread_count || 0);
 
           // Stocks
-          const stocksRes = await AxiosInstance.get('/stocks/low-stock/', {
+          const stocksRes = await axiosInstance.get('/stocks/low-stock/', {
             headers: { Authorization: `Token ${token}` }
           }).catch(() => ({ data: [] }));
           setStocksFaibles(stocksRes.data?.length || 0);
 
-          const alertesRes = await AxiosInstance.get('/expiry-alerts/', {
+          const alertesRes = await axiosInstance.get('/expiry-alerts/', {
             headers: { Authorization: `Token ${token}` }
           }).catch(() => ({ data: [] }));
           setAlertesStockCount(alertesRes.data?.length || 0);
           
           // Lots expirant
-          const lotsRes = await AxiosInstance.get('/lots/expiring/?days=30', {
+          const lotsRes = await axiosInstance.get('/lots/expiring/?days=30', {
             headers: { Authorization: `Token ${token}` }
           }).catch(() => ({ data: [] }));
           setLotsExpirant(lotsRes.data?.length || 0);
           
           // Inventaires en cours
-          const invRes = await AxiosInstance.get('/inventories/?status=in_progress', {
+          const invRes = await axiosInstance.get('/inventories/?status=in_progress', {
             headers: { Authorization: `Token ${token}` }
           }).catch(() => ({ data: [] }));
           setInventairesEnCours(invRes.data?.length || 0);
@@ -340,7 +378,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
 
         // Admin, Gestionnaire et Vendeur voient les ventes impayées
         if (isAdmin || isGestionnaire || isVendeur) {
-          const ventesRes = await AxiosInstance.get('/sales/?payment_status=pending', {
+          const ventesRes = await axiosInstance.get('/sales/?payment_status=pending', {
             headers: { Authorization: `Token ${token}` }
           }).catch(() => ({ data: [] }));
           setVentesImpayees(ventesRes.data?.length || 0);
@@ -537,6 +575,48 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
       ).map(item => ({ ...item, section: section.name }))
     ) : [];
 
+  // Fonction de rendu des items de menu
+  const renderMenuItem = (item, sectionName, isActive) => {
+    const ItemIcon = item.icon;
+    return (
+      <Link
+        key={item.id}
+        to={item.path}
+        className={`
+          flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all duration-200
+          ${isActive ? 'bg-primary text-primary-content shadow-md' : 'text-base-content/60 hover:bg-primary/10 hover:text-primary'}
+        `}
+      >
+        <ItemIcon className={`w-4 h-4 ${isActive ? 'text-inherit' : ''}`} />
+        <span className="flex-1">{item.text}</span>
+        {item.badge && item.badge > 0 && (
+          <span className={`badge badge-error badge-xs ${isActive ? 'badge-outline' : ''}`}>
+            {item.badge > 99 ? '99+' : item.badge}
+          </span>
+        )}
+      </Link>
+    );
+  };
+
+  // Fonction pour afficher le logo (utilisée partout)
+  const renderLogo = (className = "w-full h-full object-cover rounded-xl") => {
+    if (!loadingEtab && logoUrl) {
+      return (
+        <img
+          src={logoUrl}
+          alt={etablissement?.nom || 'Logo établissement'}
+          className={className}
+          onError={(e) => {
+            // Si l'image ne charge pas, afficher l'icône par défaut
+            e.target.style.display = 'none';
+            e.target.parentElement.innerHTML = `<svg class="w-6 h-6 text-primary" ...>`;
+          }}
+        />
+      );
+    }
+    return <GraduationCap className="w-6 h-6 text-primary" />;
+  };
+
   return (
     <div className="min-h-screen bg-base-200">
       
@@ -614,24 +694,54 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                 {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
               </button>
 
+              {/* Logo Desktop avec chargement dynamique */}
               <Link to="/dashboard" className="hidden lg:flex items-center gap-3 group">
                 <div className="relative">
                   <div className="absolute inset-0 bg-primary-content/20 rounded-xl blur-md group-hover:blur-lg transition-all"></div>
-                  <div className="relative w-10 h-10 bg-base-100 rounded-xl flex items-center justify-center shadow-lg border-2 border-accent">
-                    <img src={logo} alt="Logo" className="w-7 h-7 object-contain" onError={(e) => { e.target.style.display = 'none' }} />
+                  <div className="relative w-10 h-10 bg-base-100 rounded-xl flex items-center justify-center shadow-lg border-2 border-accent overflow-hidden">
+                    {!loadingEtab && logoUrl ? (
+                      <img
+                        src={logoUrl}
+                        alt={etablissement?.nom || 'Logo établissement'}
+                        className="w-full h-full object-cover rounded-xl"
+                        onError={(e) => {
+                          e.target.style.display = 'none';
+                        }}
+                      />
+                    ) : (
+                      <GraduationCap className="w-6 h-6 text-primary" />
+                    )}
                   </div>
                 </div>
                 <div>
-                  <h1 className="text-primary-content font-bold text-lg tracking-wide">SODEPCI</h1>
-                  <p className="text-primary-content/60 text-[10px] font-medium">ERP Management</p>
+                  <h1 className="text-primary-content font-bold text-lg tracking-wide">
+                    {!loadingEtab ? (etablissement?.nom || 'SODEPCI ERP') : 'Chargement...'}
+                  </h1>
+                  <p className="text-primary-content/60 text-[10px] font-medium">
+                    {!loadingEtab ? (etablissement?.sigle || 'ERP Management') : ''}
+                  </p>
                 </div>
               </Link>
 
+              {/* Logo Mobile avec chargement dynamique */}
               <div className="lg:hidden flex items-center gap-2">
-                <div className="w-8 h-8 bg-base-100 rounded-lg flex items-center justify-center border-2 border-accent">
-                  <img src={logo} alt="Logo" className="w-6 h-6 object-contain" onError={(e) => { e.target.style.display = 'none' }} />
+                <div className="w-8 h-8 bg-base-100 rounded-lg flex items-center justify-center border-2 border-accent overflow-hidden">
+                  {!loadingEtab && logoUrl ? (
+                    <img
+                      src={logoUrl}
+                      alt={etablissement?.nom || 'Logo'}
+                      className="w-full h-full object-cover rounded-lg"
+                      onError={(e) => {
+                        e.target.style.display = 'none';
+                      }}
+                    />
+                  ) : (
+                    <GraduationCap className="w-5 h-5 text-primary" />
+                  )}
                 </div>
-                <span className="text-primary-content font-bold text-sm">SODEPCI</span>
+                <span className="text-primary-content font-bold text-sm">
+                  {!loadingEtab ? (etablissement?.nom || 'SODEPCI ERP') : 'Chargement...'}
+                </span>
               </div>
             </div>
 
@@ -764,15 +874,31 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
       `}>
         <div className="h-full flex flex-col">
           
+          {/* Logo dans la sidebar - Version dynamique */}
           <div className={`p-4 border-b border-primary/20 ${!sidebarOpen && 'text-center'} bg-gradient-to-r from-primary/5 to-transparent`}>
             <div className={`flex items-center ${!sidebarOpen && 'justify-center'} gap-3`}>
-              <div className="w-10 h-10 bg-gradient-to-br from-primary to-primary/80 rounded-xl flex items-center justify-center shadow-lg">
-                <img src={logo} alt="Logo" className="w-7 h-7 object-contain" onError={(e) => { e.target.style.display = 'none' }} />
+              <div className="w-10 h-10 bg-gradient-to-br from-primary to-primary/80 rounded-xl flex items-center justify-center shadow-lg overflow-hidden">
+                {!loadingEtab && logoUrl ? (
+                  <img
+                    src={logoUrl}
+                    alt={etablissement?.nom || 'Logo'}
+                    className="w-full h-full object-cover rounded-xl"
+                    onError={(e) => {
+                      e.target.style.display = 'none';
+                    }}
+                  />
+                ) : (
+                  <GraduationCap className="w-6 h-6 text-white" />
+                )}
               </div>
               {sidebarOpen && (
                 <div>
-                  <h2 className="font-bold text-base-content text-sm">SODEPCI</h2>
-                  <p className="text-xs text-base-content/50">ERP Management</p>
+                  <h2 className="font-bold text-base-content text-sm">
+                    {!loadingEtab ? (etablissement?.nom || 'SODEPCI ERP') : 'Chargement...'}
+                  </h2>
+                  <p className="text-xs text-base-content/50">
+                    {!loadingEtab ? (etablissement?.sigle || 'ERP Management') : ''}
+                  </p>
                 </div>
               )}
             </div>
@@ -833,30 +959,8 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                   {sidebarOpen && isOpen && (
                     <div className="ml-6 mt-2 space-y-1 border-l-2 border-primary pl-4">
                       {section.items.map((item) => {
-                        const ItemIcon = item.icon;
                         const isActive = path === item.path;
-                        
-                        return (
-                          <Link
-                            key={item.id}
-                            to={item.path}
-                            className={`
-                              flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all duration-200
-                              ${isActive 
-                                ? 'bg-primary text-primary-content shadow-md'
-                                : 'text-base-content/60 hover:bg-primary/10 hover:text-primary'
-                              }
-                            `}
-                          >
-                            <ItemIcon className={`w-4 h-4 ${isActive ? 'text-inherit' : ''}`} />
-                            <span className="flex-1">{item.text}</span>
-                            {item.badge && item.badge > 0 && (
-                              <span className={`badge badge-error badge-xs ${isActive ? 'badge-outline' : ''}`}>
-                                {item.badge > 99 ? '99+' : item.badge}
-                              </span>
-                            )}
-                          </Link>
-                        );
+                        return renderMenuItem(item, section.name, isActive);
                       })}
                     </div>
                   )}
@@ -872,7 +976,9 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                   <div className="w-1.5 h-1.5 bg-success rounded-full animate-pulse"></div>
                   <span className="text-xs text-base-content/50">v2.1.0</span>
                 </div>
-                <span className="badge badge-primary badge-sm">SODEPCI</span>
+                <span className="badge badge-primary badge-sm">
+                  {!loadingEtab ? (etablissement?.sigle || 'SODEPCI') : 'SODEPCI'}
+                </span>
               </div>
             ) : (
               <div className="text-center">
@@ -904,11 +1010,24 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
             <div className="relative overflow-hidden bg-gradient-to-br from-primary to-primary/80 p-5">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-base-100 rounded-xl flex items-center justify-center p-2 shadow-lg">
-                    <img src={logo} alt="Logo" className="w-full h-full object-contain" onError={(e) => { e.target.style.display = 'none' }} />
+                  <div className="w-10 h-10 bg-base-100 rounded-xl flex items-center justify-center p-1 shadow-lg overflow-hidden">
+                    {!loadingEtab && logoUrl ? (
+                      <img
+                        src={logoUrl}
+                        alt={etablissement?.nom || 'Logo'}
+                        className="w-full h-full object-cover rounded-xl"
+                        onError={(e) => {
+                          e.target.style.display = 'none';
+                        }}
+                      />
+                    ) : (
+                      <GraduationCap className="w-6 h-6 text-primary" />
+                    )}
                   </div>
                   <div>
-                    <h2 className="text-primary-content font-bold text-lg">SODEPCI</h2>
+                    <h2 className="text-primary-content font-bold text-lg">
+                      {!loadingEtab ? (etablissement?.nom || 'SODEPCI ERP') : 'Chargement...'}
+                    </h2>
                     <p className="text-primary-content/70 text-xs">{roleConfig.label}</p>
                   </div>
                 </div>
@@ -951,29 +1070,8 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                     {isOpen && (
                       <div className="ml-6 mt-2 space-y-1 border-l-2 border-primary pl-4">
                         {section.items.map((item) => {
-                          const ItemIcon = item.icon;
                           const isActive = path === item.path;
-                          
-                          return (
-                            <Link
-                              key={item.id}
-                              to={item.path}
-                              onClick={() => setIsMobileMenuOpen(false)}
-                              className={`
-                                flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all
-                                ${isActive 
-                                  ? 'bg-primary text-primary-content'
-                                  : 'hover:bg-primary/10'
-                                }
-                              `}
-                            >
-                              <ItemIcon className="w-4 h-4" />
-                              <span>{item.text}</span>
-                              {item.badge && item.badge > 0 && (
-                                <span className="badge badge-error badge-xs ml-auto">{item.badge > 99 ? '99+' : item.badge}</span>
-                              )}
-                            </Link>
-                          );
+                          return renderMenuItem(item, section.name, isActive);
                         })}
                       </div>
                     )}
