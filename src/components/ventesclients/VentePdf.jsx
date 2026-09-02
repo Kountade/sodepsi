@@ -1,6 +1,46 @@
 // src/components/ventesclients/VentePdf.jsx
 import jsPDF from 'jspdf';
-import logoSvg from '../../assets/logo.svg';
+import axiosInstance from '../AxiosInstance';
+
+// ========== RÉCUPÉRATION DES DONNÉES DE L'ÉTABLISSEMENT ==========
+let etablissementCache = null;
+let etablissementLoading = false;
+let etablissementPromise = null;
+
+const getEtablissement = async () => {
+  // Si déjà en cache, retourner directement
+  if (etablissementCache) {
+    return etablissementCache;
+  }
+
+  // Si une requête est déjà en cours, attendre sa résolution
+  if (etablissementPromise) {
+    return await etablissementPromise;
+  }
+
+  // Démarrer une nouvelle requête
+  etablissementPromise = (async () => {
+    try {
+      const token = localStorage.getItem('Token');
+      const response = await axiosInstance.get('/etablissements/unique/', {
+        headers: token ? { Authorization: `Token ${token}` } : {}
+      });
+      
+      if (response.data && response.data.id) {
+        etablissementCache = response.data;
+        return etablissementCache;
+      }
+      return null;
+    } catch (error) {
+      console.error('Erreur chargement établissement:', error);
+      return null;
+    } finally {
+      etablissementPromise = null;
+    }
+  })();
+
+  return await etablissementPromise;
+};
 
 // ========== FONCTION POUR ÉCRIRE LES NOMBRES EN LETTRES ==========
 const nombreEnLettres = (montant) => {
@@ -161,28 +201,36 @@ const generateVentePdf = async (vente, options = {}) => {
   }
 
   try {
+    // ========== RÉCUPÉRER LES DONNÉES DE L'ÉTABLISSEMENT ==========
+    const etab = await getEtablissement();
+    
+    // ========== INFORMATIONS DE L'ENTREPRISE (DYNAMIQUES) ==========
+    const company = {
+      name: etab?.nom || 'BOUTIQUE STATION SODEPCI',
+      sigle: etab?.sigle || '',
+      address: etab?.adresse || 'PARA EN FACE DU GRAND HOPITAL DE PARA',
+      phone: etab?.telephone || '070 84 29 609 / 074 75 57 169',
+      email: etab?.email || '',
+      site_web: etab?.site_web || '',
+      devise: etab?.devise || 'FCFA',
+      // Valeurs par défaut pour compatibilité
+      phone1: (etab?.telephone || '070 84 29 609').split('/')[0].trim(),
+      phone2: (etab?.telephone || '070 84 29 609 / 074 75 57 169').split('/')[1]?.trim() || '',
+      gérant: 'ZAKARIA', // À rendre dynamique si disponible
+      rccm: '',
+      nif: '',
+      capital: '',
+      bank_name: '',
+      bank_account: '',
+      bank_currency: etab?.devise || 'FCFA'
+    };
+
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
     const pageWidth = 210;
     const pageHeight = 297;
     const margins = { left: 15, right: 15, top: 18, bottom: 18 };
     const contentWidth = pageWidth - margins.left - margins.right;
     let y = margins.top;
-
-    // ========== INFORMATIONS DE L'ENTREPRISE ==========
-    const company = {
-      name: 'BOUTIQUE STATION SODEPCI',
-      address: 'PARA EN FACE DU GRAND HOPITAL DE PARA',
-      phone1: '070 84 29 609',
-      phone2: '074 75 57 169',
-      gérant: 'ZAKARIA',
-      email: '',
-      rccm: '',
-      nif: '',
-      capital: '',
-      bank_name: '',
-      bank_account: '',
-      bank_currency: 'FCFA'
-    };
 
     // ========== DONNÉES DE LA VENTE ==========
     const statusInfo = getStatusInfo(vente.status);
@@ -195,22 +243,37 @@ const generateVentePdf = async (vente, options = {}) => {
     const clientTelephone = vente.client_phone || vente.client?.telephone || '';
     const clientEmail = vente.client_email || vente.client?.email || '';
 
-    // ========== CHARGEMENT DU LOGO ==========
-    const loadLogo = (src) => new Promise((resolve) => {
-      const img = new Image();
-      img.crossOrigin = 'Anonymous';
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        canvas.width = img.width;
-        canvas.height = img.height;
-        canvas.getContext('2d').drawImage(img, 0, 0);
-        resolve(canvas.toDataURL('image/png'));
-      };
-      img.onerror = () => resolve(null);
-      img.src = src;
-    });
-    let logoData = null;
-    try { logoData = await loadLogo(logoSvg); } catch { /* ignore */ }
+    // ========== CHARGEMENT DU LOGO (DEPUIS L'ÉTABLISSEMENT) ==========
+    const loadLogo = async () => {
+      if (!etab?.logo) return null;
+      
+      try {
+        // Construire l'URL complète du logo
+        let logoUrl = etab.logo;
+        if (!logoUrl.startsWith('http://') && !logoUrl.startsWith('https://')) {
+          const baseURL = axiosInstance.defaults.baseURL || '';
+          logoUrl = `${baseURL}${logoUrl.startsWith('/') ? '' : '/'}${logoUrl}`;
+        }
+        
+        return new Promise((resolve) => {
+          const img = new Image();
+          img.crossOrigin = 'Anonymous';
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = img.width;
+            canvas.height = img.height;
+            canvas.getContext('2d').drawImage(img, 0, 0);
+            resolve(canvas.toDataURL('image/png'));
+          };
+          img.onerror = () => resolve(null);
+          img.src = logoUrl;
+        });
+      } catch {
+        return null;
+      }
+    };
+    
+    let logoData = await loadLogo();
 
     // Filigrane
     const watermarkText = options.watermark || 'FACTURE';
@@ -241,13 +304,25 @@ const generateVentePdf = async (vente, options = {}) => {
     doc.setTextColor(26, 35, 126);
     doc.text(company.name, textStartX, y + 6);
     
+    // Sigle si présent
+    if (company.sigle) {
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(84, 110, 122);
+      doc.text(company.sigle, textStartX, y + 11);
+      y += 5;
+    }
+    
     // Sous-titres
     doc.setFontSize(7.5);
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(84, 110, 122);
     doc.text(company.address.toUpperCase(), textStartX, y + 12);
-    doc.text(`Tél: ${company.phone1} / ${company.phone2}`, textStartX, y + 16.5);
-    doc.text(`Gérant: ${company.gérant}`, textStartX, y + 21);
+    doc.text(`Tél: ${company.phone}`, textStartX, y + 16.5);
+    if (company.email) {
+      doc.text(`Email: ${company.email}`, textStartX, y + 21);
+      y += 5;
+    }
     
     // Titre du document
     const titleX = pageWidth - margins.right;
@@ -301,13 +376,12 @@ const generateVentePdf = async (vente, options = {}) => {
     if (clientAdresse) doc.text(clientAdresse, gridX1 + 4, gridY + 17);
     if (clientTelephone) doc.text(`Tél: ${clientTelephone}`, gridX1 + 4, gridY + 22);
 
-    // Statut - Style épuré sans cadre
+    // Statut
     doc.setFontSize(7);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(120, 144, 156);
     doc.text('STATUT', gridX2 + 4, gridY + 4.5);
 
-    // Statut affiché simplement en texte coloré sans cadre
     const statusX = gridX2 + 4;
     const statusY = gridY + 11;
     
@@ -592,12 +666,16 @@ const generateVentePdf = async (vente, options = {}) => {
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(120, 144, 156);
     doc.text(company.name, pageWidth / 2, footerY, { align: 'center' });
-    doc.text(`Tél: ${company.phone1} / ${company.phone2}`, pageWidth / 2, footerY + 4, { align: 'center' });
+    doc.text(`Tél: ${company.phone}`, pageWidth / 2, footerY + 4, { align: 'center' });
     doc.text(company.address, pageWidth / 2, footerY + 8, { align: 'center' });
     
+    if (company.email) {
+      doc.setFontSize(6);
+      doc.setTextColor(160, 160, 170);
+      doc.text(`Email: ${company.email}`, pageWidth / 2, footerY + 13, { align: 'center' });
+    }
     doc.setFontSize(6);
     doc.setTextColor(160, 160, 170);
-    doc.text(`Gérant: ${company.gérant}`, pageWidth / 2, footerY + 13, { align: 'center' });
     doc.text('Merci pour votre confiance', pageWidth / 2, footerY + 17, { align: 'center' });
 
     // ================================================================
@@ -666,14 +744,18 @@ const VentePdf = () => {
           return;
         }
 
-        setProgress(20);
+        setProgress(10);
         
+        // Récupérer les données de la vente
         const response = await AxiosInstance.get(`/sales/${id}/`, {
           headers: { Authorization: `Token ${token}` }
         });
         
-        setProgress(50);
+        setProgress(40);
         const vente = response.data;
+        
+        // Récupérer les données de l'établissement (fait automatiquement dans generateVentePdf)
+        setProgress(60);
         
         await generateVentePdf(vente);
         setProgress(100);

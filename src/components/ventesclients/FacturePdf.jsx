@@ -3,8 +3,46 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import jsPDF from 'jspdf';
 import AxiosInstance from '../AxiosInstance';
-import logoSvg from '../../assets/logo.svg';
 import { Loader2, AlertCircle } from 'lucide-react';
+
+// ========== RÉCUPÉRATION DES DONNÉES DE L'ÉTABLISSEMENT ==========
+let etablissementCache = null;
+let etablissementPromise = null;
+
+const getEtablissement = async () => {
+  // Si déjà en cache, retourner directement
+  if (etablissementCache) {
+    return etablissementCache;
+  }
+
+  // Si une requête est déjà en cours, attendre sa résolution
+  if (etablissementPromise) {
+    return await etablissementPromise;
+  }
+
+  // Démarrer une nouvelle requête
+  etablissementPromise = (async () => {
+    try {
+      const token = localStorage.getItem('Token');
+      const response = await AxiosInstance.get('/etablissements/unique/', {
+        headers: token ? { Authorization: `Token ${token}` } : {}
+      });
+      
+      if (response.data && response.data.id) {
+        etablissementCache = response.data;
+        return etablissementCache;
+      }
+      return null;
+    } catch (error) {
+      console.error('Erreur chargement établissement:', error);
+      return null;
+    } finally {
+      etablissementPromise = null;
+    }
+  })();
+
+  return await etablissementPromise;
+};
 
 // ========== FONCTION POUR ÉCRIRE LES NOMBRES EN LETTRES ==========
 const nombreEnLettres = (montant) => {
@@ -67,7 +105,7 @@ const formatNumber = (n) => {
   return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
 };
 
-const formatCurrency = (amt) => `${formatNumber(amt)} GNF`;
+const formatCurrency = (amt, devise = 'FCFA') => `${formatNumber(amt)} ${devise}`;
 
 const formatDate = (d) => {
   if (!d) return '-';
@@ -167,28 +205,36 @@ export const generateFacturePdf = async (facture, options = {}) => {
   }
 
   try {
+    // ========== RÉCUPÉRER LES DONNÉES DE L'ÉTABLISSEMENT ==========
+    const etab = await getEtablissement();
+    
+    // ========== INFORMATIONS DE L'ENTREPRISE (DYNAMIQUES) ==========
+    const company = {
+      name: etab?.nom || 'BOUTIQUE STATION SODEPCI',
+      sigle: etab?.sigle || '',
+      address: etab?.adresse || 'PARA EN FACE DU GRAND HOPITAL DE PARA',
+      phone: etab?.telephone || '070 84 29 609 / 074 75 57 169',
+      email: etab?.email || '',
+      site_web: etab?.site_web || '',
+      devise: etab?.devise || 'FCFA',
+      // Valeurs par défaut pour compatibilité
+      phone1: (etab?.telephone || '070 84 29 609').split('/')[0].trim(),
+      phone2: (etab?.telephone || '070 84 29 609 / 074 75 57 169').split('/')[1]?.trim() || '',
+      gérant: 'ZAKARIA', // À rendre dynamique si disponible
+      rccm: '',
+      nif: '',
+      capital: '',
+      bank_name: '',
+      bank_account: '',
+      bank_currency: etab?.devise || 'FCFA'
+    };
+
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
     const pageWidth = 210;
     const pageHeight = 297;
     const margins = { left: 15, right: 15, top: 18, bottom: 18 };
     const contentWidth = pageWidth - margins.left - margins.right;
     let y = margins.top;
-
-    // ========== INFORMATIONS DE L'ENTREPRISE ==========
-    const company = {
-      name: 'BOUTIQUE STATION SODEPCI',
-      address: 'PARA EN FACE DU GRAND HOPITAL DE PARA',
-      phone1: '070 84 29 609',
-      phone2: '074 75 57 169',
-      gérant: 'ZAKARIA',
-      email: '',
-      rccm: '',
-      nif: '',
-      capital: '',
-      bank_name: '',
-      bank_account: '',
-      bank_currency: 'GNF'
-    };
 
     // ========== DONNÉES DE LA FACTURE ==========
     const statusInfo = getStatusInfo(facture.status);
@@ -200,22 +246,37 @@ export const generateFacturePdf = async (facture, options = {}) => {
     const clientAdresse = facture.client_address || '';
     const clientTelephone = facture.client_phone || '';
 
-    // ========== CHARGEMENT DU LOGO ==========
-    const loadLogo = (src) => new Promise((resolve) => {
-      const img = new Image();
-      img.crossOrigin = 'Anonymous';
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        canvas.width = img.width;
-        canvas.height = img.height;
-        canvas.getContext('2d').drawImage(img, 0, 0);
-        resolve(canvas.toDataURL('image/png'));
-      };
-      img.onerror = () => resolve(null);
-      img.src = src;
-    });
-    let logoData = null;
-    try { logoData = await loadLogo(logoSvg); } catch { /* ignore */ }
+    // ========== CHARGEMENT DU LOGO (DEPUIS L'ÉTABLISSEMENT) ==========
+    const loadLogo = async () => {
+      if (!etab?.logo) return null;
+      
+      try {
+        // Construire l'URL complète du logo
+        let logoUrl = etab.logo;
+        if (!logoUrl.startsWith('http://') && !logoUrl.startsWith('https://')) {
+          const baseURL = AxiosInstance.defaults.baseURL || '';
+          logoUrl = `${baseURL}${logoUrl.startsWith('/') ? '' : '/'}${logoUrl}`;
+        }
+        
+        return new Promise((resolve) => {
+          const img = new Image();
+          img.crossOrigin = 'Anonymous';
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = img.width;
+            canvas.height = img.height;
+            canvas.getContext('2d').drawImage(img, 0, 0);
+            resolve(canvas.toDataURL('image/png'));
+          };
+          img.onerror = () => resolve(null);
+          img.src = logoUrl;
+        });
+      } catch {
+        return null;
+      }
+    };
+    
+    let logoData = await loadLogo();
 
     // Filigrane
     const watermarkText = options.watermark || 'FACTURE';
@@ -246,13 +307,25 @@ export const generateFacturePdf = async (facture, options = {}) => {
     doc.setTextColor(26, 35, 126);
     doc.text(company.name, textStartX, y + 6);
     
+    // Sigle si présent
+    if (company.sigle) {
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(84, 110, 122);
+      doc.text(company.sigle, textStartX, y + 11);
+      y += 5;
+    }
+    
     // Sous-titres
     doc.setFontSize(7.5);
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(84, 110, 122);
     doc.text(company.address.toUpperCase(), textStartX, y + 12);
-    doc.text(`Tél: ${company.phone1} / ${company.phone2}`, textStartX, y + 16.5);
-    doc.text(`Gérant: ${company.gérant}`, textStartX, y + 21);
+    doc.text(`Tél: ${company.phone}`, textStartX, y + 16.5);
+    if (company.email) {
+      doc.text(`Email: ${company.email}`, textStartX, y + 21);
+      y += 5;
+    }
     
     // Titre du document
     const titleX = pageWidth - margins.right;
@@ -423,10 +496,10 @@ export const generateFacturePdf = async (facture, options = {}) => {
         doc.setFont('helvetica', 'normal');
         doc.text(productName, colDescX + 3, currentY + 4);
         doc.text(qty.toString(), colQtyX + 3, currentY + 4);
-        doc.text(formatCurrency(price), colPriceX + 3, currentY + 4);
-        doc.text(remise > 0 ? formatCurrency(remise) : '-', colRemiseX + 3, currentY + 4);
+        doc.text(formatCurrency(price, company.devise), colPriceX + 3, currentY + 4);
+        doc.text(remise > 0 ? formatCurrency(remise, company.devise) : '-', colRemiseX + 3, currentY + 4);
         
-        const totalText = formatCurrency(lineTotal);
+        const totalText = formatCurrency(lineTotal, company.devise);
         const maxWidth = colTotalX - colRemiseX - 6;
         if (doc.getTextWidth(totalText) > maxWidth) {
           doc.setFontSize(6.5);
@@ -471,7 +544,7 @@ export const generateFacturePdf = async (facture, options = {}) => {
     doc.setTextColor(255, 255, 255);
     doc.text('TOTAL', amountBoxX + 4, ay + 6);
 
-    const totalFormatted = formatCurrency(total);
+    const totalFormatted = formatCurrency(total, company.devise);
     doc.setFontSize(12);
     doc.setTextColor(255, 255, 255);
     let fontSizeTotal = 12;
@@ -596,12 +669,16 @@ export const generateFacturePdf = async (facture, options = {}) => {
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(120, 144, 156);
     doc.text(company.name, pageWidth / 2, footerY, { align: 'center' });
-    doc.text(`Tél: ${company.phone1} / ${company.phone2}`, pageWidth / 2, footerY + 4, { align: 'center' });
+    doc.text(`Tél: ${company.phone}`, pageWidth / 2, footerY + 4, { align: 'center' });
     doc.text(company.address, pageWidth / 2, footerY + 8, { align: 'center' });
     
+    if (company.email) {
+      doc.setFontSize(6);
+      doc.setTextColor(160, 160, 170);
+      doc.text(`Email: ${company.email}`, pageWidth / 2, footerY + 13, { align: 'center' });
+    }
     doc.setFontSize(6);
     doc.setTextColor(160, 160, 170);
-    doc.text(`Gérant: ${company.gérant}`, pageWidth / 2, footerY + 13, { align: 'center' });
     doc.text('Merci pour votre confiance', pageWidth / 2, footerY + 17, { align: 'center' });
 
     // ================================================================
@@ -665,14 +742,18 @@ const FacturePdf = () => {
           return;
         }
 
-        setProgress(20);
+        setProgress(10);
         
+        // Récupérer les données de la facture
         const response = await AxiosInstance.get(`/factures/${id}/`, {
           headers: { Authorization: `Token ${token}` }
         });
         
-        setProgress(50);
+        setProgress(40);
         const facture = response.data;
+        
+        // Récupérer les données de l'établissement (fait automatiquement dans generateFacturePdf)
+        setProgress(60);
         
         await generateFacturePdf(facture);
         setProgress(100);

@@ -2,18 +2,65 @@
 import jsPDF from 'jspdf';
 import AxiosInstance from '../AxiosInstance';
 
+// ========== RÉCUPÉRATION DES DONNÉES DE L'ÉTABLISSEMENT ==========
+let etablissementCache = null;
+let etablissementPromise = null;
+
+const getEtablissement = async () => {
+  // Si déjà en cache, retourner directement
+  if (etablissementCache) {
+    return etablissementCache;
+  }
+
+  // Si une requête est déjà en cours, attendre sa résolution
+  if (etablissementPromise) {
+    return await etablissementPromise;
+  }
+
+  // Démarrer une nouvelle requête
+  etablissementPromise = (async () => {
+    try {
+      const token = localStorage.getItem('Token');
+      const response = await AxiosInstance.get('/etablissements/unique/', {
+        headers: token ? { Authorization: `Token ${token}` } : {}
+      });
+      
+      if (response.data && response.data.id) {
+        etablissementCache = response.data;
+        return etablissementCache;
+      }
+      return null;
+    } catch (error) {
+      console.error('Erreur chargement établissement:', error);
+      return null;
+    } finally {
+      etablissementPromise = null;
+    }
+  })();
+
+  return await etablissementPromise;
+};
+
 /**
  * Génère un ticket de caisse format 80mm
  * @param {Object} vente - Objet vente provenant de l'API ou ID de la vente
  * @param {Object} options - Options supplémentaires
  * @param {boolean} options.openInBrowser - Si true, ouvre le PDF dans le navigateur
  * @param {boolean} options.autoPrint - Si true, imprime automatiquement
+ * @param {string} options.shopName - Nom du magasin (surcharge)
+ * @param {string} options.shopPhone - Téléphone du magasin (surcharge)
+ * @param {string} options.shopFooter - Pied de page (surcharge)
  * @returns {Promise<jsPDF|string|void>}
  */
 const TicketPOS = async (venteOrId, options = {}) => {
   try {
     // ============================================================
-    // RÉCUPÉRATION DES DONNÉES
+    // RÉCUPÉRATION DES DONNÉES DE L'ÉTABLISSEMENT
+    // ============================================================
+    const etab = await getEtablissement();
+    
+    // ============================================================
+    // RÉCUPÉRATION DES DONNÉES DE LA VENTE
     // ============================================================
     let vente = venteOrId;
     
@@ -59,6 +106,16 @@ const TicketPOS = async (venteOrId, options = {}) => {
     let y = margins.top;
     const lineHeight = 5.5;
 
+    // ============================================================
+    // DONNEES DE LA BOUTIQUE (DYNAMIQUES)
+    // ============================================================
+    const shopName = options.shopName || etab?.nom || 'BOUTIQUE STATION SODEPCI PARA';
+    const shopSigle = etab?.sigle || '';
+    const shopPhone = options.shopPhone || etab?.telephone || '07 47 55 71 69 / 07 08 42 96 09';
+    const shopAddress = etab?.adresse || '';
+    const shopDevise = etab?.devise || 'FCFA';
+    const shopFooter = options.shopFooter || 'MERCI ET À LA PROCHAINE';
+
     // Fonctions de formatage
     const formatNumber = (n) => {
       const num = parseFloat(n) || 0;
@@ -68,7 +125,7 @@ const TicketPOS = async (venteOrId, options = {}) => {
     const formatCurrency = (amount) => {
       const num = parseFloat(amount) || 0;
       const rounded = Math.round(num);
-      return rounded.toString() + ' FCFA';
+      return rounded.toString() + ` ${shopDevise}`;
     };
 
     const formatDate = (dateString) => {
@@ -134,17 +191,22 @@ const TicketPOS = async (venteOrId, options = {}) => {
     };
 
     // ============================================================
-    // DONNEES DE LA BOUTIQUE
-    // ============================================================
-    const shopName = options.shopName || 'BOUTIQUE STATION SODEPCI PARA';
-    const shopPhone = options.shopPhone || '07 47 55 71 69 / 07 08 42 96 09';
-    const shopFooter = options.shopFooter || 'MERCI ET LA PROCHAINE';
-
-    // ============================================================
     // EN-TÊTE
     // ============================================================
     y = centerText(shopName, 11);
+    
+    // Afficher le sigle si présent
+    if (shopSigle) {
+      y = centerText(shopSigle, 9);
+    }
+    
     y = centerText('Tél: ' + shopPhone, 9);
+    
+    // Afficher l'adresse si présente
+    if (shopAddress) {
+      y = centerText(shopAddress, 7);
+    }
+    
     y = sectionSpacer(2.5);
     y = separator('=');
     y = sectionSpacer(1.5);
@@ -378,6 +440,19 @@ const TicketPOS = async (venteOrId, options = {}) => {
     y = centerText(shopFooter, 12);
     y = centerText('À très bientôt !', 10);
     y = centerText('Votre satisfaction est notre priorité', 9);
+    
+    // Afficher les coordonnées complètes en pied
+    y = sectionSpacer(1);
+    doc.setFontSize(7);
+    doc.setFont('helvetica', 'bold');
+    doc.text(shopName, pageWidth / 2, y, { align: 'center' });
+    y += 3.5;
+    doc.text('Tél: ' + shopPhone, pageWidth / 2, y, { align: 'center' });
+    if (shopAddress) {
+      y += 3.5;
+      doc.text(shopAddress, pageWidth / 2, y, { align: 'center' });
+    }
+    
     y = sectionSpacer(2.5);
 
     doc.setFontSize(8);
