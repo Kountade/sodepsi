@@ -128,7 +128,8 @@ import {
   Map as MapIcon,
   UserCheck as UserCheckIcon,
   Route as RouteIcon,
-  GraduationCap
+  GraduationCap,
+  Barcode
 } from 'lucide-react';
 
 import axiosInstance from './AxiosInstance';
@@ -421,6 +422,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
       icon: ShoppingCart,
       items: [
         { id: 'pos', text: 'Point de Vente', icon: ShoppingBag, path: '/point-de-vente', permission: isAdmin || isGestionnaire || isVendeur },
+        { id: 'pos-scan', text: 'Scan & Vente', icon: Barcode, path: '/pos-scan', permission: isAdmin || isGestionnaire || isVendeur },
         { id: 'ventes', text: 'Ventes', icon: ShoppingCart, path: '/ventes', permission: isAdmin || isGestionnaire || isVendeur, badge: ventesImpayees > 0 ? ventesImpayees : 0 },
         { id: 'clients', text: 'Clients', icon: Users, path: '/clients', permission: isAdmin || isGestionnaire || isVendeur },
         { id: 'factures', text: 'Factures Clients', icon: Receipt, path: '/factures', permission: isAdmin || isGestionnaire || isVendeur },
@@ -429,7 +431,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
         { id: 'retours-clients', text: 'Retours Clients', icon: ReturnIcon, path: '/retours-clients', permission: isAdmin || isGestionnaire },
         // Séparateur
         { id: 'separator', text: '', icon: null, path: '#', permission: true, separator: true },
-        // NOUVELLE VENTE - sans emoji, couleur primaire
+        // NOUVELLE VENTE
         { id: 'nouvelle-vente', text: 'Nouvelle Vente', icon: PlusCircle, path: '/ventes/nouveau', permission: isAdmin || isGestionnaire || isVendeur }
       ]
     },

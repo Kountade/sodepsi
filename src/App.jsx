@@ -131,6 +131,13 @@ import FraisList from './components/tresorerie/FraisList';
 import FraisDetail from './components/tresorerie/FraisDetail';
 import FraisForm from './components/tresorerie/FraisForm';
 
+
+import PosScanSimple from './components/ventesclients/PosScanSimple';
+
+
+
+
+
 import Dashboard from './components/dashboard/Dashboard';
 import Statistiques from './components/dashboard/Statistiques';
 import Analyses from './components/dashboard/Analyses';
@@ -187,6 +194,9 @@ function App() {
 
          <Route path="/dashboard-achats" element={<DashboardAchats />} />
         
+
+     
+<Route path="/pos-scan" element={<PosScanSimple />} />
 
 <Route path="/factures-fournisseurs" element={<FacturesFournisseursList />} />
 <Route path="/factures-fournisseurs/nouveau" element={<FactureFournisseurForm />} />
