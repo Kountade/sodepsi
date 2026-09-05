@@ -426,7 +426,11 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
         { id: 'factures', text: 'Factures Clients', icon: Receipt, path: '/factures', permission: isAdmin || isGestionnaire || isVendeur },
         { id: 'paiements', text: 'Paiements Clients', icon: CreditCard, path: '/paiements', permission: isAdmin || isGestionnaire || isVendeur },
         { id: 'devis', text: 'Devis', icon: FileText, path: '/devis', permission: isAdmin || isGestionnaire || isVendeur },
-        { id: 'retours-clients', text: 'Retours Clients', icon: ReturnIcon, path: '/retours-clients', permission: isAdmin || isGestionnaire }
+        { id: 'retours-clients', text: 'Retours Clients', icon: ReturnIcon, path: '/retours-clients', permission: isAdmin || isGestionnaire },
+        // Séparateur
+        { id: 'separator', text: '', icon: null, path: '#', permission: true, separator: true },
+        // NOUVELLE VENTE - sans emoji, couleur primaire
+        { id: 'nouvelle-vente', text: 'Nouvelle Vente', icon: PlusCircle, path: '/ventes/nouveau', permission: isAdmin || isGestionnaire || isVendeur }
       ]
     },
     {
@@ -577,17 +581,28 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
 
   // Fonction de rendu des items de menu
   const renderMenuItem = (item, sectionName, isActive) => {
+    // Gérer le séparateur
+    if (item.separator) {
+      return (
+        <div key={item.id} className="border-t border-primary/20 my-2 mx-1"></div>
+      );
+    }
+
     const ItemIcon = item.icon;
+    
     return (
       <Link
         key={item.id}
         to={item.path}
         className={`
           flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all duration-200
-          ${isActive ? 'bg-primary text-primary-content shadow-md' : 'text-base-content/60 hover:bg-primary/10 hover:text-primary'}
+          ${isActive 
+            ? 'bg-primary text-primary-content shadow-md' 
+            : 'text-base-content/60 hover:bg-primary/10 hover:text-primary'
+          }
         `}
       >
-        <ItemIcon className={`w-4 h-4 ${isActive ? 'text-inherit' : ''}`} />
+        {ItemIcon && <ItemIcon className={`w-4 h-4 ${isActive ? 'text-inherit' : ''}`} />}
         <span className="flex-1">{item.text}</span>
         {item.badge && item.badge > 0 && (
           <span className={`badge badge-error badge-xs ${isActive ? 'badge-outline' : ''}`}>
