@@ -1,7 +1,7 @@
 // src/components/pos/PosScanSimple.jsx
 // ============================================================
-// VERSION OPTIMISEE - CHARGEMENT FLUIDE EN ARRIERE-PLAN
-// Scan à gauche / Panier à droite avec chargement asynchrone
+// VERSION OPTIMISEE - SANS AFFICHAGE DU NOMBRE DE PRODUITS
+// Scan à gauche / Panier à droite - Chargement invisible
 // ============================================================
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -41,7 +41,7 @@ const PosScanSimple = () => {
   const getToken = () => localStorage.getItem('Token');
 
   // ============================================================
-  // 1. CHARGEMENT DES DONNEES - FLUIDE ET RAPIDE
+  // 1. CHARGEMENT DES DONNEES - INVISIBLE POUR L'UTILISATEUR
   // ============================================================
   const getImageUrl = (imagePath) => {
     if (!imagePath) return null;
@@ -497,7 +497,7 @@ const PosScanSimple = () => {
   };
 
   // ============================================================
-  // 9. RENDU - FLUIDE SANS BLOCAGE
+  // 9. RENDU - SANS AFFICHAGE DU NOMBRE DE PRODUITS
   // ============================================================
   return (
     <div className="space-y-4 p-4 lg:p-6 bg-base-200 min-h-screen">
@@ -592,14 +592,14 @@ const PosScanSimple = () => {
         </div>
       )}
 
-      {/* En-tête */}
+      {/* En-tête - Sans compteur de produits */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 bg-base-100 rounded-xl shadow-md border border-base-300 p-4">
         <div>
           <h1 className="text-3xl lg:text-4xl font-black text-base-content bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
             Scan & Vente
           </h1>
           <p className="text-sm text-base-content/60">
-            {loading ? 'Chargement des produits...' : `${products.length} produits disponibles`}
+            Scannez un code-barres pour ajouter au panier
           </p>
         </div>
         
