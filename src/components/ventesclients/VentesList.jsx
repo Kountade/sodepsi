@@ -1,6 +1,6 @@
 // src/components/ventes/VentesList.jsx
 // ============================================================
-// VERSION OPTIMISEE - CORRIGEE (PAGE BLANCHE FIX)
+// VERSION COMPLETE AVEC CHARGEMENT PAR DATE
 // ============================================================
 
 import React, { useEffect, useState, useCallback } from 'react';
@@ -23,8 +23,6 @@ const VentesList = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [paymentFilter, setPaymentFilter] = useState('all');
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -33,9 +31,48 @@ const VentesList = () => {
   const [notification, setNotification] = useState({ show: false, message: '', type: 'success' });
   const [actionLoading, setActionLoading] = useState(false);
   const [printingId, setPrintingId] = useState(null);
-  const [totalCount, setTotalCount] = useState(0);
-  const [stats, setStats] = useState({ total: 0, draft: 0, confirmed: 0, paid: 0, delivered: 0, cancelled: 0, totalAmount: 0 });
+  const [stats, setStats] = useState({ total: 0, total_amount: 0, by_status: {}, by_payment_status: {} });
+  const [viewMode, setViewMode] = useState('today');
+  const [selectedDate, setSelectedDate] = useState(new Date());
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
   const [isFirstLoad, setIsFirstLoad] = useState(true);
+
+  // ============================================================
+  // FORMATAGE
+  // ============================================================
+  const formatDate = (date) => {
+    if (!date) return '-';
+    try {
+      const d = typeof date === 'string' ? new Date(date) : date;
+      if (isNaN(d.getTime())) return '-';
+      return d.toLocaleDateString('fr-FR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric'
+      });
+    } catch {
+      return '-';
+    }
+  };
+
+  const formatDateInput = (date) => {
+    if (!date) return '';
+    try {
+      const d = typeof date === 'string' ? new Date(date) : date;
+      if (isNaN(d.getTime())) return '';
+      return d.toISOString().split('T')[0];
+    } catch {
+      return '';
+    }
+  };
+
+  const formatCurrency = (amount) => {
+    if (!amount && amount !== 0) return '0 FCFA';
+    const num = typeof amount === 'string' ? parseFloat(amount) : amount;
+    if (isNaN(num)) return '0 FCFA';
+    return `${num.toLocaleString('fr-FR')} FCFA`;
+  };
 
   const showNotification = (message, type) => {
     setNotification({ show: true, message, type });
@@ -45,9 +82,9 @@ const VentesList = () => {
   const getToken = () => localStorage.getItem('Token');
 
   // ============================================================
-  // CHARGEMENT OPTIMISE AVEC PAGINATION SERVEUR
+  // CHARGEMENT DES VENTES DU JOUR
   // ============================================================
-  const fetchVentes = useCallback(async () => {
+  const fetchTodaySales = useCallback(async () => {
     setLoading(true);
     try {
       const token = getToken();
@@ -57,50 +94,20 @@ const VentesList = () => {
         return;
       }
 
-      // Construire les paramètres de requête
+      const dateStr = formatDateInput(selectedDate);
       const params = new URLSearchParams();
-      
+      params.append('date', dateStr);
       if (statusFilter !== 'all') params.append('status', statusFilter);
       if (paymentFilter !== 'all') params.append('payment_status', paymentFilter);
-      if (dateFrom) params.append('date_from', dateFrom);
-      if (dateTo) params.append('date_to', dateTo);
       if (searchTerm) params.append('search', searchTerm);
 
-      const response = await AxiosInstance.get(`/sales/?${params.toString()}`, {
+      const response = await AxiosInstance.get(`/sales/by-date/?${params.toString()}`, {
         headers: { 'Authorization': `Token ${token}` }
       });
 
-      // Gérer la réponse (liste simple ou paginée)
-      let data = response.data;
-      let ventesData = [];
-      let count = 0;
-
-      if (Array.isArray(data)) {
-        ventesData = data;
-        count = data.length;
-      } else if (data.results) {
-        ventesData = data.results;
-        count = data.count || data.results.length;
-      } else {
-        ventesData = data.results || [];
-        count = data.count || 0;
-      }
-
-      setVentes(ventesData);
-      setTotalCount(count);
-
-      // Calculer les stats localement pour plus de rapidité
-      const localStats = {
-        total: ventesData.length,
-        draft: ventesData.filter(v => v.status === 'draft').length,
-        confirmed: ventesData.filter(v => v.status === 'confirmed').length,
-        paid: ventesData.filter(v => v.status === 'paid').length,
-        delivered: ventesData.filter(v => v.status === 'delivered').length,
-        cancelled: ventesData.filter(v => v.status === 'cancelled').length,
-        totalAmount: ventesData.reduce((sum, v) => sum + parseFloat(v.total || 0), 0)
-      };
-      setStats(localStats);
-
+      const data = response.data;
+      setVentes(data.results || []);
+      setStats(data.stats || { total: 0, total_amount: 0, by_status: {}, by_payment_status: {} });
       setIsFirstLoad(false);
     } catch (error) {
       console.error('Erreur:', error);
@@ -113,18 +120,139 @@ const VentesList = () => {
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, paymentFilter, dateFrom, dateTo, searchTerm]);
+  }, [selectedDate, statusFilter, paymentFilter, searchTerm, navigate]);
 
   // ============================================================
-  // EFFET DE CHARGEMENT AVEC DEBOUNCE
+  // CHARGEMENT DES VENTES SUR UNE PLAGE DE DATES
+  // ============================================================
+  const fetchDateRangeSales = useCallback(async () => {
+    if (!dateFrom || !dateTo) {
+      showNotification('Veuillez sélectionner une plage de dates', 'warning');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const token = getToken();
+      if (!token) {
+        showNotification('Session expirée', 'error');
+        setTimeout(() => navigate('/login'), 2000);
+        return;
+      }
+
+      const params = new URLSearchParams();
+      params.append('date_from', dateFrom);
+      params.append('date_to', dateTo);
+      if (statusFilter !== 'all') params.append('status', statusFilter);
+      if (paymentFilter !== 'all') params.append('payment_status', paymentFilter);
+      if (searchTerm) params.append('search', searchTerm);
+
+      const response = await AxiosInstance.get(`/sales/date-range/?${params.toString()}`, {
+        headers: { 'Authorization': `Token ${token}` }
+      });
+
+      const data = response.data;
+      setVentes(data.results || []);
+      setStats({
+        total: data.stats?.total || 0,
+        total_amount: data.stats?.total_amount || 0,
+        by_status: {},
+        by_payment_status: {}
+      });
+      setIsFirstLoad(false);
+    } catch (error) {
+      console.error('Erreur:', error);
+      showNotification('Erreur de chargement', 'error');
+    } finally {
+      setLoading(false);
+    }
+  }, [dateFrom, dateTo, statusFilter, paymentFilter, searchTerm, navigate]);
+
+  // ============================================================
+  // CHARGEMENT DE TOUTES LES VENTES (mode 'all')
+  // ============================================================
+  const fetchAllSales = useCallback(async () => {
+    setLoading(true);
+    try {
+      const token = getToken();
+      if (!token) {
+        showNotification('Session expirée', 'error');
+        setTimeout(() => navigate('/login'), 2000);
+        return;
+      }
+
+      const params = new URLSearchParams();
+      if (statusFilter !== 'all') params.append('status', statusFilter);
+      if (paymentFilter !== 'all') params.append('payment_status', paymentFilter);
+      if (searchTerm) params.append('search', searchTerm);
+
+      const response = await AxiosInstance.get(`/sales/?${params.toString()}`, {
+        headers: { 'Authorization': `Token ${token}` }
+      });
+
+      let data = response.data;
+      let ventesData = [];
+      if (Array.isArray(data)) {
+        ventesData = data;
+      } else if (data.results) {
+        ventesData = data.results;
+      } else {
+        ventesData = [];
+      }
+
+      setVentes(ventesData);
+      setStats({
+        total: ventesData.length,
+        total_amount: ventesData.reduce((sum, v) => sum + parseFloat(v.total || 0), 0),
+        by_status: {},
+        by_payment_status: {}
+      });
+      setIsFirstLoad(false);
+    } catch (error) {
+      console.error('Erreur:', error);
+      showNotification('Erreur de chargement', 'error');
+    } finally {
+      setLoading(false);
+    }
+  }, [statusFilter, paymentFilter, searchTerm, navigate]);
+
+  // ============================================================
+  // NAVIGATION JOURS
+  // ============================================================
+  const goToPreviousDay = () => {
+    setSelectedDate(prev => {
+      const newDate = new Date(prev);
+      newDate.setDate(newDate.getDate() - 1);
+      return newDate;
+    });
+  };
+
+  const goToNextDay = () => {
+    const today = new Date();
+    setSelectedDate(prev => {
+      const newDate = new Date(prev);
+      newDate.setDate(newDate.getDate() + 1);
+      return newDate > today ? prev : newDate;
+    });
+  };
+
+  const goToToday = () => {
+    setSelectedDate(new Date());
+    setViewMode('today');
+  };
+
+  // ============================================================
+  // EFFET DE CHARGEMENT
   // ============================================================
   useEffect(() => {
-    const timer = setTimeout(() => {
-      fetchVentes();
-    }, 300);
-
-    return () => clearTimeout(timer);
-  }, [fetchVentes]);
+    if (viewMode === 'today') {
+      fetchTodaySales();
+    } else if (viewMode === 'range') {
+      fetchDateRangeSales();
+    } else {
+      fetchAllSales();
+    }
+  }, [viewMode, fetchTodaySales, fetchDateRangeSales, fetchAllSales]);
 
   // ============================================================
   // RÉCUPÉRATION DES DONNÉES COMPLÈTES POUR TICKET
@@ -140,7 +268,6 @@ const VentesList = () => {
       const response = await AxiosInstance.get(`/sales/${saleId}/`, {
         headers: { 'Authorization': `Token ${token}` }
       });
-      
       return response.data;
     } catch (error) {
       console.error('Erreur récupération vente complète:', error);
@@ -155,10 +282,10 @@ const VentesList = () => {
   const handlePrintTicket = async (vente) => {
     const saleId = vente.id;
     setPrintingId(saleId);
-    
+
     try {
       const completeVente = await fetchCompleteSale(saleId);
-      
+
       if (!completeVente) {
         showNotification('Impossible de récupérer les données de la vente', 'error');
         setPrintingId(null);
@@ -178,7 +305,7 @@ const VentesList = () => {
         companyEmail: 'ebsfservices@gmail.com',
         companyAddress: 'Pita Centre – Grand Marché, Guinée'
       });
-      
+
       showNotification('Ticket imprimé avec succès', 'success');
     } catch (error) {
       console.error('Erreur impression ticket:', error);
@@ -199,7 +326,9 @@ const VentesList = () => {
         headers: { 'Authorization': `Token ${token}` }
       });
       showNotification('Vente supprimée', 'success');
-      fetchVentes();
+      if (viewMode === 'today') fetchTodaySales();
+      else if (viewMode === 'range') fetchDateRangeSales();
+      else fetchAllSales();
       setShowDeleteModal(false);
       setVenteToDelete(null);
     } catch (error) {
@@ -231,13 +360,15 @@ const VentesList = () => {
       if (notes) payload.notes = notes;
 
       await AxiosInstance.post(
-        `/sales/${id}/update_status/`, 
+        `/sales/${id}/update_status/`,
         payload,
         { headers: { 'Authorization': `Token ${token}` } }
       );
-      
+
       showNotification(`Statut mis à jour: ${status}`, 'success');
-      fetchVentes();
+      if (viewMode === 'today') fetchTodaySales();
+      else if (viewMode === 'range') fetchDateRangeSales();
+      else fetchAllSales();
     } catch (error) {
       console.error('Erreur mise à jour statut:', error);
       showNotification('Erreur lors de la mise à jour', 'error');
@@ -257,13 +388,15 @@ const VentesList = () => {
       }
 
       await AxiosInstance.post(
-        `/sales/${id}/confirm/`, 
+        `/sales/${id}/confirm/`,
         {},
         { headers: { 'Authorization': `Token ${token}` } }
       );
-      
+
       showNotification('Vente confirmée avec succès', 'success');
-      fetchVentes();
+      if (viewMode === 'today') fetchTodaySales();
+      else if (viewMode === 'range') fetchDateRangeSales();
+      else fetchAllSales();
     } catch (error) {
       console.error('Erreur confirmation:', error);
       showNotification('Erreur lors de la confirmation', 'error');
@@ -283,13 +416,15 @@ const VentesList = () => {
       }
 
       await AxiosInstance.post(
-        `/sales/${id}/mark_paid/`, 
+        `/sales/${id}/mark_paid/`,
         {},
         { headers: { 'Authorization': `Token ${token}` } }
       );
-      
+
       showNotification('Vente marquée comme payée', 'success');
-      fetchVentes();
+      if (viewMode === 'today') fetchTodaySales();
+      else if (viewMode === 'range') fetchDateRangeSales();
+      else fetchAllSales();
     } catch (error) {
       console.error('Erreur paiement:', error);
       showNotification('Erreur lors du paiement', 'error');
@@ -303,7 +438,7 @@ const VentesList = () => {
   };
 
   // ============================================================
-  // PAGINATION CLIENT (car API retourne tout)
+  // PAGINATION
   // ============================================================
   const paginatedVentes = ventes.slice(
     (currentPage - 1) * itemsPerPage,
@@ -313,30 +448,8 @@ const VentesList = () => {
   const totalPages = Math.ceil(ventes.length / itemsPerPage);
 
   // ============================================================
-  // FORMATAGE
+  // BADGES
   // ============================================================
-  const formatCurrency = (amount) => {
-    if (!amount && amount !== 0) return '0 FCFA';
-    const num = typeof amount === 'string' ? parseFloat(amount) : amount;
-    if (isNaN(num)) return '0 FCFA';
-    return `${num.toLocaleString('fr-FR')} FCFA`;
-  };
-
-  const formatDate = (dateString) => {
-    if (!dateString) return '-';
-    try {
-      const date = new Date(dateString);
-      if (isNaN(date.getTime())) return '-';
-      return date.toLocaleDateString('fr-FR', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric'
-      });
-    } catch {
-      return '-';
-    }
-  };
-
   const getStatusBadge = (status) => {
     const configs = {
       draft: { label: 'Brouillon', className: 'badge-ghost' },
@@ -430,11 +543,21 @@ const VentesList = () => {
               )}
             </div>
             <p className="text-sm text-gray-500 ml-1">
-              {stats.total} vente(s) - {formatCurrency(stats.totalAmount)}
+              {viewMode === 'today' ? `Ventes du ${formatDate(selectedDate)}` :
+               viewMode === 'range' ? `Période du ${formatDate(dateFrom)} au ${formatDate(dateTo)}` :
+               `Toutes les ventes`}
             </p>
           </div>
           <div className="flex flex-wrap gap-3">
-            <button onClick={fetchVentes} className="btn btn-sm sm:btn-md btn-outline gap-2" disabled={loading}>
+            <button
+              onClick={() => {
+                if (viewMode === 'today') fetchTodaySales();
+                else if (viewMode === 'range') fetchDateRangeSales();
+                else fetchAllSales();
+              }}
+              className="btn btn-sm sm:btn-md btn-outline gap-2"
+              disabled={loading}
+            >
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Actualiser
             </button>
             <button onClick={() => navigate('/ventes/nouveau')} className="btn btn-sm sm:btn-md bg-gradient-to-r from-primary to-primary/80 text-white border-none shadow-lg gap-2">
@@ -444,66 +567,152 @@ const VentesList = () => {
         </div>
       </div>
 
-      {/* Statistiques */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        <div className="bg-white shadow-md rounded-xl p-3">
-          <div className="flex items-center justify-between">
-            <div><p className="text-xs text-gray-500">Total</p><p className="text-xl font-bold text-primary">{stats.total}</p></div>
-            <ShoppingCart className="w-8 h-8 text-primary/20" />
+      {/* Sélecteur de mode et navigation */}
+      <div className="bg-white rounded-xl shadow-md p-4">
+        <div className="flex flex-col sm:flex-row gap-4">
+          <div className="flex gap-2 flex-wrap">
+            <button
+              className={`btn btn-sm ${viewMode === 'today' ? 'btn-primary' : 'btn-ghost'}`}
+              onClick={() => { setViewMode('today'); goToToday(); }}
+            >
+              Aujourd'hui
+            </button>
+            <button
+              className={`btn btn-sm ${viewMode === 'range' ? 'btn-primary' : 'btn-ghost'}`}
+              onClick={() => setViewMode('range')}
+            >
+              Plage de dates
+            </button>
+            <button
+              className={`btn btn-sm ${viewMode === 'all' ? 'btn-primary' : 'btn-ghost'}`}
+              onClick={() => setViewMode('all')}
+            >
+              Toutes
+            </button>
           </div>
-        </div>
-        <div className="bg-white shadow-md rounded-xl p-3">
-          <div className="flex items-center justify-between">
-            <div><p className="text-xs text-gray-500">Confirmées</p><p className="text-xl font-bold text-info">{stats.confirmed}</p></div>
-            <CheckCircle className="w-8 h-8 text-info/20" />
-          </div>
-        </div>
-        <div className="bg-white shadow-md rounded-xl p-3">
-          <div className="flex items-center justify-between">
-            <div><p className="text-xs text-gray-500">Payées</p><p className="text-xl font-bold text-success">{stats.paid}</p></div>
-            <CreditCard className="w-8 h-8 text-success/20" />
-          </div>
-        </div>
-        <div className="bg-white shadow-md rounded-xl p-3">
-          <div className="flex items-center justify-between">
-            <div><p className="text-xs text-gray-500">Livrées</p><p className="text-xl font-bold text-primary">{stats.delivered}</p></div>
-            <Truck className="w-8 h-8 text-primary/20" />
-          </div>
-        </div>
-        <div className="bg-white shadow-md rounded-xl p-3">
-          <div className="flex items-center justify-between">
-            <div><p className="text-xs text-gray-500">Brouillons</p><p className="text-xl font-bold text-gray-400">{stats.draft}</p></div>
-            <FileText className="w-8 h-8 text-gray-400/20" />
-          </div>
-        </div>
-        <div className="bg-white shadow-md rounded-xl p-3">
-          <div className="flex items-center justify-between">
-            <div><p className="text-xs text-gray-500">Annulées</p><p className="text-xl font-bold text-error">{stats.cancelled}</p></div>
-            <Ban className="w-8 h-8 text-error/20" />
-          </div>
+
+          {viewMode === 'today' && (
+            <div className="flex items-center gap-2 flex-1 justify-center sm:justify-end">
+              <button onClick={goToPreviousDay} className="btn btn-sm btn-ghost btn-circle">
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <input
+                type="date"
+                className="input input-bordered input-sm w-auto"
+                value={formatDateInput(selectedDate)}
+                onChange={(e) => {
+                  const newDate = new Date(e.target.value + 'T00:00:00');
+                  if (!isNaN(newDate.getTime())) {
+                    setSelectedDate(newDate);
+                  }
+                }}
+              />
+              <button onClick={goToNextDay} className="btn btn-sm btn-ghost btn-circle">
+                <ChevronRight className="w-4 h-4" />
+              </button>
+              <button onClick={goToToday} className="btn btn-sm btn-ghost">
+                Aujourd'hui
+              </button>
+            </div>
+          )}
+
+          {viewMode === 'range' && (
+            <div className="flex items-center gap-2 flex-1 justify-center sm:justify-end flex-wrap">
+              <input
+                type="date"
+                className="input input-bordered input-sm"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+              />
+              <span className="text-sm text-gray-500">à</span>
+              <input
+                type="date"
+                className="input input-bordered input-sm"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+              />
+              <button
+                className="btn btn-primary btn-sm"
+                onClick={fetchDateRangeSales}
+                disabled={!dateFrom || !dateTo || loading}
+              >
+                <Search className="w-3 h-3" /> Charger
+              </button>
+            </div>
+          )}
         </div>
       </div>
+
+      {/* Statistiques */}
+      {viewMode === 'today' && stats && stats.total !== undefined && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
+          <div className="bg-white shadow-md rounded-xl p-3">
+            <div className="flex items-center justify-between">
+              <div><p className="text-xs text-gray-500">Total</p><p className="text-xl font-bold text-primary">{stats.total || 0}</p></div>
+              <ShoppingCart className="w-8 h-8 text-primary/20" />
+            </div>
+          </div>
+          <div className="bg-white shadow-md rounded-xl p-3">
+            <div className="flex items-center justify-between">
+              <div><p className="text-xs text-gray-500">Montant</p><p className="text-xl font-bold text-success">{formatCurrency(stats.total_amount)}</p></div>
+              <CreditCard className="w-8 h-8 text-success/20" />
+            </div>
+          </div>
+          {stats.by_status && Object.entries(stats.by_status).filter(([_, count]) => count > 0).map(([status, count]) => (
+            <div key={status} className="bg-white shadow-md rounded-xl p-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-gray-500">{status === 'draft' ? 'Brouillons' :
+                    status === 'confirmed' ? 'Confirmées' :
+                    status === 'paid' ? 'Payées' :
+                    status === 'delivered' ? 'Livrées' :
+                    status === 'cancelled' ? 'Annulées' : 'Retournées'}</p>
+                  <p className="text-xl font-bold">{count}</p>
+                </div>
+                <span className="badge badge-ghost">{count}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {viewMode === 'range' && stats && stats.total !== undefined && (
+        <div className="grid grid-cols-2 gap-3">
+          <div className="bg-white shadow-md rounded-xl p-3">
+            <div className="flex items-center justify-between">
+              <div><p className="text-xs text-gray-500">Total ventes</p><p className="text-xl font-bold text-primary">{stats.total || 0}</p></div>
+              <ShoppingCart className="w-8 h-8 text-primary/20" />
+            </div>
+          </div>
+          <div className="bg-white shadow-md rounded-xl p-3">
+            <div className="flex items-center justify-between">
+              <div><p className="text-xs text-gray-500">Montant total</p><p className="text-xl font-bold text-success">{formatCurrency(stats.total_amount)}</p></div>
+              <CreditCard className="w-8 h-8 text-success/20" />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Filtres */}
       <div className="bg-white rounded-xl shadow-md p-4">
         <div className="flex flex-col gap-3">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input 
-              type="text" 
-              placeholder="Rechercher par numéro ou client..." 
-              className="input input-bordered w-full pl-9" 
-              value={searchTerm} 
-              onChange={(e) => { 
-                setSearchTerm(e.target.value); 
-                setCurrentPage(1); 
-              }} 
+            <input
+              type="text"
+              placeholder="Rechercher par numéro ou client..."
+              className="input input-bordered w-full pl-9"
+              value={searchTerm}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setCurrentPage(1);
+              }}
             />
           </div>
           <button onClick={() => setShowFilters(!showFilters)} className="btn btn-outline btn-sm sm:hidden gap-2">
             <Filter className="w-4 h-4" /> {showFilters ? 'Masquer' : 'Filtres'}
           </button>
-          <div className={`${showFilters ? 'grid' : 'hidden'} sm:grid grid-cols-1 sm:grid-cols-4 gap-3`}>
+          <div className={`${showFilters ? 'grid' : 'hidden'} sm:grid grid-cols-1 sm:grid-cols-2 gap-3`}>
             <select className="select select-bordered w-full" value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(1); }}>
               <option value="all">Tous les statuts</option>
               <option value="draft">Brouillons</option>
@@ -519,8 +728,6 @@ const VentesList = () => {
               <option value="partial">Partiel</option>
               <option value="pending">En attente</option>
             </select>
-            <input type="date" className="input input-bordered" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
-            <input type="date" className="input input-bordered" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
           </div>
         </div>
       </div>
@@ -541,7 +748,6 @@ const VentesList = () => {
               </tr>
             </thead>
             <tbody>
-              {/* Skeleton loading */}
               {loading && !isFirstLoad && (
                 Array.from({ length: Math.min(itemsPerPage, 5) }).map((_, i) => (
                   <tr key={`skeleton-${i}`} className="animate-pulse">
@@ -562,7 +768,6 @@ const VentesList = () => {
                 ))
               )}
 
-              {/* Données réelles */}
               {!loading && paginatedVentes.length === 0 && (
                 <tr>
                   <td colSpan="7" className="text-center py-16">
@@ -582,9 +787,6 @@ const VentesList = () => {
                   <td className="py-3 px-4">
                     <div className="flex items-center gap-2">
                       <span className="font-mono font-semibold">{vente.invoice_number}</span>
-                      {vente.has_qr_code && (
-                        <span className="badge badge-secondary badge-xs">QR</span>
-                      )}
                     </div>
                   </td>
                   <td className="py-3 px-4 font-medium">{vente.client_name}</td>
@@ -599,8 +801,8 @@ const VentesList = () => {
                   <td className="py-3 px-4 text-center">{getPaymentBadge(vente.payment_status)}</td>
                   <td className="py-3 px-4 text-center">
                     <div className="flex justify-center gap-1 flex-wrap">
-                      <button 
-                        onClick={() => navigate(`/ventes/${vente.id}`)} 
+                      <button
+                        onClick={() => navigate(`/ventes/${vente.id}`)}
                         className="btn btn-ghost btn-sm btn-circle tooltip"
                         data-tip="Voir détails"
                       >
@@ -609,15 +811,15 @@ const VentesList = () => {
 
                       {vente.status === 'draft' && (
                         <>
-                          <button 
-                            onClick={() => navigate(`/ventes/${vente.id}/modifier`)} 
+                          <button
+                            onClick={() => navigate(`/ventes/${vente.id}/modifier`)}
                             className="btn btn-ghost btn-sm btn-circle tooltip text-warning"
                             data-tip="Modifier"
                           >
                             <Edit className="w-4 h-4" />
                           </button>
-                          <button 
-                            onClick={() => handleConfirmSale(vente.id)} 
+                          <button
+                            onClick={() => handleConfirmSale(vente.id)}
                             className="btn btn-ghost btn-sm btn-circle tooltip text-success"
                             data-tip="Confirmer"
                             disabled={actionLoading}
@@ -628,8 +830,8 @@ const VentesList = () => {
                       )}
 
                       {vente.status === 'confirmed' && (
-                        <button 
-                          onClick={() => handleMarkPaid(vente.id)} 
+                        <button
+                          onClick={() => handleMarkPaid(vente.id)}
                           className="btn btn-ghost btn-sm btn-circle tooltip text-success"
                           data-tip="Marquer payée"
                           disabled={actionLoading}
@@ -638,7 +840,7 @@ const VentesList = () => {
                         </button>
                       )}
 
-                      <button 
+                      <button
                         className="btn btn-ghost btn-sm btn-circle tooltip text-primary"
                         data-tip="Télécharger PDF"
                         onClick={() => handleDownloadPdf(vente.id)}
@@ -646,7 +848,7 @@ const VentesList = () => {
                         <Download className="w-4 h-4" />
                       </button>
 
-                      <button 
+                      <button
                         className="btn btn-ghost btn-sm btn-circle tooltip text-secondary"
                         data-tip="Imprimer ticket"
                         onClick={() => handlePrintTicket(vente)}
@@ -660,8 +862,8 @@ const VentesList = () => {
                       </button>
 
                       {vente.status !== 'cancelled' && vente.status !== 'paid' && (
-                        <button 
-                          onClick={() => handleUpdateStatus(vente.id, 'cancelled')} 
+                        <button
+                          onClick={() => handleUpdateStatus(vente.id, 'cancelled')}
                           className="btn btn-ghost btn-sm btn-circle tooltip text-error"
                           data-tip="Annuler"
                           disabled={actionLoading}
@@ -684,9 +886,9 @@ const VentesList = () => {
               Affichage de {(currentPage - 1) * itemsPerPage + 1} à {Math.min(currentPage * itemsPerPage, ventes.length)} sur {ventes.length}
             </div>
             <div className="flex items-center gap-3">
-              <select 
-                className="select select-bordered select-sm" 
-                value={itemsPerPage} 
+              <select
+                className="select select-bordered select-sm"
+                value={itemsPerPage}
                 onChange={(e) => { setItemsPerPage(parseInt(e.target.value)); setCurrentPage(1); }}
               >
                 <option value="5">5 lignes</option>
@@ -695,9 +897,9 @@ const VentesList = () => {
                 <option value="50">50 lignes</option>
               </select>
               <div className="join">
-                <button 
-                  className="join-item btn btn-sm" 
-                  onClick={() => setCurrentPage(p => Math.max(1, p-1))} 
+                <button
+                  className="join-item btn btn-sm"
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                   disabled={currentPage === 1 || totalPages === 0}
                 >
                   <ChevronLeft className="w-4 h-4" />
@@ -705,9 +907,9 @@ const VentesList = () => {
                 <span className="join-item btn btn-sm btn-disabled">
                   {totalPages > 0 ? `Page ${currentPage} / ${totalPages}` : 'Page 0'}
                 </span>
-                <button 
-                  className="join-item btn btn-sm" 
-                  onClick={() => setCurrentPage(p => Math.min(totalPages, p+1))} 
+                <button
+                  className="join-item btn btn-sm"
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                   disabled={currentPage === totalPages || totalPages === 0}
                 >
                   <ChevronRight className="w-4 h-4" />
