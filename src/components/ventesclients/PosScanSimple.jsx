@@ -1,6 +1,7 @@
 // src/components/pos/PosScanSimple.jsx
 // ============================================================
-// VERSION AVEC LAYOUT DIVISE - SCAN A GAUCHE / PANIER A DROITE
+// VERSION OPTIMISEE - CHARGEMENT FLUIDE EN ARRIERE-PLAN
+// Scan à gauche / Panier à droite avec chargement asynchrone
 // ============================================================
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -35,11 +36,12 @@ const PosScanSimple = () => {
   const [lastBarcode, setLastBarcode] = useState('');
   const [editingQuantity, setEditingQuantity] = useState(null);
   const [quantityInput, setQuantityInput] = useState('');
+  const [dataLoaded, setDataLoaded] = useState(false);
 
   const getToken = () => localStorage.getItem('Token');
 
   // ============================================================
-  // 1. CHARGEMENT DES DONNEES
+  // 1. CHARGEMENT DES DONNEES - FLUIDE ET RAPIDE
   // ============================================================
   const getImageUrl = (imagePath) => {
     if (!imagePath) return null;
@@ -56,7 +58,6 @@ const PosScanSimple = () => {
   };
 
   const fetchData = async () => {
-    setLoading(true);
     try {
       const token = getToken();
       if (!token) {
@@ -67,9 +68,10 @@ const PosScanSimple = () => {
 
       const headers = { 'Authorization': `Token ${token}` };
 
+      // Charger les produits en arrière-plan
       const [productsRes, customersRes, warehousesRes] = await Promise.all([
-        AxiosInstance.get('/products/?status=active', { headers }),
-        AxiosInstance.get('/clients/', { headers }),
+        AxiosInstance.get('/products/?status=active&limit=500', { headers }),
+        AxiosInstance.get('/clients/?limit=100', { headers }),
         AxiosInstance.get('/warehouses/?active=true', { headers })
       ]);
 
@@ -93,6 +95,8 @@ const PosScanSimple = () => {
         setSelectedWarehouse(warehousesRes.data[0]);
       }
 
+      setDataLoaded(true);
+
     } catch (error) {
       console.error('Erreur chargement données:', error);
       showNotification('Erreur de chargement des données', 'error');
@@ -102,15 +106,19 @@ const PosScanSimple = () => {
   };
 
   useEffect(() => {
+    // Chargement immédiat
     fetchData();
+    
+    // Focus sur le champ scan après un court délai
     setTimeout(() => {
       if (barcodeInputRef.current) {
         barcodeInputRef.current.focus();
       }
-    }, 500);
+    }, 300);
   }, []);
 
   useEffect(() => {
+    // Mettre à jour les prix affichés
     setProducts(prevProducts => 
       prevProducts.map(product => ({
         ...product,
@@ -122,7 +130,7 @@ const PosScanSimple = () => {
   }, [priceType]);
 
   // ============================================================
-  // 2. GESTION DU CODE-BARRES - SCAN AUTOMATIQUE
+  // 2. GESTION DU CODE-BARRES - RECHERCHE RAPIDE
   // ============================================================
   const handleBarcodeScan = (e) => {
     const value = e.target.value.trim();
@@ -133,6 +141,7 @@ const PosScanSimple = () => {
         return;
       }
 
+      // Recherche rapide dans le cache local
       const product = products.find(p => p.barcode === value);
       
       if (product) {
@@ -140,18 +149,19 @@ const PosScanSimple = () => {
         setBarcodeValue('');
         e.target.value = '';
         setLastBarcode(value);
-        showNotification(`${product.name} ajouté au panier (${priceType === 'gros' ? 'Gros' : 'Détail'})`, 'success');
+        showNotification(`${product.name} ajouté au panier`, 'success');
         
         if (navigator.vibrate) {
-          navigator.vibrate(100);
+          navigator.vibrate(50);
         }
         
+        // Re-focus immédiat
         setTimeout(() => {
           if (barcodeInputRef.current) {
             barcodeInputRef.current.focus();
             barcodeInputRef.current.select();
           }
-        }, 100);
+        }, 50);
       } else {
         showNotification(`Code-barres "${value}" non trouvé`, 'error');
         setTimeout(() => {
@@ -161,7 +171,7 @@ const PosScanSimple = () => {
             barcodeInputRef.current.focus();
             barcodeInputRef.current.select();
           }
-        }, 1500);
+        }, 1000);
       }
     }
   };
@@ -172,7 +182,7 @@ const PosScanSimple = () => {
       if (value.length >= 8) {
         handleBarcodeScan(e);
       } else if (value.length > 0) {
-        showNotification('Code-barres trop court (minimum 8 caractères)', 'error');
+        showNotification('Code-barres trop court', 'error');
         setTimeout(() => {
           setBarcodeValue('');
           e.target.value = '';
@@ -180,17 +190,14 @@ const PosScanSimple = () => {
             barcodeInputRef.current.focus();
             barcodeInputRef.current.select();
           }
-        }, 1000);
+        }, 800);
       }
       e.preventDefault();
-    }
-    if (e.key === 'Enter') {
-      e.stopPropagation();
     }
   };
 
   // ============================================================
-  // 3. GESTION DU PANIER
+  // 3. GESTION DU PANIER - RAPIDE ET FLUIDE
   // ============================================================
   const addToCart = (product, quantity = 1) => {
     if (product.stock_quantity <= 0) {
@@ -318,13 +325,11 @@ const PosScanSimple = () => {
   };
 
   // ============================================================
-  // 4. CALCUL DES TOTAUX
+  // 4. CALCUL DES TOTAUX - RAPIDE
   // ============================================================
   const totals = React.useMemo(() => {
     const subtotal = cart.reduce((sum, item) => sum + item.total, 0);
-    const tax_amount = 0;
-    const total = subtotal + tax_amount;
-    return { subtotal, tax_amount, total };
+    return { subtotal, tax_amount: 0, total: subtotal };
   }, [cart]);
 
   // ============================================================
@@ -393,14 +398,14 @@ const PosScanSimple = () => {
         headers: { 'Authorization': `Token ${token}` }
       });
 
-      showNotification(`Vente ${response.data.invoice_number} enregistrée avec succès !`, 'success');
+      showNotification(`Vente ${response.data.invoice_number} enregistrée !`, 'success');
       
       setCart([]);
       setSelectedCustomer(null);
 
       setTimeout(() => {
         navigate(`/ventes/${response.data.id}`);
-      }, 2000);
+      }, 1500);
 
     } catch (error) {
       console.error('Erreur validation:', error);
@@ -432,7 +437,7 @@ const PosScanSimple = () => {
         if (barcodeInputRef.current) {
           barcodeInputRef.current.focus();
         }
-      }, 500);
+      }, 300);
     }
   };
 
@@ -480,7 +485,7 @@ const PosScanSimple = () => {
   // ============================================================
   const showNotification = (message, type = 'success') => {
     setNotification({ show: true, message, type });
-    setTimeout(() => setNotification({ show: false, message: '', type: 'success' }), 5000);
+    setTimeout(() => setNotification({ show: false, message: '', type: 'success' }), 3000);
   };
 
   // ============================================================
@@ -492,21 +497,8 @@ const PosScanSimple = () => {
   };
 
   // ============================================================
-  // 9. RENDU
+  // 9. RENDU - FLUIDE SANS BLOCAGE
   // ============================================================
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-[calc(100vh-200px)] bg-base-200">
-        <div className="text-center space-y-6">
-          <div className="loading loading-spinner loading-lg text-primary w-16 h-16"></div>
-          <p className="text-xl font-semibold text-base-content/70 animate-pulse">
-            Chargement du point de vente...
-          </p>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-4 p-4 lg:p-6 bg-base-200 min-h-screen">
       {/* Notification */}
@@ -606,12 +598,15 @@ const PosScanSimple = () => {
           <h1 className="text-3xl lg:text-4xl font-black text-base-content bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
             Scan & Vente
           </h1>
-          <p className="text-sm text-base-content/60">Scannez les produits - Ajout automatique au panier</p>
+          <p className="text-sm text-base-content/60">
+            {loading ? 'Chargement des produits...' : `${products.length} produits disponibles`}
+          </p>
         </div>
         
         <div className="flex flex-wrap gap-3">
-          <button onClick={fetchData} className="btn btn-outline gap-2">
-            <RefreshCw className="w-4 h-4" /> Actualiser
+          <button onClick={fetchData} className="btn btn-outline gap-2" disabled={loading}>
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            Actualiser
           </button>
           <button onClick={() => navigate('/ventes')} className="btn btn-primary gap-2">
             <ShoppingCart className="w-4 h-4" /> Voir les ventes
@@ -644,8 +639,14 @@ const PosScanSimple = () => {
                     onFocus={() => setIsBarcodeFocused(true)}
                     onBlur={() => setIsBarcodeFocused(false)}
                     autoFocus
+                    disabled={loading}
                   />
-                  {barcodeValue.length > 0 && (
+                  {loading && (
+                    <div className="absolute right-4 top-1/2 -translate-y-1/2">
+                      <Loader className="w-5 h-5 text-primary animate-spin" />
+                    </div>
+                  )}
+                  {barcodeValue.length > 0 && !loading && (
                     <button
                       className="absolute right-3 top-1/2 -translate-y-1/2 btn btn-ghost btn-sm btn-circle"
                       onClick={() => {
@@ -724,6 +725,7 @@ const PosScanSimple = () => {
                     const warehouse = warehouses.find(w => w.id === parseInt(e.target.value));
                     setSelectedWarehouse(warehouse);
                   }}
+                  disabled={loading}
                 >
                   <option value="">Sélectionner un entrepôt</option>
                   {warehouses.map(w => (
@@ -732,7 +734,7 @@ const PosScanSimple = () => {
                     </option>
                   ))}
                 </select>
-                {!selectedWarehouse && (
+                {!selectedWarehouse && !loading && (
                   <span className="text-xs text-error">Entrepôt requis</span>
                 )}
               </div>
@@ -742,6 +744,7 @@ const PosScanSimple = () => {
                 <button
                   className="btn btn-outline flex-1 gap-2"
                   onClick={() => setShowCustomerModal(true)}
+                  disabled={loading}
                 >
                   {selectedCustomer ? (
                     <span>{selectedCustomer.name}</span>
@@ -761,7 +764,7 @@ const PosScanSimple = () => {
             </div>
           </div>
 
-          {/* Derniers produits scannés (optionnel) */}
+          {/* Derniers produits scannés */}
           {cart.length > 0 && (
             <div className="bg-base-100 rounded-xl shadow-md border border-base-300 p-4">
               <h3 className="text-sm font-semibold text-base-content/60 mb-3 flex items-center gap-2">
@@ -916,7 +919,7 @@ const PosScanSimple = () => {
                   e.stopPropagation();
                   validateSale();
                 }}
-                disabled={cart.length === 0 || !selectedWarehouse || submitting}
+                disabled={cart.length === 0 || !selectedWarehouse || submitting || loading}
               >
                 {submitting ? (
                   <Loader className="w-5 h-5 animate-spin" />
@@ -930,6 +933,7 @@ const PosScanSimple = () => {
                 type="button"
                 className="btn btn-ghost w-full mt-2 h-10 text-sm gap-2"
                 onClick={() => setShowCustomerModal(true)}
+                disabled={loading}
               >
                 <User className="w-4 h-4" />
                 {selectedCustomer ? 'Changer de client' : 'Ajouter un client'}
