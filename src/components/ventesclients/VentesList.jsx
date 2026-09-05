@@ -1,9 +1,9 @@
 // src/components/ventes/VentesList.jsx
 // ============================================================
-// CORRECTION : Récupérer les données complètes avant d'imprimer
+// VERSION OPTIMISEE - CORRIGEE (PAGE BLANCHE FIX)
 // ============================================================
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import AxiosInstance from '../AxiosInstance';
 import TicketPOS from '../ventesclients/TicketPOS';
@@ -11,10 +11,9 @@ import {
   Plus, Edit, Trash2, Search, ShoppingCart,
   RefreshCw, X, CheckCircle, AlertCircle,
   Eye, Filter, ChevronLeft, ChevronRight,
-  Calendar, Clock, Users, DollarSign,
-  FileText, CreditCard, Truck, Package,
+  Calendar, FileText, CreditCard, Truck,
   AlertTriangle, Loader2, Download,
-  Printer, Send, Ban, QrCode
+  Printer, Ban
 } from 'lucide-react';
 
 const VentesList = () => {
@@ -32,19 +31,23 @@ const VentesList = () => {
   const [venteToDelete, setVenteToDelete] = useState(null);
   const [showFilters, setShowFilters] = useState(false);
   const [notification, setNotification] = useState({ show: false, message: '', type: 'success' });
-  const [viewMode, setViewMode] = useState('list');
-  const [printing, setPrinting] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
-  const [printingId, setPrintingId] = useState(null); // Pour suivre quel ticket est en cours
+  const [printingId, setPrintingId] = useState(null);
+  const [totalCount, setTotalCount] = useState(0);
+  const [stats, setStats] = useState({ total: 0, draft: 0, confirmed: 0, paid: 0, delivered: 0, cancelled: 0, totalAmount: 0 });
+  const [isFirstLoad, setIsFirstLoad] = useState(true);
 
   const showNotification = (message, type) => {
     setNotification({ show: true, message, type });
-    setTimeout(() => setNotification(prev => ({ ...prev, show: false })), 4000);
+    setTimeout(() => setNotification(prev => ({ ...prev, show: false })), 3000);
   };
 
   const getToken = () => localStorage.getItem('Token');
 
-  const fetchVentes = async () => {
+  // ============================================================
+  // CHARGEMENT OPTIMISE AVEC PAGINATION SERVEUR
+  // ============================================================
+  const fetchVentes = useCallback(async () => {
     setLoading(true);
     try {
       const token = getToken();
@@ -54,33 +57,51 @@ const VentesList = () => {
         return;
       }
 
-      let url = '/sales/';
+      // Construire les paramètres de requête
       const params = new URLSearchParams();
       
-      if (statusFilter !== 'all') {
-        params.append('status', statusFilter);
-      }
-      if (paymentFilter !== 'all') {
-        params.append('payment_status', paymentFilter);
-      }
-      if (dateFrom) {
-        params.append('date_from', dateFrom);
-      }
-      if (dateTo) {
-        params.append('date_to', dateTo);
-      }
-      if (searchTerm) {
-        params.append('search', searchTerm);
-      }
-      
-      if (params.toString()) {
-        url += `?${params.toString()}`;
-      }
-      
-      const response = await AxiosInstance.get(url, {
+      if (statusFilter !== 'all') params.append('status', statusFilter);
+      if (paymentFilter !== 'all') params.append('payment_status', paymentFilter);
+      if (dateFrom) params.append('date_from', dateFrom);
+      if (dateTo) params.append('date_to', dateTo);
+      if (searchTerm) params.append('search', searchTerm);
+
+      const response = await AxiosInstance.get(`/sales/?${params.toString()}`, {
         headers: { 'Authorization': `Token ${token}` }
       });
-      setVentes(response.data);
+
+      // Gérer la réponse (liste simple ou paginée)
+      let data = response.data;
+      let ventesData = [];
+      let count = 0;
+
+      if (Array.isArray(data)) {
+        ventesData = data;
+        count = data.length;
+      } else if (data.results) {
+        ventesData = data.results;
+        count = data.count || data.results.length;
+      } else {
+        ventesData = data.results || [];
+        count = data.count || 0;
+      }
+
+      setVentes(ventesData);
+      setTotalCount(count);
+
+      // Calculer les stats localement pour plus de rapidité
+      const localStats = {
+        total: ventesData.length,
+        draft: ventesData.filter(v => v.status === 'draft').length,
+        confirmed: ventesData.filter(v => v.status === 'confirmed').length,
+        paid: ventesData.filter(v => v.status === 'paid').length,
+        delivered: ventesData.filter(v => v.status === 'delivered').length,
+        cancelled: ventesData.filter(v => v.status === 'cancelled').length,
+        totalAmount: ventesData.reduce((sum, v) => sum + parseFloat(v.total || 0), 0)
+      };
+      setStats(localStats);
+
+      setIsFirstLoad(false);
     } catch (error) {
       console.error('Erreur:', error);
       if (error.response?.status === 401) {
@@ -92,14 +113,21 @@ const VentesList = () => {
     } finally {
       setLoading(false);
     }
-  };
-
-  useEffect(() => {
-    fetchVentes();
-  }, [statusFilter, paymentFilter, dateFrom, dateTo]);
+  }, [statusFilter, paymentFilter, dateFrom, dateTo, searchTerm]);
 
   // ============================================================
-  // ✅ FONCTION POUR RÉCUPÉRER LES DONNÉES COMPLÈTES D'UNE VENTE
+  // EFFET DE CHARGEMENT AVEC DEBOUNCE
+  // ============================================================
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      fetchVentes();
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [fetchVentes]);
+
+  // ============================================================
+  // RÉCUPÉRATION DES DONNÉES COMPLÈTES POUR TICKET
   // ============================================================
   const fetchCompleteSale = async (saleId) => {
     try {
@@ -122,36 +150,27 @@ const VentesList = () => {
   };
 
   // ============================================================
-  // ✅ FONCTION D'IMPRESSION TICKET CORRIGÉE
+  // IMPRESSION TICKET
   // ============================================================
   const handlePrintTicket = async (vente) => {
     const saleId = vente.id;
     setPrintingId(saleId);
-    setPrinting(true);
     
     try {
-      // 1. Récupérer les données complètes de la vente (avec les lignes)
       const completeVente = await fetchCompleteSale(saleId);
       
       if (!completeVente) {
         showNotification('Impossible de récupérer les données de la vente', 'error');
         setPrintingId(null);
-        setPrinting(false);
         return;
       }
 
-      // 2. Vérifier que les lignes sont présentes
       if (!completeVente.lines || completeVente.lines.length === 0) {
-        console.warn('⚠️ Aucune ligne trouvée pour cette vente');
         showNotification('Cette vente ne contient aucun produit', 'warning');
         setPrintingId(null);
-        setPrinting(false);
         return;
       }
 
-      console.log('✅ Impression ticket avec', completeVente.lines.length, 'produits');
-
-      // 3. Générer le ticket avec les données complètes
       await TicketPOS(completeVente, {
         companyName: 'ETABLISSEMENTS BAH SOULEYMANE ET FILS',
         companySlogan: 'E.B.S.F',
@@ -166,10 +185,12 @@ const VentesList = () => {
       showNotification('Erreur lors de l\'impression du ticket', 'error');
     } finally {
       setPrintingId(null);
-      setPrinting(false);
     }
   };
 
+  // ============================================================
+  // ACTIONS
+  // ============================================================
   const handleDelete = async () => {
     if (!venteToDelete) return;
     try {
@@ -207,11 +228,9 @@ const VentesList = () => {
       }
 
       const payload = { status };
-      if (notes) {
-        payload.notes = notes;
-      }
+      if (notes) payload.notes = notes;
 
-      const response = await AxiosInstance.post(
+      await AxiosInstance.post(
         `/sales/${id}/update_status/`, 
         payload,
         { headers: { 'Authorization': `Token ${token}` } }
@@ -221,23 +240,7 @@ const VentesList = () => {
       fetchVentes();
     } catch (error) {
       console.error('Erreur mise à jour statut:', error);
-      let errorMessage = 'Erreur lors de la mise à jour';
-      if (error.response) {
-        if (error.response.data && typeof error.response.data === 'object') {
-          if (error.response.data.error) {
-            errorMessage = error.response.data.error;
-          } else if (error.response.data.details) {
-            errorMessage = error.response.data.details.join(', ');
-          } else if (error.response.data.message) {
-            errorMessage = error.response.data.message;
-          } else if (error.response.data.detail) {
-            errorMessage = error.response.data.detail;
-          }
-        }
-      } else if (error.request) {
-        errorMessage = 'Pas de réponse du serveur';
-      }
-      showNotification(errorMessage, 'error');
+      showNotification('Erreur lors de la mise à jour', 'error');
     } finally {
       setActionLoading(false);
     }
@@ -253,7 +256,7 @@ const VentesList = () => {
         return;
       }
 
-      const response = await AxiosInstance.post(
+      await AxiosInstance.post(
         `/sales/${id}/confirm/`, 
         {},
         { headers: { 'Authorization': `Token ${token}` } }
@@ -263,11 +266,7 @@ const VentesList = () => {
       fetchVentes();
     } catch (error) {
       console.error('Erreur confirmation:', error);
-      let errorMessage = 'Erreur lors de la confirmation';
-      if (error.response?.data?.error) {
-        errorMessage = error.response.data.error;
-      }
-      showNotification(errorMessage, 'error');
+      showNotification('Erreur lors de la confirmation', 'error');
     } finally {
       setActionLoading(false);
     }
@@ -283,7 +282,7 @@ const VentesList = () => {
         return;
       }
 
-      const response = await AxiosInstance.post(
+      await AxiosInstance.post(
         `/sales/${id}/mark_paid/`, 
         {},
         { headers: { 'Authorization': `Token ${token}` } }
@@ -293,39 +292,49 @@ const VentesList = () => {
       fetchVentes();
     } catch (error) {
       console.error('Erreur paiement:', error);
-      let errorMessage = 'Erreur lors du paiement';
-      if (error.response?.data?.error) {
-        errorMessage = error.response.data.error;
-      }
-      showNotification(errorMessage, 'error');
+      showNotification('Erreur lors du paiement', 'error');
     } finally {
       setActionLoading(false);
     }
   };
 
-  const handleDownloadPdf = (id, invoiceNumber) => {
+  const handleDownloadPdf = (id) => {
     navigate(`/ventes/${id}/pdf`);
   };
 
-  const filteredVentes = ventes.filter(vente => {
-    const matchesSearch = !searchTerm || 
-      (vente.invoice_number?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
-      (vente.client_name?.toLowerCase() || '').includes(searchTerm.toLowerCase());
-    return matchesSearch;
-  });
+  // ============================================================
+  // PAGINATION CLIENT (car API retourne tout)
+  // ============================================================
+  const paginatedVentes = ventes.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
 
-  const totalPages = Math.ceil(filteredVentes.length / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const paginatedVentes = filteredVentes.slice(startIndex, startIndex + itemsPerPage);
+  const totalPages = Math.ceil(ventes.length / itemsPerPage);
 
-  const stats = {
-    total: ventes.length,
-    draft: ventes.filter(v => v.status === 'draft').length,
-    confirmed: ventes.filter(v => v.status === 'confirmed').length,
-    paid: ventes.filter(v => v.status === 'paid').length,
-    delivered: ventes.filter(v => v.status === 'delivered').length,
-    cancelled: ventes.filter(v => v.status === 'cancelled').length,
-    totalAmount: ventes.reduce((sum, v) => sum + parseFloat(v.total || 0), 0)
+  // ============================================================
+  // FORMATAGE
+  // ============================================================
+  const formatCurrency = (amount) => {
+    if (!amount && amount !== 0) return '0 FCFA';
+    const num = typeof amount === 'string' ? parseFloat(amount) : amount;
+    if (isNaN(num)) return '0 FCFA';
+    return `${num.toLocaleString('fr-FR')} FCFA`;
+  };
+
+  const formatDate = (dateString) => {
+    if (!dateString) return '-';
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) return '-';
+      return date.toLocaleDateString('fr-FR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric'
+      });
+    } catch {
+      return '-';
+    }
   };
 
   const getStatusBadge = (status) => {
@@ -351,33 +360,14 @@ const VentesList = () => {
     return <span className={`badge ${config.className}`}>{config.label}</span>;
   };
 
-  const formatCurrency = (amount) => {
-    if (!amount && amount !== 0) return '0 FCFA';
-    const num = typeof amount === 'string' ? parseFloat(amount) : amount;
-    if (isNaN(num)) return '0 FCFA';
-    return `${num.toLocaleString('fr-FR')} FCFA`;
-  };
-
-  const formatDate = (dateString) => {
-    if (!dateString) return '-';
-    try {
-      const date = new Date(dateString);
-      if (isNaN(date.getTime())) return '-';
-      return date.toLocaleDateString('fr-FR', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric'
-      });
-    } catch {
-      return '-';
-    }
-  };
-
-  if (loading) {
+  // ============================================================
+  // RENDU
+  // ============================================================
+  if (loading && isFirstLoad) {
     return (
       <div className="flex items-center justify-center min-h-[calc(100vh-200px)] bg-gray-50">
         <div className="text-center space-y-4">
-          <Loader2 className="animate-spin text-primary w-12 h-12 mx-auto" />
+          <div className="w-16 h-16 border-4 border-primary/30 border-t-primary rounded-full animate-spin mx-auto"></div>
           <p className="text-base font-medium text-gray-500">Chargement des ventes...</p>
         </div>
       </div>
@@ -435,13 +425,16 @@ const VentesList = () => {
                 <ShoppingCart className="w-7 h-7 text-primary" />
               </div>
               <h1 className="text-2xl sm:text-3xl font-black text-primary">Ventes</h1>
+              {loading && !isFirstLoad && (
+                <Loader2 className="w-5 h-5 text-primary animate-spin ml-2" />
+              )}
             </div>
             <p className="text-sm text-gray-500 ml-1">
               {stats.total} vente(s) - {formatCurrency(stats.totalAmount)}
             </p>
           </div>
           <div className="flex flex-wrap gap-3">
-            <button onClick={fetchVentes} className="btn btn-sm sm:btn-md btn-outline gap-2">
+            <button onClick={fetchVentes} className="btn btn-sm sm:btn-md btn-outline gap-2" disabled={loading}>
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Actualiser
             </button>
             <button onClick={() => navigate('/ventes/nouveau')} className="btn btn-sm sm:btn-md bg-gradient-to-r from-primary to-primary/80 text-white border-none shadow-lg gap-2">
@@ -501,7 +494,10 @@ const VentesList = () => {
               placeholder="Rechercher par numéro ou client..." 
               className="input input-bordered w-full pl-9" 
               value={searchTerm} 
-              onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }} 
+              onChange={(e) => { 
+                setSearchTerm(e.target.value); 
+                setCurrentPage(1); 
+              }} 
             />
           </div>
           <button onClick={() => setShowFilters(!showFilters)} className="btn btn-outline btn-sm sm:hidden gap-2">
@@ -545,7 +541,29 @@ const VentesList = () => {
               </tr>
             </thead>
             <tbody>
-              {paginatedVentes.length === 0 ? (
+              {/* Skeleton loading */}
+              {loading && !isFirstLoad && (
+                Array.from({ length: Math.min(itemsPerPage, 5) }).map((_, i) => (
+                  <tr key={`skeleton-${i}`} className="animate-pulse">
+                    <td className="py-3 px-4"><div className="h-4 w-20 bg-gray-200 rounded"></div></td>
+                    <td className="py-3 px-4"><div className="h-4 w-24 bg-gray-200 rounded"></div></td>
+                    <td className="py-3 px-4 hidden lg:table-cell"><div className="h-4 w-16 bg-gray-200 rounded"></div></td>
+                    <td className="py-3 px-4 text-right"><div className="h-4 w-16 bg-gray-200 rounded ml-auto"></div></td>
+                    <td className="py-3 px-4 text-center"><div className="h-6 w-16 bg-gray-200 rounded mx-auto"></div></td>
+                    <td className="py-3 px-4 text-center"><div className="h-6 w-16 bg-gray-200 rounded mx-auto"></div></td>
+                    <td className="py-3 px-4 text-center">
+                      <div className="flex justify-center gap-1">
+                        <div className="w-8 h-8 bg-gray-200 rounded-full"></div>
+                        <div className="w-8 h-8 bg-gray-200 rounded-full"></div>
+                        <div className="w-8 h-8 bg-gray-200 rounded-full"></div>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+
+              {/* Données réelles */}
+              {!loading && paginatedVentes.length === 0 && (
                 <tr>
                   <td colSpan="7" className="text-center py-16">
                     <div className="flex flex-col items-center gap-3">
@@ -557,122 +575,113 @@ const VentesList = () => {
                     </div>
                   </td>
                 </tr>
-              ) : (
-                paginatedVentes.map(vente => (
-                  <tr key={vente.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="py-3 px-4">
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono font-semibold">{vente.invoice_number}</span>
-                        {vente.has_qr_code && (
-                          <span className="badge badge-secondary badge-xs">QR</span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="py-3 px-4 font-medium">{vente.client_name}</td>
-                    <td className="py-3 px-4 hidden lg:table-cell">
-                      <div className="flex items-center gap-1 text-sm text-gray-600">
-                        <Calendar className="w-3 h-3 text-gray-400" />
-                        {formatDate(vente.sale_date)}
-                      </div>
-                    </td>
-                    <td className="py-3 px-4 text-right font-semibold text-primary">{formatCurrency(vente.total)}</td>
-                    <td className="py-3 px-4 text-center">{getStatusBadge(vente.status)}</td>
-                    <td className="py-3 px-4 text-center">{getPaymentBadge(vente.payment_status)}</td>
-                    <td className="py-3 px-4 text-center">
-                      <div className="flex justify-center gap-1 flex-wrap">
-                        {/* Voir détails */}
-                        <button 
-                          onClick={() => navigate(`/ventes/${vente.id}`)} 
-                          className="btn btn-ghost btn-sm btn-circle tooltip"
-                          data-tip="Voir détails"
-                          disabled={actionLoading}
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
-
-                        {/* Modifier (seulement brouillon) */}
-                        {vente.status === 'draft' && (
-                          <>
-                            <button 
-                              onClick={() => navigate(`/ventes/${vente.id}/modifier`)} 
-                              className="btn btn-ghost btn-sm btn-circle tooltip text-warning"
-                              data-tip="Modifier"
-                              disabled={actionLoading}
-                            >
-                              <Edit className="w-4 h-4" />
-                            </button>
-                            <button 
-                              onClick={() => handleConfirmSale(vente.id)} 
-                              className="btn btn-ghost btn-sm btn-circle tooltip text-success"
-                              data-tip="Confirmer"
-                              disabled={actionLoading}
-                            >
-                              {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
-                            </button>
-                          </>
-                        )}
-
-                        {/* Marquer payée (seulement confirmée) */}
-                        {vente.status === 'confirmed' && (
-                          <button 
-                            onClick={() => handleMarkPaid(vente.id)} 
-                            className="btn btn-ghost btn-sm btn-circle tooltip text-success"
-                            data-tip="Marquer payée"
-                            disabled={actionLoading}
-                          >
-                            {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CreditCard className="w-4 h-4" />}
-                          </button>
-                        )}
-
-                        {/* Télécharger PDF */}
-                        <button 
-                          className="btn btn-ghost btn-sm btn-circle tooltip text-primary"
-                          data-tip="Télécharger PDF"
-                          onClick={() => handleDownloadPdf(vente.id, vente.invoice_number)}
-                          disabled={actionLoading}
-                        >
-                          <Download className="w-4 h-4" />
-                        </button>
-
-                        {/* ✅ Imprimer Ticket - CORRIGÉ */}
-                        <button 
-                          className="btn btn-ghost btn-sm btn-circle tooltip text-secondary"
-                          data-tip="Imprimer ticket"
-                          onClick={() => handlePrintTicket(vente)}
-                          disabled={printing || actionLoading}
-                        >
-                          {printingId === vente.id ? (
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                          ) : (
-                            <Printer className="w-4 h-4" />
-                          )}
-                        </button>
-
-                        {/* Annuler */}
-                        {vente.status !== 'cancelled' && vente.status !== 'paid' && (
-                          <button 
-                            onClick={() => handleUpdateStatus(vente.id, 'cancelled')} 
-                            className="btn btn-ghost btn-sm btn-circle tooltip text-error"
-                            data-tip="Annuler"
-                            disabled={actionLoading}
-                          >
-                            {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Ban className="w-4 h-4" />}
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))
               )}
+
+              {!loading && paginatedVentes.map(vente => (
+                <tr key={vente.id} className="hover:bg-gray-50 transition-colors">
+                  <td className="py-3 px-4">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono font-semibold">{vente.invoice_number}</span>
+                      {vente.has_qr_code && (
+                        <span className="badge badge-secondary badge-xs">QR</span>
+                      )}
+                    </div>
+                  </td>
+                  <td className="py-3 px-4 font-medium">{vente.client_name}</td>
+                  <td className="py-3 px-4 hidden lg:table-cell">
+                    <div className="flex items-center gap-1 text-sm text-gray-600">
+                      <Calendar className="w-3 h-3 text-gray-400" />
+                      {formatDate(vente.sale_date)}
+                    </div>
+                  </td>
+                  <td className="py-3 px-4 text-right font-semibold text-primary">{formatCurrency(vente.total)}</td>
+                  <td className="py-3 px-4 text-center">{getStatusBadge(vente.status)}</td>
+                  <td className="py-3 px-4 text-center">{getPaymentBadge(vente.payment_status)}</td>
+                  <td className="py-3 px-4 text-center">
+                    <div className="flex justify-center gap-1 flex-wrap">
+                      <button 
+                        onClick={() => navigate(`/ventes/${vente.id}`)} 
+                        className="btn btn-ghost btn-sm btn-circle tooltip"
+                        data-tip="Voir détails"
+                      >
+                        <Eye className="w-4 h-4" />
+                      </button>
+
+                      {vente.status === 'draft' && (
+                        <>
+                          <button 
+                            onClick={() => navigate(`/ventes/${vente.id}/modifier`)} 
+                            className="btn btn-ghost btn-sm btn-circle tooltip text-warning"
+                            data-tip="Modifier"
+                          >
+                            <Edit className="w-4 h-4" />
+                          </button>
+                          <button 
+                            onClick={() => handleConfirmSale(vente.id)} 
+                            className="btn btn-ghost btn-sm btn-circle tooltip text-success"
+                            data-tip="Confirmer"
+                            disabled={actionLoading}
+                          >
+                            {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+                          </button>
+                        </>
+                      )}
+
+                      {vente.status === 'confirmed' && (
+                        <button 
+                          onClick={() => handleMarkPaid(vente.id)} 
+                          className="btn btn-ghost btn-sm btn-circle tooltip text-success"
+                          data-tip="Marquer payée"
+                          disabled={actionLoading}
+                        >
+                          {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CreditCard className="w-4 h-4" />}
+                        </button>
+                      )}
+
+                      <button 
+                        className="btn btn-ghost btn-sm btn-circle tooltip text-primary"
+                        data-tip="Télécharger PDF"
+                        onClick={() => handleDownloadPdf(vente.id)}
+                      >
+                        <Download className="w-4 h-4" />
+                      </button>
+
+                      <button 
+                        className="btn btn-ghost btn-sm btn-circle tooltip text-secondary"
+                        data-tip="Imprimer ticket"
+                        onClick={() => handlePrintTicket(vente)}
+                        disabled={printingId === vente.id}
+                      >
+                        {printingId === vente.id ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Printer className="w-4 h-4" />
+                        )}
+                      </button>
+
+                      {vente.status !== 'cancelled' && vente.status !== 'paid' && (
+                        <button 
+                          onClick={() => handleUpdateStatus(vente.id, 'cancelled')} 
+                          className="btn btn-ghost btn-sm btn-circle tooltip text-error"
+                          data-tip="Annuler"
+                          disabled={actionLoading}
+                        >
+                          {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Ban className="w-4 h-4" />}
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
 
         {/* Pagination */}
-        {filteredVentes.length > 0 && (
+        {ventes.length > 0 && (
           <div className="px-6 py-4 border-t flex flex-col sm:flex-row items-center justify-between gap-4 bg-gray-50">
             <div className="text-sm text-gray-500">
-              Affichage de {startIndex + 1} à {Math.min(currentPage * itemsPerPage, filteredVentes.length)} sur {filteredVentes.length}
+              Affichage de {(currentPage - 1) * itemsPerPage + 1} à {Math.min(currentPage * itemsPerPage, ventes.length)} sur {ventes.length}
             </div>
             <div className="flex items-center gap-3">
               <select 
