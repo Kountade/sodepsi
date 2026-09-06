@@ -1,7 +1,7 @@
 // src/components/settings/EtablissementSettings.js
 import React, { useState, useEffect } from 'react';
 import axiosInstance from '../AxiosInstance';
-import { Upload, X, Save, Building2, AlertCircle, Plus, CheckCircle } from 'lucide-react';
+import { Upload, X, Save, Building2, AlertCircle, Plus, CheckCircle, Phone } from 'lucide-react';
 
 const EtablissementSettings = () => {
   const [loading, setLoading] = useState(true);
@@ -13,7 +13,8 @@ const EtablissementSettings = () => {
     nom: '',
     sigle: '',
     adresse: '',
-    telephone: '',
+    telephone1: '',   // ✅ Nouveau champ
+    telephone2: '',   // ✅ Nouveau champ
     email: '',
     site_web: '',
     devise: 'F CFA',
@@ -51,7 +52,8 @@ const EtablissementSettings = () => {
             nom: data.nom || '',
             sigle: data.sigle || '',
             adresse: data.adresse || '',
-            telephone: data.telephone || '',
+            telephone1: data.telephone1 || data.telephone || '', // ✅ Compatibilité ancienne
+            telephone2: data.telephone2 || '',
             email: data.email || '',
             site_web: data.site_web || '',
             devise: data.devise || 'F CFA',
@@ -155,7 +157,8 @@ const EtablissementSettings = () => {
         nom: formData.nom || 'Mon Établissement',
         sigle: formData.sigle || '',
         adresse: formData.adresse || '',
-        telephone: formData.telephone || '',
+        telephone1: formData.telephone1 || '',
+        telephone2: formData.telephone2 || '',
         email: formData.email || '',
         site_web: formData.site_web || '',
         devise: formData.devise,
@@ -175,7 +178,8 @@ const EtablissementSettings = () => {
         nom: created.nom,
         sigle: created.sigle || '',
         adresse: created.adresse || '',
-        telephone: created.telephone || '',
+        telephone1: created.telephone1 || '',
+        telephone2: created.telephone2 || '',
         email: created.email || '',
         site_web: created.site_web || '',
         devise: created.devise,
@@ -220,7 +224,8 @@ const EtablissementSettings = () => {
       formDataToSend.append('nom', formData.nom);
       formDataToSend.append('sigle', formData.sigle || '');
       formDataToSend.append('adresse', formData.adresse || '');
-      formDataToSend.append('telephone', formData.telephone || '');
+      formDataToSend.append('telephone1', formData.telephone1 || '');
+      formDataToSend.append('telephone2', formData.telephone2 || '');
       formDataToSend.append('email', formData.email || '');
       formDataToSend.append('site_web', formData.site_web || '');
       formDataToSend.append('devise', formData.devise);
@@ -244,7 +249,8 @@ const EtablissementSettings = () => {
         nom: updated.nom,
         sigle: updated.sigle,
         adresse: updated.adresse,
-        telephone: updated.telephone,
+        telephone1: updated.telephone1 || '',
+        telephone2: updated.telephone2 || '',
         email: updated.email,
         site_web: updated.site_web,
         devise: updated.devise,
@@ -347,34 +353,46 @@ const EtablissementSettings = () => {
               <label className="label"><span className="label-text font-medium">Adresse</span></label>
               <input type="text" name="adresse" value={formData.adresse} onChange={handleChange} className="input input-bordered w-full" />
             </div>
+            {/* ✅ NOUVEAU : Téléphone principal */}
             <div>
-              <label className="label"><span className="label-text font-medium">Téléphone</span></label>
-              <input type="tel" name="telephone" value={formData.telephone} onChange={handleChange} className="input input-bordered w-full" />
+              <label className="label"><span className="label-text font-medium flex items-center gap-1">
+                <Phone className="w-4 h-4" /> Téléphone 1
+              </span></label>
+              <input type="tel" name="telephone1" value={formData.telephone1} onChange={handleChange} className="input input-bordered w-full" placeholder="+224 600 00 00 00" />
             </div>
+            {/* ✅ NOUVEAU : Téléphone secondaire */}
             <div>
-              <label className="label"><span className="label-text font-medium">Email</span></label>
-              <input type="email" name="email" value={formData.email} onChange={handleChange} className="input input-bordered w-full" />
+              <label className="label"><span className="label-text font-medium flex items-center gap-1">
+                <Phone className="w-4 h-4" /> Téléphone 2
+              </span></label>
+              <input type="tel" name="telephone2" value={formData.telephone2} onChange={handleChange} className="input input-bordered w-full" placeholder="+224 600 00 00 00" />
             </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
+              <label className="label"><span className="label-text font-medium">Email</span></label>
+              <input type="email" name="email" value={formData.email} onChange={handleChange} className="input input-bordered w-full" />
+            </div>
+            <div>
               <label className="label"><span className="label-text font-medium">Site web</span></label>
               <input type="url" name="site_web" value={formData.site_web} onChange={handleChange} className="input input-bordered w-full" placeholder="https://..." />
             </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="label"><span className="label-text font-medium">Devise</span></label>
               <input type="text" name="devise" value={formData.devise} onChange={handleChange} className="input input-bordered w-full" />
             </div>
-          </div>
-
-          <div>
-            <label className="label"><span className="label-text font-medium">Système de notation</span></label>
-            <select name="systeme_notation" value={formData.systeme_notation} onChange={handleChange} className="select select-bordered w-full">
-              <option value="sur20">Sur 20</option>
-              <option value="sur100">Sur 100</option>
-              <option value="lettre">Lettres (A, B, C)</option>
-            </select>
+            <div>
+              <label className="label"><span className="label-text font-medium">Système de notation</span></label>
+              <select name="systeme_notation" value={formData.systeme_notation} onChange={handleChange} className="select select-bordered w-full">
+                <option value="sur20">Sur 20</option>
+                <option value="sur100">Sur 100</option>
+                <option value="lettre">Lettres (A, B, C)</option>
+              </select>
+            </div>
           </div>
 
           <div>
