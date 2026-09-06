@@ -89,9 +89,9 @@ import DepenseForm from './components/finances/DepenseForm';
 import ConfigurationFinanciere from './components/finances/ConfigurationFinanciere';
 import BudgetCategorieListe from './components/finances/BudgetCategorieListe';
 import BudgetCategorieForm from './components/finances/BudgetCategorieForm';
-import BudgetListe from './components/finances/BudgetListe';
+import BudgetsList from './components/finances/BudgetsList';
 import BudgetForm from './components/finances/BudgetForm';
-import RapportFinancierListe from './components/finances/RapportFinancierListe';
+import RapportsFinanciersList from './components/finances/RapportFinancierList';
 import RapportFinancierForm from './components/finances/RapportFinancierForm';
 import RapportFinancierDetail from './components/finances/RapportFinancierDetail';
 import RapportPdf from './components/finances/RapportPdf';
@@ -394,7 +394,7 @@ function App() {
 
 
 
-<Route path="/configuration-financiere" element={<ConfigurationFinanciere />} />
+<Route path="/config-financiere" element={<ConfigurationFinanciere />} />
 
  
 <Route path="/budget-categories" element={<BudgetCategorieListe />} />
@@ -402,14 +402,15 @@ function App() {
 
 
 
-<Route path="/budgets" element={<BudgetListe />} />
+{/* Budgets */}
+<Route path="/budgets" element={<BudgetsList />} />
 <Route path="/budgets/nouveau" element={<BudgetForm />} />
+<Route path="/budgets/:id" element={<BudgetForm />} />
 <Route path="/budgets/:id/modifier" element={<BudgetForm />} />
 
-<Route path="/rapports-financiers" element={<RapportFinancierListe />} />
+<Route path="/rapports-financiers" element={<RapportsFinanciersList />} />
 <Route path="/rapports-financiers/nouveau" element={<RapportFinancierForm />} />
 <Route path="/rapports-financiers/:id" element={<RapportFinancierDetail />} />
-<Route path="/rapports-financiers/:id/modifier" element={<RapportFinancierForm />} />
 <Route path="/rapports-financiers/:id/pdf" element={<RapportPdf />} />
 {/* ==================== FINANCES ==================== 
 

@@ -1,19 +1,20 @@
-// src/components/finances/BudgetsList.jsx
+// src/components/finances/RapportsFinanciersList.jsx
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import AxiosInstance from '../AxiosInstance';
 import {
-  Wallet, Plus, Search, Eye, Edit, Trash2, Loader2,
+  FilePieChart, Plus, Search, Eye, Loader2,
   RefreshCw, X, CheckCircle, AlertCircle,
   Filter, ChevronLeft, ChevronRight,
-  Calendar, AlertTriangle, TrendingUp, TrendingDown,
-  PiggyBank, Clock, Check, Ban
+  Calendar, Download, FileText, FileSpreadsheet,
+  TrendingUp, TrendingDown, Wallet, Building2,
+  PieChart, BarChart3, FileCheck, Clock
 } from 'lucide-react';
 
 // ============================================================
 // COMPOSANT PRINCIPAL
 // ============================================================
-const BudgetsList = () => {
+const RapportsFinanciersList = () => {
   // ==========================================================
   // HOOKS
   // ==========================================================
@@ -22,11 +23,12 @@ const BudgetsList = () => {
   // ==========================================================
   // ÉTATS
   // ==========================================================
-  const [budgets, setBudgets] = useState([]);
+  const [rapports, setRapports] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState('all');
-  const [statutFilter, setStatutFilter] = useState('all');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
@@ -35,6 +37,7 @@ const BudgetsList = () => {
     message: '',
     type: 'success'
   });
+  const [downloading, setDownloading] = useState(null);
 
   // ==========================================================
   // FONCTIONS UTILITAIRES
@@ -44,11 +47,6 @@ const BudgetsList = () => {
   const showNotification = (message, type) => {
     setNotification({ show: true, message, type });
     setTimeout(() => setNotification(prev => ({ ...prev, show: false })), 4000);
-  };
-
-  const formatCurrency = (amount) => {
-    if (!amount && amount !== 0) return '0 FCFA';
-    return `${amount.toLocaleString('fr-FR')} FCFA`;
   };
 
   const formatDate = (dateString) => {
@@ -67,43 +65,36 @@ const BudgetsList = () => {
 
   const getTypeBadge = (type) => {
     const configs = {
-      annuel: { label: 'Annuel', className: 'badge-primary' },
-      trimestriel: { label: 'Trimestriel', className: 'badge-info' },
-      mensuel: { label: 'Mensuel', className: 'badge-secondary' },
-      projet: { label: 'Projet', className: 'badge-warning' }
+      bilan: { label: 'Bilan', className: 'badge-primary', icon: BarChart3 },
+      compte_resultat: { label: 'Compte de résultat', className: 'badge-success', icon: TrendingUp },
+      tresorerie: { label: 'Trésorerie', className: 'badge-info', icon: Wallet },
+      budget: { label: 'Suivi budgétaire', className: 'badge-warning', icon: PieChart },
+      ventes: { label: 'Ventes', className: 'badge-secondary', icon: TrendingUp },
+      depenses: { label: 'Dépenses', className: 'badge-error', icon: TrendingDown },
+      achats: { label: 'Achats', className: 'badge-ghost', icon: ShoppingBag },
+      client: { label: 'Client', className: 'badge-info', icon: Building2 },
+      fournisseur: { label: 'Fournisseur', className: 'badge-warning', icon: Building2 }
     };
-    const config = configs[type] || { label: type, className: 'badge-ghost' };
-    return <span className={`badge ${config.className}`}>{config.label}</span>;
+    const config = configs[type] || { label: type, className: 'badge-ghost', icon: FileText };
+    const Icon = config.icon;
+    return (
+      <span className={`badge ${config.className} gap-1`}>
+        <Icon className="w-3 h-3" />
+        {config.label}
+      </span>
+    );
   };
 
-  const getStatutBadge = (statut) => {
-    const configs = {
-      en_cours: { label: 'En cours', className: 'badge-info' },
-      termine: { label: 'Terminé', className: 'badge-success' },
-      annule: { label: 'Annulé', className: 'badge-error' }
-    };
-    const config = configs[statut] || { label: statut, className: 'badge-ghost' };
-    return <span className={`badge ${config.className}`}>{config.label}</span>;
-  };
-
-  const getPourcentageColor = (pourcentage) => {
-    if (pourcentage >= 90) return 'text-red-600';
-    if (pourcentage >= 75) return 'text-orange-500';
-    if (pourcentage >= 50) return 'text-yellow-600';
-    return 'text-green-600';
-  };
-
-  const getProgressColor = (pourcentage) => {
-    if (pourcentage >= 90) return 'bg-red-500';
-    if (pourcentage >= 75) return 'bg-orange-500';
-    if (pourcentage >= 50) return 'bg-yellow-500';
-    return 'bg-green-500';
+  const getFormatIcon = (format) => {
+    if (format === 'pdf') return <FileText className="w-4 h-4" />;
+    if (format === 'excel') return <FileSpreadsheet className="w-4 h-4" />;
+    return <FileText className="w-4 h-4" />;
   };
 
   // ==========================================================
   // REQUÊTES API
   // ==========================================================
-  const fetchBudgets = useCallback(async () => {
+  const fetchRapports = useCallback(async () => {
     setLoading(true);
     try {
       const token = getToken();
@@ -116,60 +107,74 @@ const BudgetsList = () => {
       const params = new URLSearchParams();
       if (searchTerm) params.append('search', searchTerm);
       if (typeFilter !== 'all') params.append('type', typeFilter);
-      if (statutFilter !== 'all') params.append('statut', statutFilter);
+      if (dateFrom) params.append('date_from', dateFrom);
+      if (dateTo) params.append('date_to', dateTo);
 
-      const response = await AxiosInstance.get(`/budgets/?${params.toString()}`, {
+      const response = await AxiosInstance.get(`/rapports-financiers/?${params.toString()}`, {
         headers: { 'Authorization': `Token ${token}` }
       });
 
-      setBudgets(response.data);
+      setRapports(response.data);
     } catch (error) {
       console.error('Erreur:', error);
       showNotification('Erreur de chargement', 'error');
     } finally {
       setLoading(false);
     }
-  }, [searchTerm, typeFilter, statutFilter, navigate]);
+  }, [searchTerm, typeFilter, dateFrom, dateTo, navigate]);
 
   // ==========================================================
   // EFFETS
   // ==========================================================
   useEffect(() => {
-    fetchBudgets();
-  }, [fetchBudgets]);
+    fetchRapports();
+  }, [fetchRapports]);
 
   // ==========================================================
   // ACTIONS
   // ==========================================================
-  const handleDelete = async (id) => {
-    if (!window.confirm('Voulez-vous vraiment supprimer ce budget ?')) return;
+  const handleDownload = async (id, format) => {
+    setDownloading(id);
     try {
       const token = getToken();
-      await AxiosInstance.delete(`/budgets/${id}/`, {
-        headers: { 'Authorization': `Token ${token}` }
+      const response = await AxiosInstance.get(`/rapports-financiers/${id}/download/`, {
+        headers: { 'Authorization': `Token ${token}` },
+        responseType: 'blob'
       });
-      showNotification('Budget supprimé avec succès', 'success');
-      fetchBudgets();
+
+      const extension = format === 'pdf' ? 'pdf' : 'xlsx';
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `rapport-${id}.${extension}`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+
+      showNotification('Rapport téléchargé avec succès', 'success');
     } catch (error) {
       console.error('Erreur:', error);
-      showNotification('Erreur lors de la suppression', 'error');
+      showNotification('Erreur lors du téléchargement', 'error');
+    } finally {
+      setDownloading(null);
     }
   };
 
   // ==========================================================
   // FILTRES ET PAGINATION
   // ==========================================================
-  const totalPages = Math.ceil(budgets.length / itemsPerPage);
+  const totalPages = Math.ceil(rapports.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
-  const paginatedBudgets = budgets.slice(startIndex, startIndex + itemsPerPage);
+  const paginatedRapports = rapports.slice(startIndex, startIndex + itemsPerPage);
 
   // Statistiques
   const stats = {
-    total: budgets.length,
-    en_cours: budgets.filter(b => b.statut === 'en_cours').length,
-    termine: budgets.filter(b => b.statut === 'termine').length,
-    annule: budgets.filter(b => b.statut === 'annule').length,
-    total_montant: budgets.reduce((sum, b) => sum + parseFloat(b.montant_total || 0), 0)
+    total: rapports.length,
+    bilan: rapports.filter(r => r.type === 'bilan').length,
+    compte_resultat: rapports.filter(r => r.type === 'compte_resultat').length,
+    tresorerie: rapports.filter(r => r.type === 'tresorerie').length,
+    budget: rapports.filter(r => r.type === 'budget').length
   };
 
   // ==========================================================
@@ -180,7 +185,7 @@ const BudgetsList = () => {
       <div className="flex items-center justify-center min-h-screen bg-gray-50 w-full">
         <div className="text-center space-y-4">
           <Loader2 className="animate-spin text-primary w-14 h-14 mx-auto" />
-          <p className="text-lg font-medium text-gray-500">Chargement des budgets...</p>
+          <p className="text-lg font-medium text-gray-500">Chargement des rapports...</p>
         </div>
       </div>
     );
@@ -224,32 +229,32 @@ const BudgetsList = () => {
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
 
             <div className="flex items-center gap-4">
-              <div className="p-2 bg-green-50 rounded-xl">
-                <Wallet className="w-7 h-7 text-green-600" />
+              <div className="p-2 bg-purple-50 rounded-xl">
+                <FilePieChart className="w-7 h-7 text-purple-600" />
               </div>
               <div>
-                <h1 className="text-2xl sm:text-3xl font-black text-green-600">
-                  Budgets
+                <h1 className="text-2xl sm:text-3xl font-black text-purple-600">
+                  Rapports financiers
                 </h1>
                 <p className="text-sm text-gray-500">
-                  Planification et suivi budgétaire –{' '}
-                  <span className="font-semibold text-gray-700">{stats.total}</span> budget(s)
+                  Gestion des rapports et états financiers –{' '}
+                  <span className="font-semibold text-gray-700">{stats.total}</span> rapport(s)
                 </p>
               </div>
             </div>
 
             <div className="flex flex-wrap gap-3">
               <button
-                onClick={fetchBudgets}
+                onClick={fetchRapports}
                 className="btn btn-sm sm:btn-md btn-outline gap-2"
               >
                 <RefreshCw className="w-4 h-4" /> Actualiser
               </button>
               <button
-                onClick={() => navigate('/budgets/nouveau')}
-                className="btn btn-sm sm:btn-md bg-gradient-to-r from-green-600 to-green-700 text-white border-none shadow-lg gap-2"
+                onClick={() => navigate('/rapports-financiers/nouveau')}
+                className="btn btn-sm sm:btn-md bg-gradient-to-r from-purple-600 to-purple-700 text-white border-none shadow-lg gap-2"
               >
-                <Plus className="w-4 h-4" /> Nouveau budget
+                <Plus className="w-4 h-4" /> Générer un rapport
               </button>
             </div>
           </div>
@@ -267,34 +272,34 @@ const BudgetsList = () => {
                 <p className="text-xs text-gray-500">Total</p>
                 <p className="text-xl font-bold text-primary">{stats.total}</p>
               </div>
-              <Wallet className="w-8 h-8 text-primary/20" />
+              <FilePieChart className="w-8 h-8 text-primary/20" />
             </div>
           </div>
           <div className="bg-white shadow-md rounded-xl p-3">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs text-gray-500">En cours</p>
-                <p className="text-xl font-bold text-info">{stats.en_cours}</p>
+                <p className="text-xs text-gray-500">Bilans</p>
+                <p className="text-xl font-bold text-primary">{stats.bilan}</p>
               </div>
-              <Clock className="w-8 h-8 text-info/20" />
+              <BarChart3 className="w-8 h-8 text-primary/20" />
             </div>
           </div>
           <div className="bg-white shadow-md rounded-xl p-3">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs text-gray-500">Terminés</p>
-                <p className="text-xl font-bold text-success">{stats.termine}</p>
+                <p className="text-xs text-gray-500">Comptes de résultat</p>
+                <p className="text-xl font-bold text-success">{stats.compte_resultat}</p>
               </div>
-              <CheckCircle className="w-8 h-8 text-success/20" />
+              <TrendingUp className="w-8 h-8 text-success/20" />
             </div>
           </div>
           <div className="bg-white shadow-md rounded-xl p-3">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs text-gray-500">Montant total</p>
-                <p className="text-xl font-bold text-primary">{formatCurrency(stats.total_montant)}</p>
+                <p className="text-xs text-gray-500">Trésorerie / Budget</p>
+                <p className="text-xl font-bold text-info">{stats.tresorerie + stats.budget}</p>
               </div>
-              <PiggyBank className="w-8 h-8 text-primary/20" />
+              <Wallet className="w-8 h-8 text-info/20" />
             </div>
           </div>
         </div>
@@ -311,14 +316,14 @@ const BudgetsList = () => {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
                 type="text"
-                placeholder="Rechercher un budget..."
+                placeholder="Rechercher un rapport..."
                 className="input input-bordered w-full pl-9"
                 value={searchTerm}
                 onChange={(e) => {
                   setSearchTerm(e.target.value);
                   setCurrentPage(1);
                 }}
-                onKeyDown={(e) => e.key === 'Enter' && fetchBudgets()}
+                onKeyDown={(e) => e.key === 'Enter' && fetchRapports()}
               />
             </div>
 
@@ -330,7 +335,7 @@ const BudgetsList = () => {
               {showFilters ? 'Masquer' : 'Filtres'}
             </button>
 
-            <div className={`${showFilters ? 'grid' : 'hidden'} sm:grid grid-cols-1 sm:grid-cols-2 gap-3`}>
+            <div className={`${showFilters ? 'grid' : 'hidden'} sm:grid grid-cols-1 sm:grid-cols-3 gap-3`}>
               <select
                 className="select select-bordered w-full"
                 value={typeFilter}
@@ -340,24 +345,30 @@ const BudgetsList = () => {
                 }}
               >
                 <option value="all">Tous les types</option>
-                <option value="annuel">Annuel</option>
-                <option value="trimestriel">Trimestriel</option>
-                <option value="mensuel">Mensuel</option>
-                <option value="projet">Projet</option>
+                <option value="bilan">Bilan comptable</option>
+                <option value="compte_resultat">Compte de résultat</option>
+                <option value="tresorerie">Tableau de trésorerie</option>
+                <option value="budget">Suivi budgétaire</option>
+                <option value="ventes">Ventes</option>
+                <option value="depenses">Dépenses</option>
+                <option value="achats">Achats</option>
+                <option value="client">Client</option>
+                <option value="fournisseur">Fournisseur</option>
               </select>
-              <select
-                className="select select-bordered w-full"
-                value={statutFilter}
-                onChange={(e) => {
-                  setStatutFilter(e.target.value);
-                  setCurrentPage(1);
-                }}
-              >
-                <option value="all">Tous les statuts</option>
-                <option value="en_cours">En cours</option>
-                <option value="termine">Terminé</option>
-                <option value="annule">Annulé</option>
-              </select>
+              <input
+                type="date"
+                className="input input-bordered w-full"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+                placeholder="Date début"
+              />
+              <input
+                type="date"
+                className="input input-bordered w-full"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+                placeholder="Date fin"
+              />
             </div>
           </div>
         </div>
@@ -373,97 +384,74 @@ const BudgetsList = () => {
               <thead className="bg-gray-50">
                 <tr>
                   <th className="py-3 px-4">Nom</th>
-                  <th className="py-3 px-4 hidden lg:table-cell">Type</th>
-                  <th className="py-3 px-4 hidden md:table-cell">Période</th>
-                  <th className="py-3 px-4 text-right">Montant total</th>
-                  <th className="py-3 px-4 text-right">Utilisé</th>
-                  <th className="py-3 px-4 text-center">Avancement</th>
-                  <th className="py-3 px-4 text-center">Statut</th>
+                  <th className="py-3 px-4 hidden md:table-cell">Type</th>
+                  <th className="py-3 px-4 hidden lg:table-cell">Période</th>
+                  <th className="py-3 px-4 text-center">Format</th>
+                  <th className="py-3 px-4 hidden md:table-cell">Date</th>
                   <th className="py-3 px-4 text-center">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {paginatedBudgets.length === 0 ? (
+                {paginatedRapports.length === 0 ? (
                   <tr>
-                    <td colSpan="8" className="text-center py-16">
+                    <td colSpan="6" className="text-center py-16">
                       <div className="flex flex-col items-center gap-3">
-                        <Wallet className="w-16 h-16 text-gray-300" />
-                        <p className="text-gray-500 font-medium">Aucun budget trouvé</p>
-                        <p className="text-sm text-gray-400">Ajustez vos filtres ou créez un budget</p>
+                        <FilePieChart className="w-16 h-16 text-gray-300" />
+                        <p className="text-gray-500 font-medium">Aucun rapport trouvé</p>
+                        <p className="text-sm text-gray-400">Ajustez vos filtres ou générez un rapport</p>
                       </div>
                     </td>
                   </tr>
                 ) : (
-                  paginatedBudgets.map((budget) => {
-                    const pourcentage = budget.pourcentage_utilise || 0;
-                    const isAlerte = pourcentage >= 80;
-
-                    return (
-                      <tr key={budget.id} className="hover:bg-gray-50 transition-colors">
-                        <td className="py-3 px-4 font-semibold">{budget.nom}</td>
-                        <td className="py-3 px-4 hidden lg:table-cell">{getTypeBadge(budget.type)}</td>
-                        <td className="py-3 px-4 hidden md:table-cell">
-                          <div className="text-sm">
-                            <div className="flex items-center gap-1">
-                              <Calendar className="w-3 h-3 text-gray-400" />
-                              {formatDate(budget.date_debut)}
-                            </div>
-                            <div className="text-gray-400 text-xs">→ {formatDate(budget.date_fin)}</div>
+                  paginatedRapports.map((rapport) => (
+                    <tr key={rapport.id} className="hover:bg-gray-50 transition-colors">
+                      <td className="py-3 px-4 font-semibold">{rapport.nom}</td>
+                      <td className="py-3 px-4 hidden md:table-cell">{getTypeBadge(rapport.type)}</td>
+                      <td className="py-3 px-4 hidden lg:table-cell">
+                        <div className="text-sm">
+                          <div className="flex items-center gap-1">
+                            <Calendar className="w-3 h-3 text-gray-400" />
+                            {formatDate(rapport.date_debut)}
                           </div>
-                        </td>
-                        <td className="py-3 px-4 text-right font-semibold text-primary">
-                          {formatCurrency(budget.montant_total)}
-                        </td>
-                        <td className="py-3 px-4 text-right font-semibold text-gray-700">
-                          {formatCurrency(budget.montant_utilise)}
-                        </td>
-                        <td className="py-3 px-4 text-center">
-                          <div className="flex items-center gap-2">
-                            <div className="w-24 h-2 bg-gray-200 rounded-full">
-                              <div
-                                className={`h-2 rounded-full transition-all ${getProgressColor(pourcentage)}`}
-                                style={{ width: `${Math.min(pourcentage, 100)}%` }}
-                              />
-                            </div>
-                            <span className={`text-sm font-bold ${getPourcentageColor(pourcentage)}`}>
-                              {pourcentage.toFixed(0)}%
-                            </span>
-                            {isAlerte && (
-                              <AlertTriangle className="w-4 h-4 text-orange-500" />
-                            )}
-                          </div>
-                        </td>
-                        <td className="py-3 px-4 text-center">{getStatutBadge(budget.statut)}</td>
-                        <td className="py-3 px-4 text-center">
-                          <div className="flex justify-center gap-1">
+                          <div className="text-gray-400 text-xs">→ {formatDate(rapport.date_fin)}</div>
+                        </div>
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        <span className="badge badge-ghost gap-1">
+                          {getFormatIcon(rapport.format)}
+                          {rapport.format?.toUpperCase() || 'PDF'}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 hidden md:table-cell text-sm text-gray-500">
+                        {formatDate(rapport.created_at)}
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        <div className="flex justify-center gap-1">
+                          <button
+                            onClick={() => navigate(`/rapports-financiers/${rapport.id}`)}
+                            className="btn btn-ghost btn-sm btn-circle"
+                            title="Voir"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+                          {rapport.fichier && (
                             <button
-                              onClick={() => navigate(`/budgets/${budget.id}`)}
-                              className="btn btn-ghost btn-sm btn-circle"
-                              title="Voir"
+                              onClick={() => handleDownload(rapport.id, rapport.format || 'pdf')}
+                              className="btn btn-ghost btn-sm btn-circle text-primary"
+                              title="Télécharger"
+                              disabled={downloading === rapport.id}
                             >
-                              <Eye className="w-4 h-4" />
+                              {downloading === rapport.id ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                              ) : (
+                                <Download className="w-4 h-4" />
+                              )}
                             </button>
-                            <button
-                              onClick={() => navigate(`/budgets/${budget.id}/modifier`)}
-                              className="btn btn-ghost btn-sm btn-circle text-warning"
-                              title="Modifier"
-                            >
-                              <Edit className="w-4 h-4" />
-                            </button>
-                            {budget.statut !== 'termine' && (
-                              <button
-                                onClick={() => handleDelete(budget.id)}
-                                className="btn btn-ghost btn-sm btn-circle text-error"
-                                title="Supprimer"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))
                 )}
               </tbody>
             </table>
@@ -472,12 +460,12 @@ const BudgetsList = () => {
           {/* ====================================================
               PAGINATION
               ==================================================== */}
-          {budgets.length > 0 && (
+          {rapports.length > 0 && (
             <div className="px-6 py-4 border-t flex flex-col sm:flex-row items-center justify-between gap-4 bg-gray-50">
               <div className="text-sm text-gray-500">
                 Affichage de <span className="font-medium">{startIndex + 1}</span> à{' '}
-                <span className="font-medium">{Math.min(currentPage * itemsPerPage, budgets.length)}</span> sur{' '}
-                <span className="font-medium">{budgets.length}</span> budgets
+                <span className="font-medium">{Math.min(currentPage * itemsPerPage, rapports.length)}</span> sur{' '}
+                <span className="font-medium">{rapports.length}</span> rapports
               </div>
               <div className="flex items-center gap-3">
                 <select
@@ -521,4 +509,4 @@ const BudgetsList = () => {
   );
 };
 
-export default BudgetsList;
+export default RapportsFinanciersList;

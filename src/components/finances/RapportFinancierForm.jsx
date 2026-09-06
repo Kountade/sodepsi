@@ -1,21 +1,32 @@
 // src/components/finances/RapportFinancierForm.jsx
 import React, { useState, useEffect } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import AxiosInstance from '../AxiosInstance';
 import {
-  ArrowLeft, Save, X, Loader2, AlertCircle,
-  CheckCircle, LineChart, Calendar, FileText,
-  FileSpreadsheet, File
+  ArrowLeft, Save, X, FilePieChart, Loader2,
+  CheckCircle, AlertCircle, Calendar, FileText,
+  FileSpreadsheet, TrendingUp, TrendingDown, Wallet,
+  BarChart3, PieChart, Building2, ShoppingBag
 } from 'lucide-react';
 
+// ============================================================
+// COMPOSANT PRINCIPAL
+// ============================================================
 const RapportFinancierForm = () => {
-  const { id } = useParams();
+  // ==========================================================
+  // HOOKS
+  // ==========================================================
   const navigate = useNavigate();
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
-  const [success, setSuccess] = useState(false);
 
+  // ==========================================================
+  // ÉTATS
+  // ==========================================================
+  const [submitting, setSubmitting] = useState(false);
+  const [notification, setNotification] = useState({
+    show: false,
+    message: '',
+    type: 'success'
+  });
   const [formData, setFormData] = useState({
     type: 'bilan',
     nom: '',
@@ -23,269 +34,345 @@ const RapportFinancierForm = () => {
     date_fin: '',
     format: 'pdf'
   });
+  const [errors, setErrors] = useState({});
+  const [generated, setGenerated] = useState(false);
 
+  // ==========================================================
+  // FONCTIONS UTILITAIRES
+  // ==========================================================
   const getToken = () => localStorage.getItem('Token');
 
-  const fetchRapport = async () => {
-    if (!id) return;
-    setLoading(true);
+  const showNotification = (message, type) => {
+    setNotification({ show: true, message, type });
+    setTimeout(() => setNotification(prev => ({ ...prev, show: false })), 4000);
+  };
+
+  const formatDate = (dateString) => {
+    if (!dateString) return '-';
     try {
-      const token = getToken();
-      const response = await AxiosInstance.get(`/rapports/${id}/`, {
-        headers: { 'Authorization': `Token ${token}` }
+      const date = new Date(dateString);
+      return date.toLocaleDateString('fr-FR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric'
       });
-      const data = response.data;
-      setFormData({
-        type: data.type || 'bilan',
-        nom: data.nom || '',
-        date_debut: data.date_debut || '',
-        date_fin: data.date_fin || '',
-        format: data.format || 'pdf'
-      });
-    } catch (error) {
-      console.error('Erreur:', error);
-      setError('Erreur lors du chargement du rapport');
-    } finally {
-      setLoading(false);
+    } catch {
+      return '-';
     }
   };
 
-  useEffect(() => {
-    if (id) {
-      fetchRapport();
-    }
-  }, [id]);
-
+  // ==========================================================
+  // GESTIONNAIRES
+  // ==========================================================
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
+  const validateForm = () => {
+    const newErrors = {};
+    if (!formData.type) newErrors.type = 'Le type de rapport est requis';
+    if (!formData.nom) newErrors.nom = 'Le nom est requis';
+    if (!formData.date_debut) newErrors.date_debut = 'La date de début est requise';
+    if (!formData.date_fin) newErrors.date_fin = 'La date de fin est requise';
+    if (formData.date_debut && formData.date_fin && formData.date_debut > formData.date_fin) {
+      newErrors.date_fin = 'La date de fin doit être postérieure à la date de début';
+    }
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  // ==========================================================
+  // SOUMISSION
+  // ==========================================================
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setSaving(true);
-    setError(null);
-    setSuccess(false);
+    if (!validateForm()) return;
 
+    setSubmitting(true);
     try {
       const token = getToken();
-      const dataToSend = {
-        ...formData
-      };
-
-      let response;
-      if (id) {
-        response = await AxiosInstance.put(`/rapports/${id}/`, dataToSend, {
-          headers: { 'Authorization': `Token ${token}` }
-        });
-      } else {
-        response = await AxiosInstance.post('/rapports/', dataToSend, {
-          headers: { 'Authorization': `Token ${token}` }
-        });
+      if (!token) {
+        showNotification('Session expirée', 'error');
+        setTimeout(() => navigate('/login'), 2000);
+        return;
       }
 
-      setSuccess(true);
+      const response = await AxiosInstance.post('/rapports-financiers/', formData, {
+        headers: { 'Authorization': `Token ${token}` }
+      });
+
+      showNotification('Rapport généré avec succès', 'success');
+      setGenerated(true);
+
+      // Redirection après 2 secondes
       setTimeout(() => {
         navigate('/rapports-financiers');
-      }, 1500);
+      }, 2000);
+
     } catch (error) {
       console.error('Erreur:', error);
-      if (error.response?.data) {
-        const errors = Object.values(error.response.data).flat().join(' ');
-        setError(errors || 'Erreur lors de l\'enregistrement');
-      } else {
-        setError('Erreur lors de l\'enregistrement');
-      }
+      showNotification('Erreur lors de la génération du rapport', 'error');
     } finally {
-      setSaving(false);
+      setSubmitting(false);
     }
   };
 
-  const getTypeLabel = (type) => {
-    const labels = {
-      bilan: 'Bilan comptable',
-      compte_resultat: 'Compte de résultat',
-      tresorerie: 'Tableau de trésorerie',
-      budget: 'Suivi budgétaire',
-      ventes: 'Rapport de ventes',
-      depenses: 'Rapport de dépenses',
-      achats: "Rapport d'achats",
-      client: 'Rapport client',
-      fournisseur: 'Rapport fournisseur'
-    };
-    return labels[type] || type;
-  };
+  // ==========================================================
+  // OPTIONS
+  // ==========================================================
+  const typeOptions = [
+    { value: 'bilan', label: 'Bilan comptable', icon: BarChart3, color: 'text-primary' },
+    { value: 'compte_resultat', label: 'Compte de résultat', icon: TrendingUp, color: 'text-success' },
+    { value: 'tresorerie', label: 'Tableau de trésorerie', icon: Wallet, color: 'text-info' },
+    { value: 'budget', label: 'Suivi budgétaire', icon: PieChart, color: 'text-warning' },
+    { value: 'ventes', label: 'Rapport de ventes', icon: TrendingUp, color: 'text-secondary' },
+    { value: 'depenses', label: 'Rapport de dépenses', icon: TrendingDown, color: 'text-error' },
+    { value: 'achats', label: 'Rapport d\'achats', icon: ShoppingBag, color: 'text-ghost' },
+    { value: 'client', label: 'Rapport client', icon: Building2, color: 'text-info' },
+    { value: 'fournisseur', label: 'Rapport fournisseur', icon: Building2, color: 'text-warning' }
+  ];
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px] bg-gray-50">
-        <div className="text-center space-y-4">
-          <Loader2 className="animate-spin text-primary w-12 h-12 mx-auto" />
-          <p className="text-base font-medium text-gray-500">Chargement du rapport...</p>
-        </div>
-      </div>
-    );
-  }
+  const formatOptions = [
+    { value: 'pdf', label: 'PDF', icon: FileText },
+    { value: 'excel', label: 'Excel', icon: FileSpreadsheet }
+  ];
 
+  // ==========================================================
+  // RENDU : COMPOSANT PRINCIPAL - FULL WIDTH
+  // ==========================================================
   return (
-    <div className="space-y-6 p-4 sm:p-6 bg-gray-50 min-h-screen">
-      {/* En-tête */}
-      <div className="flex items-center gap-4">
-        <button 
-          onClick={() => navigate('/rapports-financiers')}
-          className="btn btn-ghost btn-sm btn-circle"
-        >
-          <ArrowLeft className="w-5 h-5" />
-        </button>
-        <div>
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-primary/10 rounded-xl">
-              <LineChart className="w-6 h-6 text-primary" />
-            </div>
-            <h1 className="text-2xl font-bold text-gray-800">
-              {id ? 'Modifier le rapport' : 'Nouveau rapport financier'}
-            </h1>
-          </div>
-          <p className="text-sm text-gray-500 ml-1">
-            {id ? `Rapport #${id}` : 'Créer un nouveau rapport financier'}
-          </p>
-        </div>
-      </div>
+    <div className="w-full min-h-screen bg-gray-50">
 
-      {/* Notification de succès */}
-      {success && (
-        <div className="alert alert-success shadow-lg animate-slideDown">
-          <CheckCircle className="w-5 h-5" />
-          <span>Rapport enregistré avec succès !</span>
+      {/* ======================================================
+          NOTIFICATION
+          ====================================================== */}
+      {notification.show && (
+        <div className="fixed top-20 right-4 z-50 animate-slideDown">
+          <div className={`alert ${notification.type === 'success' ? 'alert-success' : 'alert-error'} shadow-xl rounded-xl max-w-md`}>
+            <div className="flex items-center gap-2">
+              {notification.type === 'success' ? (
+                <CheckCircle className="w-5 h-5" />
+              ) : (
+                <AlertCircle className="w-5 h-5" />
+              )}
+              <span className="font-medium">{notification.message}</span>
+            </div>
+            <button
+              className="btn btn-ghost btn-xs btn-circle"
+              onClick={() => setNotification(prev => ({ ...prev, show: false }))}
+            >
+              <X className="w-3 h-3" />
+            </button>
+          </div>
         </div>
       )}
 
-      {/* Formulaire */}
-      <div className="bg-white rounded-xl shadow-md p-6">
-        <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Erreur */}
-          {error && (
-            <div className="alert alert-error shadow-lg">
-              <AlertCircle className="w-5 h-5" />
-              <span>{error}</span>
-              <button className="btn btn-ghost btn-xs btn-circle" onClick={() => setError(null)}>
-                <X className="w-3 h-3" />
-              </button>
+      {/* ======================================================
+          EN-TÊTE
+          ====================================================== */}
+      <div className="w-full bg-white border-b border-gray-200 shadow-sm">
+        <div className="w-full px-6 py-5">
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => navigate('/rapports-financiers')}
+              className="btn btn-ghost btn-sm gap-2"
+            >
+              <ArrowLeft className="w-4 h-4" /> Retour
+            </button>
+            <div>
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-purple-50 rounded-xl">
+                  <FilePieChart className="w-7 h-7 text-purple-600" />
+                </div>
+                <div>
+                  <h1 className="text-2xl sm:text-3xl font-black text-purple-600">
+                    Générer un rapport
+                  </h1>
+                  <p className="text-sm text-gray-500">
+                    Créez un rapport financier personnalisé
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ======================================================
+          FORMULAIRE - FULL WIDTH
+          ====================================================== */}
+      <div className="w-full px-6 py-6">
+        <form onSubmit={handleSubmit} className="w-full">
+
+          {generated && (
+            <div className="w-full mb-6 p-4 bg-green-50 rounded-xl border border-green-200 flex items-center gap-3">
+              <CheckCircle className="w-6 h-6 text-green-600" />
+              <span className="text-green-700 font-medium">Rapport généré avec succès ! Redirection en cours...</span>
             </div>
           )}
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Type */}
-            <div className="form-control">
-              <label className="label">
-                <span className="label-text font-medium">Type de rapport *</span>
-              </label>
-              <select
-                name="type"
-                value={formData.type}
-                onChange={handleChange}
-                className="select select-bordered w-full"
-                required
-              >
-                <option value="bilan">Bilan comptable</option>
-                <option value="compte_resultat">Compte de résultat</option>
-                <option value="tresorerie">Tableau de trésorerie</option>
-                <option value="budget">Suivi budgétaire</option>
-                <option value="ventes">Rapport de ventes</option>
-                <option value="depenses">Rapport de dépenses</option>
-                <option value="achats">Rapport d'achats</option>
-                <option value="client">Rapport client</option>
-                <option value="fournisseur">Rapport fournisseur</option>
-              </select>
+          <div className="w-full bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden">
+            <div className="bg-gray-50 px-6 py-3.5 border-b border-gray-200">
+              <h3 className="font-semibold flex items-center gap-2 text-gray-700">
+                <FilePieChart className="w-5 h-5 text-purple-600" />
+                Informations du rapport
+              </h3>
             </div>
+            <div className="w-full p-6 space-y-4">
 
-            {/* Nom */}
-            <div className="form-control">
-              <label className="label">
-                <span className="label-text font-medium">Nom du rapport *</span>
-              </label>
-              <input
-                type="text"
-                name="nom"
-                value={formData.nom}
-                onChange={handleChange}
-                className="input input-bordered w-full"
-                placeholder="Ex: Bilan 2024, Rapport ventes janvier..."
-                required
-              />
-            </div>
+              {/* Type de rapport */}
+              <div>
+                <label className="label text-sm font-medium text-gray-700">
+                  Type de rapport <span className="text-red-500">*</span>
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+                  {typeOptions.map((type) => {
+                    const Icon = type.icon;
+                    const isSelected = formData.type === type.value;
+                    return (
+                      <button
+                        key={type.value}
+                        type="button"
+                        onClick={() => setFormData(prev => ({ ...prev, type: type.value }))}
+                        className={`
+                          flex items-center gap-2 p-2.5 rounded-lg border-2 text-sm font-medium transition-all
+                          ${isSelected
+                            ? `border-purple-500 bg-purple-50 ${type.color}`
+                            : 'border-gray-200 hover:border-gray-300 text-gray-600 hover:bg-gray-50'
+                          }
+                        `}
+                      >
+                        <Icon className={`w-4 h-4 ${isSelected ? type.color : 'text-gray-400'}`} />
+                        {type.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                {errors.type && <p className="text-red-500 text-xs mt-1">{errors.type}</p>}
+              </div>
 
-            {/* Date début */}
-            <div className="form-control">
-              <label className="label">
-                <span className="label-text font-medium">Date début *</span>
-              </label>
-              <input
-                type="date"
-                name="date_debut"
-                value={formData.date_debut}
-                onChange={handleChange}
-                className="input input-bordered w-full"
-                required
-              />
-            </div>
+              {/* Nom */}
+              <div>
+                <label className="label text-sm font-medium text-gray-700">
+                  Nom du rapport <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  name="nom"
+                  value={formData.nom}
+                  onChange={handleChange}
+                  className={`input input-bordered w-full ${errors.nom ? 'input-error' : ''}`}
+                  placeholder="Ex: Bilan 2024 - Décembre"
+                />
+                {errors.nom && <p className="text-red-500 text-xs mt-1">{errors.nom}</p>}
+              </div>
 
-            {/* Date fin */}
-            <div className="form-control">
-              <label className="label">
-                <span className="label-text font-medium">Date fin *</span>
-              </label>
-              <input
-                type="date"
-                name="date_fin"
-                value={formData.date_fin}
-                onChange={handleChange}
-                className="input input-bordered w-full"
-                required
-              />
-            </div>
+              {/* Dates */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full">
+                <div>
+                  <label className="label text-sm font-medium text-gray-700">
+                    Date début <span className="text-red-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <div className="absolute left-3 top-1/2 -translate-y-1/2">
+                      <Calendar className="w-4 h-4 text-gray-400" />
+                    </div>
+                    <input
+                      type="date"
+                      name="date_debut"
+                      value={formData.date_debut}
+                      onChange={handleChange}
+                      className={`input input-bordered w-full pl-9 ${errors.date_debut ? 'input-error' : ''}`}
+                    />
+                  </div>
+                  {errors.date_debut && <p className="text-red-500 text-xs mt-1">{errors.date_debut}</p>}
+                </div>
+                <div>
+                  <label className="label text-sm font-medium text-gray-700">
+                    Date fin <span className="text-red-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <div className="absolute left-3 top-1/2 -translate-y-1/2">
+                      <Calendar className="w-4 h-4 text-gray-400" />
+                    </div>
+                    <input
+                      type="date"
+                      name="date_fin"
+                      value={formData.date_fin}
+                      onChange={handleChange}
+                      className={`input input-bordered w-full pl-9 ${errors.date_fin ? 'input-error' : ''}`}
+                    />
+                  </div>
+                  {errors.date_fin && <p className="text-red-500 text-xs mt-1">{errors.date_fin}</p>}
+                </div>
+              </div>
 
-            {/* Format */}
-            <div className="form-control">
-              <label className="label">
-                <span className="label-text font-medium">Format *</span>
-              </label>
-              <select
-                name="format"
-                value={formData.format}
-                onChange={handleChange}
-                className="select select-bordered w-full"
-                required
-              >
-                <option value="pdf">PDF</option>
-                <option value="excel">Excel</option>
-                <option value="csv">CSV</option>
-              </select>
+              {/* Format */}
+              <div>
+                <label className="label text-sm font-medium text-gray-700">
+                  Format <span className="text-red-500">*</span>
+                </label>
+                <div className="flex gap-2">
+                  {formatOptions.map((format) => {
+                    const Icon = format.icon;
+                    const isSelected = formData.format === format.value;
+                    return (
+                      <button
+                        key={format.value}
+                        type="button"
+                        onClick={() => setFormData(prev => ({ ...prev, format: format.value }))}
+                        className={`
+                          flex items-center gap-2 px-4 py-2.5 rounded-lg border-2 text-sm font-medium transition-all
+                          ${isSelected
+                            ? 'border-purple-500 bg-purple-50 text-purple-600'
+                            : 'border-gray-200 hover:border-gray-300 text-gray-600 hover:bg-gray-50'
+                          }
+                        `}
+                      >
+                        <Icon className="w-4 h-4" />
+                        {format.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Information */}
+              <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-100">
+                <p className="text-sm text-blue-700 flex items-start gap-2">
+                  <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                  <span>
+                    <strong>Information :</strong> Le rapport sera généré selon les critères sélectionnés.
+                    Les données seront extraites de la période définie.
+                  </span>
+                </p>
+              </div>
             </div>
           </div>
 
-          {/* Actions */}
-          <div className="flex flex-wrap gap-3 pt-4 border-t">
-            <button
-              type="submit"
-              className="btn btn-primary gap-2"
-              disabled={saving}
-            >
-              {saving ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Save className="w-4 h-4" />
-              )}
-              {saving ? 'Enregistrement...' : id ? 'Mettre à jour' : 'Créer le rapport'}
-            </button>
+          {/* ======================================================
+              BOUTONS
+              ====================================================== */}
+          <div className="w-full mt-6 flex flex-col sm:flex-row gap-3 justify-end">
             <button
               type="button"
               onClick={() => navigate('/rapports-financiers')}
               className="btn btn-ghost gap-2"
+              disabled={submitting}
             >
-              <X className="w-4 h-4" /> Annuler
+              <X className="w-5 h-5" /> Annuler
+            </button>
+            <button
+              type="submit"
+              className="btn btn-primary gap-2 min-w-[200px]"
+              disabled={submitting || generated}
+            >
+              {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <FilePieChart className="w-5 h-5" />}
+              {submitting ? 'Génération en cours...' : 'Générer le rapport'}
             </button>
           </div>
+
         </form>
       </div>
     </div>
