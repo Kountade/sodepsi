@@ -1,27 +1,34 @@
 // src/components/finances/EcritureForm.jsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import AxiosInstance from '../AxiosInstance';
 import {
-  ArrowLeft, Save, X, Loader2, AlertCircle,
-  CheckCircle, BookOpen, Calendar, DollarSign,
-  User, Building2, FileText, Plus, Search
+  ArrowLeft, Save, X, FileText, Loader2,
+  CheckCircle, AlertCircle, Calendar
 } from 'lucide-react';
 
+// ============================================================
+// COMPOSANT PRINCIPAL
+// ============================================================
 const EcritureForm = () => {
-  const { id } = useParams();
+  // ==========================================================
+  // HOOKS
+  // ==========================================================
   const navigate = useNavigate();
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
-  const [success, setSuccess] = useState(false);
-  const [comptes, setComptes] = useState([]);
-  const [clients, setClients] = useState([]);
-  const [fournisseurs, setFournisseurs] = useState([]);
-  const [ventes, setVentes] = useState([]);
-  const [factures, setFactures] = useState([]);
-  const [paiements, setPaiements] = useState([]);
+  const { id } = useParams();
+  const isEdit = !!id;
 
+  // ==========================================================
+  // ÉTATS
+  // ==========================================================
+  const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [comptes, setComptes] = useState([]);
+  const [notification, setNotification] = useState({
+    show: false,
+    message: '',
+    type: 'success'
+  });
   const [formData, setFormData] = useState({
     date_ecriture: new Date().toISOString().split('T')[0],
     date_echeance: '',
@@ -31,63 +38,55 @@ const EcritureForm = () => {
     taxe: 0,
     reference: '',
     type: 'autre',
-    vente: '',
-    facture: '',
-    paiement: '',
-    supplier_invoice: '',
-    purchase_order: '',
-    supplier: '',
-    client: '',
     description: '',
     notes: ''
   });
+  const [errors, setErrors] = useState({});
 
+  // ==========================================================
+  // FONCTIONS UTILITAIRES
+  // ==========================================================
   const getToken = () => localStorage.getItem('Token');
 
-  const fetchComptes = async () => {
+  const showNotification = (message, type) => {
+    setNotification({ show: true, message, type });
+    setTimeout(() => setNotification(prev => ({ ...prev, show: false })), 4000);
+  };
+
+  // ==========================================================
+  // REQUÊTES API
+  // ==========================================================
+  const fetchComptes = useCallback(async () => {
     try {
       const token = getToken();
-      const response = await AxiosInstance.get('/comptes/?is_active=true', {
-        headers: { 'Authorization': `Token ${token}` }
+      if (!token) return;
+
+      const response = await AxiosInstance.get('/comptes-comptables/', {
+        headers: { 'Authorization': `Token ${token}` },
+        params: { is_active: 'true' }
       });
       setComptes(response.data);
     } catch (error) {
       console.error('Erreur chargement comptes:', error);
     }
-  };
+  }, []);
 
-  const fetchClients = async () => {
-    try {
-      const token = getToken();
-      const response = await AxiosInstance.get('/clients/?statut=actif', {
-        headers: { 'Authorization': `Token ${token}` }
-      });
-      setClients(response.data);
-    } catch (error) {
-      console.error('Erreur chargement clients:', error);
-    }
-  };
+  const fetchEcriture = useCallback(async () => {
+    if (!isEdit) return;
 
-  const fetchFournisseurs = async () => {
-    try {
-      const token = getToken();
-      const response = await AxiosInstance.get('/fournisseurs/?is_active=true', {
-        headers: { 'Authorization': `Token ${token}` }
-      });
-      setFournisseurs(response.data);
-    } catch (error) {
-      console.error('Erreur chargement fournisseurs:', error);
-    }
-  };
-
-  const fetchEcriture = async () => {
-    if (!id) return;
     setLoading(true);
     try {
       const token = getToken();
-      const response = await AxiosInstance.get(`/ecritures/${id}/`, {
+      if (!token) {
+        showNotification('Session expirée', 'error');
+        setTimeout(() => navigate('/login'), 2000);
+        return;
+      }
+
+      const response = await AxiosInstance.get(`/ecritures-comptables/${id}/`, {
         headers: { 'Authorization': `Token ${token}` }
       });
+
       const data = response.data;
       setFormData({
         date_ecriture: data.date_ecriture || '',
@@ -98,373 +97,370 @@ const EcritureForm = () => {
         taxe: data.taxe || 0,
         reference: data.reference || '',
         type: data.type || 'autre',
-        vente: data.vente || '',
-        facture: data.facture || '',
-        paiement: data.paiement || '',
-        supplier_invoice: data.supplier_invoice || '',
-        purchase_order: data.purchase_order || '',
-        supplier: data.supplier || '',
-        client: data.client || '',
         description: data.description || '',
         notes: data.notes || ''
       });
     } catch (error) {
       console.error('Erreur:', error);
-      setError('Erreur lors du chargement de l\'écriture');
+      showNotification('Erreur de chargement', 'error');
     } finally {
       setLoading(false);
     }
-  };
+  }, [id, isEdit, navigate]);
 
+  // ==========================================================
+  // EFFETS
+  // ==========================================================
   useEffect(() => {
     fetchComptes();
-    fetchClients();
-    fetchFournisseurs();
-    if (id) {
-      fetchEcriture();
-    }
-  }, [id]);
+    if (isEdit) fetchEcriture();
+  }, [fetchComptes, fetchEcriture, isEdit]);
 
+  // ==========================================================
+  // GESTIONNAIRES
+  // ==========================================================
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
+  const validateForm = () => {
+    const newErrors = {};
+    if (!formData.date_ecriture) newErrors.date_ecriture = 'La date est requise';
+    if (!formData.compte_debit) newErrors.compte_debit = 'Le compte débit est requis';
+    if (!formData.compte_credit) newErrors.compte_credit = 'Le compte crédit est requis';
+    if (formData.compte_debit === formData.compte_credit) {
+      newErrors.compte_credit = 'Les comptes doivent être différents';
+    }
+    if (!formData.montant || parseFloat(formData.montant) <= 0) {
+      newErrors.montant = 'Le montant doit être supérieur à 0';
+    }
+    if (!formData.description) newErrors.description = 'La description est requise';
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  // ==========================================================
+  // SOUMISSION
+  // ==========================================================
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setSaving(true);
-    setError(null);
-    setSuccess(false);
+    if (!validateForm()) return;
 
+    setSubmitting(true);
     try {
       const token = getToken();
+      if (!token) {
+        showNotification('Session expirée', 'error');
+        setTimeout(() => navigate('/login'), 2000);
+        return;
+      }
+
       const dataToSend = {
         ...formData,
-        montant: parseFloat(formData.montant) || 0,
-        taxe: parseFloat(formData.taxe) || 0,
-        compte_debit: parseInt(formData.compte_debit) || null,
-        compte_credit: parseInt(formData.compte_credit) || null,
-        vente: formData.vente ? parseInt(formData.vente) : null,
-        facture: formData.facture ? parseInt(formData.facture) : null,
-        paiement: formData.paiement ? parseInt(formData.paiement) : null,
-        supplier: formData.supplier ? parseInt(formData.supplier) : null,
-        client: formData.client ? parseInt(formData.client) : null
+        montant: parseFloat(formData.montant),
+        taxe: parseFloat(formData.taxe) || 0
       };
 
-      let response;
-      if (id) {
-        response = await AxiosInstance.put(`/ecritures/${id}/`, dataToSend, {
+      if (isEdit) {
+        await AxiosInstance.put(`/ecritures-comptables/${id}/`, dataToSend, {
           headers: { 'Authorization': `Token ${token}` }
         });
+        showNotification('Écriture modifiée avec succès', 'success');
       } else {
-        response = await AxiosInstance.post('/ecritures/', dataToSend, {
+        await AxiosInstance.post('/ecritures-comptables/', dataToSend, {
           headers: { 'Authorization': `Token ${token}` }
         });
+        showNotification('Écriture créée avec succès', 'success');
       }
 
-      setSuccess(true);
-      setTimeout(() => {
-        navigate('/ecritures');
-      }, 1500);
+      setTimeout(() => navigate('/ecritures-comptables'), 1500);
+
     } catch (error) {
       console.error('Erreur:', error);
-      if (error.response?.data) {
-        const errors = Object.values(error.response.data).flat().join(' ');
-        setError(errors || 'Erreur lors de l\'enregistrement');
-      } else {
-        setError('Erreur lors de l\'enregistrement');
-      }
+      showNotification('Erreur lors de l\'enregistrement', 'error');
     } finally {
-      setSaving(false);
+      setSubmitting(false);
     }
   };
 
+  // ==========================================================
+  // OPTIONS
+  // ==========================================================
+  const typeOptions = [
+    { value: 'vente', label: 'Vente' },
+    { value: 'achat', label: 'Achat' },
+    { value: 'paiement_client', label: 'Paiement client' },
+    { value: 'paiement_fournisseur', label: 'Paiement fournisseur' },
+    { value: 'recette', label: 'Recette' },
+    { value: 'depense', label: 'Dépense' },
+    { value: 'tresorerie', label: 'Trésorerie' },
+    { value: 'regularisation', label: 'Régularisation' },
+    { value: 'autre', label: 'Autre' }
+  ];
+
+  // ==========================================================
+  // RENDU : CHARGEMENT
+  // ==========================================================
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[400px] bg-gray-50">
+      <div className="flex items-center justify-center min-h-[calc(100vh-200px)] bg-gray-50">
         <div className="text-center space-y-4">
-          <Loader2 className="animate-spin text-primary w-12 h-12 mx-auto" />
-          <p className="text-base font-medium text-gray-500">Chargement de l'écriture...</p>
+          <Loader2 className="animate-spin text-primary w-14 h-14 mx-auto" />
+          <p className="text-lg font-medium text-gray-500">Chargement...</p>
         </div>
       </div>
     );
   }
 
+  // ==========================================================
+  // RENDU : COMPOSANT PRINCIPAL
+  // ==========================================================
   return (
-    <div className="space-y-6 p-4 sm:p-6 bg-gray-50 min-h-screen">
-      {/* En-tête */}
-      <div className="flex items-center gap-4">
-        <button 
-          onClick={() => navigate('/ecritures')}
-          className="btn btn-ghost btn-sm btn-circle"
-        >
-          <ArrowLeft className="w-5 h-5" />
-        </button>
-        <div>
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-primary/10 rounded-xl">
-              <BookOpen className="w-6 h-6 text-primary" />
-            </div>
-            <h1 className="text-2xl font-bold text-gray-800">
-              {id ? 'Modifier l\'écriture' : 'Nouvelle écriture comptable'}
-            </h1>
-          </div>
-          <p className="text-sm text-gray-500 ml-1">
-            {id ? `Écriture #${id}` : 'Créer une nouvelle écriture comptable'}
-          </p>
-        </div>
-      </div>
+    <div className="space-y-4 sm:space-y-6 p-4 sm:p-6 bg-gray-50 min-h-screen">
 
-      {/* Notification de succès */}
-      {success && (
-        <div className="alert alert-success shadow-lg animate-slideDown">
-          <CheckCircle className="w-5 h-5" />
-          <span>Écriture enregistrée avec succès !</span>
+      {/* ======================================================
+          NOTIFICATION
+          ====================================================== */}
+      {notification.show && (
+        <div className="fixed top-20 right-4 z-50 animate-slideDown">
+          <div className={`alert ${notification.type === 'success' ? 'alert-success' : 'alert-error'} shadow-xl rounded-xl`}>
+            <div className="flex items-center gap-2">
+              {notification.type === 'success' ? (
+                <CheckCircle className="w-4 h-4" />
+              ) : (
+                <AlertCircle className="w-4 h-4" />
+              )}
+              <span className="font-medium">{notification.message}</span>
+            </div>
+            <button
+              className="btn btn-ghost btn-xs btn-circle"
+              onClick={() => setNotification(prev => ({ ...prev, show: false }))}
+            >
+              <X className="w-3 h-3" />
+            </button>
+          </div>
         </div>
       )}
 
-      {/* Formulaire */}
-      <div className="bg-white rounded-xl shadow-md p-6">
+      {/* ======================================================
+          EN-TÊTE
+          ====================================================== */}
+      <div className="relative overflow-hidden bg-gradient-to-r from-primary/10 via-primary/5 to-transparent rounded-2xl p-5">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => navigate('/ecritures-comptables')}
+              className="btn btn-ghost btn-sm gap-2"
+            >
+              <ArrowLeft className="w-4 h-4" /> Retour
+            </button>
+            <div>
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-primary/10 rounded-xl">
+                  <FileText className="w-7 h-7 text-primary" />
+                </div>
+                <div>
+                  <h1 className="text-2xl sm:text-3xl font-black text-primary">
+                    {isEdit ? 'Modifier l\'écriture' : 'Nouvelle écriture comptable'}
+                  </h1>
+                  <p className="text-sm text-gray-500">
+                    {isEdit ? 'Modifiez les informations de l\'écriture' : 'Enregistrez une nouvelle écriture comptable'}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ======================================================
+          FORMULAIRE
+          ====================================================== */}
+      <div className="max-w-4xl mx-auto">
         <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Erreur */}
-          {error && (
-            <div className="alert alert-error shadow-lg">
-              <AlertCircle className="w-5 h-5" />
-              <span>{error}</span>
-              <button className="btn btn-ghost btn-xs btn-circle" onClick={() => setError(null)}>
-                <X className="w-3 h-3" />
-              </button>
-            </div>
-          )}
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Date écriture */}
-            <div className="form-control">
-              <label className="label">
-                <span className="label-text font-medium">Date d'écriture *</span>
-              </label>
-              <input
-                type="date"
-                name="date_ecriture"
-                value={formData.date_ecriture}
-                onChange={handleChange}
-                className="input input-bordered w-full"
-                required
-              />
+          <div className="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden">
+            <div className="bg-gray-50 px-6 py-3.5 border-b border-gray-200">
+              <h3 className="font-semibold flex items-center gap-2 text-gray-700">
+                <FileText className="w-5 h-5 text-primary" />
+                Informations de l'écriture
+              </h3>
             </div>
+            <div className="p-6 space-y-4">
 
-            {/* Date échéance */}
-            <div className="form-control">
-              <label className="label">
-                <span className="label-text font-medium">Date d'échéance</span>
-              </label>
-              <input
-                type="date"
-                name="date_echeance"
-                value={formData.date_echeance}
-                onChange={handleChange}
-                className="input input-bordered w-full"
-              />
-            </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="label text-sm font-medium text-gray-700">
+                    Date d'écriture <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    name="date_ecriture"
+                    value={formData.date_ecriture}
+                    onChange={handleChange}
+                    className={`input input-bordered w-full ${errors.date_ecriture ? 'input-error' : ''}`}
+                  />
+                  {errors.date_ecriture && <p className="text-red-500 text-xs mt-1">{errors.date_ecriture}</p>}
+                </div>
+                <div>
+                  <label className="label text-sm font-medium text-gray-700">Date d'échéance</label>
+                  <input
+                    type="date"
+                    name="date_echeance"
+                    value={formData.date_echeance}
+                    onChange={handleChange}
+                    className="input input-bordered w-full"
+                  />
+                </div>
+              </div>
 
-            {/* Compte Débit */}
-            <div className="form-control">
-              <label className="label">
-                <span className="label-text font-medium">Compte Débit *</span>
-              </label>
-              <select
-                name="compte_debit"
-                value={formData.compte_debit}
-                onChange={handleChange}
-                className="select select-bordered w-full"
-                required
-              >
-                <option value="">Sélectionner un compte</option>
-                {comptes.map(c => (
-                  <option key={c.id} value={c.id}>{c.numero} - {c.nom}</option>
-                ))}
-              </select>
-            </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="label text-sm font-medium text-gray-700">
+                    Compte débit <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    name="compte_debit"
+                    value={formData.compte_debit}
+                    onChange={handleChange}
+                    className={`select select-bordered w-full ${errors.compte_debit ? 'select-error' : ''}`}
+                  >
+                    <option value="">Sélectionner un compte</option>
+                    {comptes.map(c => (
+                      <option key={c.id} value={c.id}>
+                        {c.numero} - {c.nom}
+                      </option>
+                    ))}
+                  </select>
+                  {errors.compte_debit && <p className="text-red-500 text-xs mt-1">{errors.compte_debit}</p>}
+                </div>
+                <div>
+                  <label className="label text-sm font-medium text-gray-700">
+                    Compte crédit <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    name="compte_credit"
+                    value={formData.compte_credit}
+                    onChange={handleChange}
+                    className={`select select-bordered w-full ${errors.compte_credit ? 'select-error' : ''}`}
+                  >
+                    <option value="">Sélectionner un compte</option>
+                    {comptes.map(c => (
+                      <option key={c.id} value={c.id}>
+                        {c.numero} - {c.nom}
+                      </option>
+                    ))}
+                  </select>
+                  {errors.compte_credit && <p className="text-red-500 text-xs mt-1">{errors.compte_credit}</p>}
+                </div>
+              </div>
 
-            {/* Compte Crédit */}
-            <div className="form-control">
-              <label className="label">
-                <span className="label-text font-medium">Compte Crédit *</span>
-              </label>
-              <select
-                name="compte_credit"
-                value={formData.compte_credit}
-                onChange={handleChange}
-                className="select select-bordered w-full"
-                required
-              >
-                <option value="">Sélectionner un compte</option>
-                {comptes.map(c => (
-                  <option key={c.id} value={c.id}>{c.numero} - {c.nom}</option>
-                ))}
-              </select>
-            </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="label text-sm font-medium text-gray-700">
+                    Montant <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    name="montant"
+                    value={formData.montant}
+                    onChange={handleChange}
+                    className={`input input-bordered w-full ${errors.montant ? 'input-error' : ''}`}
+                    placeholder="0"
+                    step="100"
+                  />
+                  {errors.montant && <p className="text-red-500 text-xs mt-1">{errors.montant}</p>}
+                </div>
+                <div>
+                  <label className="label text-sm font-medium text-gray-700">Taxe (FCFA)</label>
+                  <input
+                    type="number"
+                    name="taxe"
+                    value={formData.taxe}
+                    onChange={handleChange}
+                    className="input input-bordered w-full"
+                    placeholder="0"
+                    step="100"
+                  />
+                </div>
+                <div>
+                  <label className="label text-sm font-medium text-gray-700">
+                    Type <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    name="type"
+                    value={formData.type}
+                    onChange={handleChange}
+                    className="select select-bordered w-full"
+                  >
+                    {typeOptions.map(opt => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
 
-            {/* Montant */}
-            <div className="form-control">
-              <label className="label">
-                <span className="label-text font-medium">Montant *</span>
-              </label>
-              <input
-                type="number"
-                name="montant"
-                value={formData.montant}
-                onChange={handleChange}
-                className="input input-bordered w-full"
-                placeholder="0"
-                step="0.01"
-                required
-              />
-            </div>
+              <div>
+                <label className="label text-sm font-medium text-gray-700">Référence</label>
+                <input
+                  type="text"
+                  name="reference"
+                  value={formData.reference}
+                  onChange={handleChange}
+                  className="input input-bordered w-full"
+                  placeholder="Référence externe..."
+                />
+              </div>
 
-            {/* Taxe */}
-            <div className="form-control">
-              <label className="label">
-                <span className="label-text font-medium">Taxe (TVA)</span>
-              </label>
-              <input
-                type="number"
-                name="taxe"
-                value={formData.taxe}
-                onChange={handleChange}
-                className="input input-bordered w-full"
-                placeholder="0"
-                step="0.01"
-              />
-            </div>
+              <div>
+                <label className="label text-sm font-medium text-gray-700">
+                  Description <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  name="description"
+                  value={formData.description}
+                  onChange={handleChange}
+                  className={`textarea textarea-bordered w-full min-h-[80px] ${errors.description ? 'textarea-error' : ''}`}
+                  placeholder="Description de l'écriture..."
+                />
+                {errors.description && <p className="text-red-500 text-xs mt-1">{errors.description}</p>}
+              </div>
 
-            {/* Type */}
-            <div className="form-control">
-              <label className="label">
-                <span className="label-text font-medium">Type *</span>
-              </label>
-              <select
-                name="type"
-                value={formData.type}
-                onChange={handleChange}
-                className="select select-bordered w-full"
-                required
-              >
-                <option value="vente">Vente</option>
-                <option value="achat">Achat</option>
-                <option value="paiement_client">Paiement Client</option>
-                <option value="paiement_fournisseur">Paiement Fournisseur</option>
-                <option value="recette">Recette</option>
-                <option value="depense">Dépense</option>
-                <option value="tresorerie">Trésorerie</option>
-                <option value="regularisation">Régularisation</option>
-                <option value="autre">Autre</option>
-              </select>
-            </div>
-
-            {/* Référence */}
-            <div className="form-control">
-              <label className="label">
-                <span className="label-text font-medium">Référence</span>
-              </label>
-              <input
-                type="text"
-                name="reference"
-                value={formData.reference}
-                onChange={handleChange}
-                className="input input-bordered w-full"
-                placeholder="Référence externe..."
-              />
-            </div>
-
-            {/* Client */}
-            <div className="form-control">
-              <label className="label">
-                <span className="label-text font-medium">Client</span>
-              </label>
-              <select
-                name="client"
-                value={formData.client}
-                onChange={handleChange}
-                className="select select-bordered w-full"
-              >
-                <option value="">Sélectionner un client</option>
-                {clients.map(c => (
-                  <option key={c.id} value={c.id}>{c.code} - {c.name}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Fournisseur */}
-            <div className="form-control">
-              <label className="label">
-                <span className="label-text font-medium">Fournisseur</span>
-              </label>
-              <select
-                name="supplier"
-                value={formData.supplier}
-                onChange={handleChange}
-                className="select select-bordered w-full"
-              >
-                <option value="">Sélectionner un fournisseur</option>
-                {fournisseurs.map(f => (
-                  <option key={f.id} value={f.id}>{f.code} - {f.name}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Description */}
-            <div className="form-control md:col-span-2">
-              <label className="label">
-                <span className="label-text font-medium">Description *</span>
-              </label>
-              <textarea
-                name="description"
-                value={formData.description}
-                onChange={handleChange}
-                className="textarea textarea-bordered w-full h-24"
-                placeholder="Description de l'écriture..."
-                required
-              />
-            </div>
-
-            {/* Notes */}
-            <div className="form-control md:col-span-2">
-              <label className="label">
-                <span className="label-text font-medium">Notes</span>
-              </label>
-              <textarea
-                name="notes"
-                value={formData.notes}
-                onChange={handleChange}
-                className="textarea textarea-bordered w-full h-20"
-                placeholder="Notes supplémentaires..."
-              />
+              <div>
+                <label className="label text-sm font-medium text-gray-700">Notes</label>
+                <textarea
+                  name="notes"
+                  value={formData.notes}
+                  onChange={handleChange}
+                  className="textarea textarea-bordered w-full min-h-[60px]"
+                  placeholder="Notes supplémentaires..."
+                />
+              </div>
             </div>
           </div>
 
-          {/* Actions */}
-          <div className="flex flex-wrap gap-3 pt-4 border-t">
-            <button
-              type="submit"
-              className="btn btn-primary gap-2"
-              disabled={saving}
-            >
-              {saving ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Save className="w-4 h-4" />
-              )}
-              {saving ? 'Enregistrement...' : id ? 'Mettre à jour' : 'Créer l\'écriture'}
-            </button>
+          {/* Boutons */}
+          <div className="flex flex-col sm:flex-row gap-3 justify-end">
             <button
               type="button"
-              onClick={() => navigate('/ecritures')}
+              onClick={() => navigate('/ecritures-comptables')}
               className="btn btn-ghost gap-2"
+              disabled={submitting}
             >
-              <X className="w-4 h-4" /> Annuler
+              <X className="w-5 h-5" /> Annuler
+            </button>
+            <button
+              type="submit"
+              className="btn btn-primary gap-2 min-w-[180px]"
+              disabled={submitting}
+            >
+              {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
+              {isEdit ? 'Modifier' : 'Créer'}
             </button>
           </div>
+
         </form>
       </div>
     </div>

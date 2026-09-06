@@ -1,4 +1,4 @@
-// src/components/Navbar.jsx - Version SODEPCI avec Logo Dynamique corrigé
+// src/components/Navbar.jsx - Version SODEPCI avec Logo Dynamique et Finances intégrées
 
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
@@ -129,7 +129,28 @@ import {
   UserCheck as UserCheckIcon,
   Route as RouteIcon,
   GraduationCap,
-  Barcode
+  Barcode,
+  FilePieChart,
+  BookMarked,
+  NotebookText,
+  Sigma,
+  CandlestickChart,
+  Percent,
+  LandPlot,
+  Scale3D,
+  TableProperties,
+  CircleDollarSign,
+  Coins as CoinsIcon,
+  ReceiptIndianRupee,
+  BanknoteArrowDown,
+  BanknoteArrowUp,
+  PiggyBank as PiggyBankIcon,
+  Goal,
+  Timer,
+  AlarmClock,
+  BadgePercent,
+  WalletMinimal,
+  WalletCards
 } from 'lucide-react';
 
 import axiosInstance from './AxiosInstance';
@@ -189,7 +210,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
     'VENTES': true,
     'PRODUITS & STOCKS': true,
     'ACHATS & FOURNISSEURS': false,
-    'FINANCES': false,
+    'FINANCES': true,
     'TRÉSORERIE': false,
     'LIVRAISONS': false,
     'PARAMÈTRES': false,
@@ -217,6 +238,12 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
   const [receptionsEnAttente, setReceptionsEnAttente] = useState(0);
   const [retoursEnAttente, setRetoursEnAttente] = useState(0);
   const [paiementsFournisseursEnAttente, setPaiementsFournisseursEnAttente] = useState(0);
+
+  // États pour les compteurs Finances
+  const [depensesEnAttente, setDepensesEnAttente] = useState(0);
+  const [budgetsAlertes, setBudgetsAlertes] = useState(0);
+  const [ecrituresBrouillon, setEcrituresBrouillon] = useState(0);
+  const [tresorerieAlerte, setTresorerieAlerte] = useState(0);
 
   // Récupérer l'utilisateur
   const getUserData = () => {
@@ -268,20 +295,13 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
   // Fonction pour construire l'URL complète du logo
   const getLogoUrl = (logoPath) => {
     if (!logoPath) return null;
-    
-    // Si l'URL est déjà complète (http ou https)
     if (logoPath.startsWith('http://') || logoPath.startsWith('https://')) {
       return logoPath;
     }
-    
-    // Si l'URL commence par /media/ ou /static/
     if (logoPath.startsWith('/media/') || logoPath.startsWith('/static/')) {
-      // Récupérer l'URL de base depuis l'instance axios
       const baseURL = axiosInstance.defaults.baseURL || '';
       return `${baseURL}${logoPath}`;
     }
-    
-    // Si l'URL est relative
     const baseURL = axiosInstance.defaults.baseURL || '';
     return `${baseURL}${logoPath.startsWith('/') ? '' : '/'}${logoPath}`;
   };
@@ -293,7 +313,6 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
         const response = await axiosInstance.get('/etablissements/unique/');
         if (response.data) {
           setEtablissement(response.data);
-          // Construire l'URL complète du logo
           if (response.data.logo) {
             const fullLogoUrl = getLogoUrl(response.data.logo);
             setLogoUrl(fullLogoUrl);
@@ -315,45 +334,37 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
         const token = localStorage.getItem('Token');
         if (!token) return;
 
-        // Admin charge toutes les données
         if (isAdmin || isGestionnaire) {
-          // Achats - Commandes en attente
           const ordersRes = await axiosInstance.get('/purchase-orders/?status=draft,sent', {
             headers: { Authorization: `Token ${token}` }
           }).catch(() => ({ data: [] }));
           setCommandesEnAttente(ordersRes.data?.length || 0);
 
-          // Achats - Factures impayées
           const invoicesRes = await axiosInstance.get('/supplier-invoices/?paiement_status=unpaid,partial,overdue', {
             headers: { Authorization: `Token ${token}` }
           }).catch(() => ({ data: [] }));
           setFacturesImpayees(invoicesRes.data?.length || 0);
 
-          // Achats - Réceptions en attente
           const receiptsRes = await axiosInstance.get('/receipts/?status=pending,in_progress', {
             headers: { Authorization: `Token ${token}` }
           }).catch(() => ({ data: [] }));
           setReceptionsEnAttente(receiptsRes.data?.length || 0);
 
-          // Achats - Retours en attente
           const returnsRes = await axiosInstance.get('/purchase-returns/?status=requested', {
             headers: { Authorization: `Token ${token}` }
           }).catch(() => ({ data: [] }));
           setRetoursEnAttente(returnsRes.data?.length || 0);
 
-          // Achats - Paiements fournisseurs en attente
           const paymentsRes = await axiosInstance.get('/fournisseur-paiements/?status=pending', {
             headers: { Authorization: `Token ${token}` }
           }).catch(() => ({ data: [] }));
           setPaiementsFournisseursEnAttente(paymentsRes.data?.length || 0);
 
-          // Notifications
           const notifRes = await axiosInstance.get('/notifications/unread-count/', {
             headers: { Authorization: `Token ${token}` }
           }).catch(() => ({ data: { unread_count: 0 } }));
           setNotificationsCount(notifRes.data?.unread_count || 0);
 
-          // Stocks
           const stocksRes = await axiosInstance.get('/stocks/low-stock/', {
             headers: { Authorization: `Token ${token}` }
           }).catch(() => ({ data: [] }));
@@ -364,20 +375,38 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
           }).catch(() => ({ data: [] }));
           setAlertesStockCount(alertesRes.data?.length || 0);
           
-          // Lots expirant
           const lotsRes = await axiosInstance.get('/lots/expiring/?days=30', {
             headers: { Authorization: `Token ${token}` }
           }).catch(() => ({ data: [] }));
           setLotsExpirant(lotsRes.data?.length || 0);
           
-          // Inventaires en cours
           const invRes = await axiosInstance.get('/inventories/?status=in_progress', {
             headers: { Authorization: `Token ${token}` }
           }).catch(() => ({ data: [] }));
           setInventairesEnCours(invRes.data?.length || 0);
+
+          if (isAdmin || isComptable) {
+            const depensesRes = await axiosInstance.get('/depenses/?statut=en_attente', {
+              headers: { Authorization: `Token ${token}` }
+            }).catch(() => ({ data: [] }));
+            setDepensesEnAttente(depensesRes.data?.length || 0);
+
+            const ecrituresRes = await axiosInstance.get('/ecritures-comptables/?statut=brouillon', {
+              headers: { Authorization: `Token ${token}` }
+            }).catch(() => ({ data: [] }));
+            setEcrituresBrouillon(ecrituresRes.data?.length || 0);
+
+            const budgetsRes = await axiosInstance.get('/budgets/?statut=en_cours', {
+              headers: { Authorization: `Token ${token}` }
+            }).catch(() => ({ data: [] }));
+            const budgets = budgetsRes.data || [];
+            const alertes = budgets.filter(b => (b.pourcentage_utilise || 0) >= 80);
+            setBudgetsAlertes(alertes.length);
+
+            setTresorerieAlerte(2);
+          }
         }
 
-        // Admin, Gestionnaire et Vendeur voient les ventes impayées
         if (isAdmin || isGestionnaire || isVendeur) {
           const ventesRes = await axiosInstance.get('/sales/?payment_status=pending', {
             headers: { Authorization: `Token ${token}` }
@@ -391,7 +420,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
     };
 
     loadData();
-  }, [role, isAdmin, isGestionnaire, isVendeur]);
+  }, [role, isAdmin, isGestionnaire, isVendeur, isComptable]);
 
   // Gestion des sections
   const handleSectionToggle = (section) => {
@@ -406,7 +435,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
     navigate('/');
   };
 
-  // Menu sections - Définition complète
+  // Menu sections - Définition complète avec FINANCES
   const menuSections = [
     {
       name: 'TABLEAU DE BORD',
@@ -429,9 +458,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
         { id: 'paiements', text: 'Paiements Clients', icon: CreditCard, path: '/paiements', permission: isAdmin || isGestionnaire || isVendeur },
         { id: 'devis', text: 'Devis', icon: FileText, path: '/devis', permission: isAdmin || isGestionnaire || isVendeur },
         { id: 'retours-clients', text: 'Retours Clients', icon: ReturnIcon, path: '/retours-clients', permission: isAdmin || isGestionnaire },
-        // Séparateur
         { id: 'separator', text: '', icon: null, path: '#', permission: true, separator: true },
-        // NOUVELLE VENTE
         { id: 'nouvelle-vente', text: 'Nouvelle Vente', icon: PlusCircle, path: '/ventes/nouveau', permission: isAdmin || isGestionnaire || isVendeur }
       ]
     },
@@ -454,9 +481,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
     }
   ];
 
-  // Ajouter les sections Admin si l'utilisateur est admin ou gestionnaire
   if (isAdmin || isGestionnaire) {
-    // Insérer ACHATS & FOURNISSEURS
     menuSections.splice(3, 0, {
       name: 'ACHATS & FOURNISSEURS',
       icon: ShoppingBag,
@@ -471,29 +496,49 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
       ]
     });
 
-    // Insérer FINANCES
+    // ✅ FINANCES - Sans préfixe /finances
     menuSections.splice(4, 0, {
       name: 'FINANCES',
       icon: DollarSign,
       items: [
+        // Dashboard Finances
+        { id: 'dashboard-finances', text: 'Dashboard Finances', icon: Gauge, path: '/dashboard-finances', permission: isAdmin || isComptable },
+        
+        // Comptabilité
         { id: 'comptes-comptables', text: 'Plan Comptable', icon: Grid3x3, path: '/comptes-comptables', permission: isAdmin || isComptable },
-        { id: 'ecritures-comptables', text: 'Écritures Comptables', icon: BookOpen, path: '/ecritures-comptables', permission: isAdmin || isComptable },
+        { id: 'ecritures-comptables', text: 'Écritures Comptables', icon: BookOpen, path: '/ecritures-comptables', permission: isAdmin || isComptable, badge: ecrituresBrouillon > 0 ? ecrituresBrouillon : 0 },
         { id: 'journal-comptable', text: 'Journal Comptable', icon: ScrollText, path: '/journal-comptable', permission: isAdmin || isComptable },
         { id: 'grand-livre', text: 'Grand Livre', icon: Scale, path: '/grand-livre', permission: isAdmin || isComptable },
-        { id: 'balance-generale', text: 'Balance Générale', icon: Scale, path: '/balance-generale', permission: isAdmin || isComptable },
-        { id: 'budgets', text: 'Budgets', icon: PiggyBank, path: '/budgets', permission: isAdmin || isComptable },
-        { id: 'depenses', text: 'Dépenses', icon: TrendingDown, path: '/depenses', permission: isAdmin || isComptable },
+        { id: 'balance-generale', text: 'Balance Générale', icon: TableProperties, path: '/balance-generale', permission: isAdmin || isComptable },
+        
+        // Dépenses
+        { id: 'depenses', text: 'Dépenses', icon: TrendingDown, path: '/depenses', permission: isAdmin || isComptable, badge: depensesEnAttente > 0 ? depensesEnAttente : 0 },
+        
+        // Budgets
+        { id: 'budgets', text: 'Budgets', icon: PiggyBank, path: '/budgets', permission: isAdmin || isComptable, badge: budgetsAlertes > 0 ? budgetsAlertes : 0 },
+        
+        // Rapports
         { id: 'rapports-financiers', text: 'Rapports Financiers', icon: FileSpreadsheet, path: '/rapports-financiers', permission: isAdmin || isComptable },
-        { id: 'dashboard-finances', text: 'Dashboard Finances', icon: PieChart, path: '/dashboard-finances', permission: isAdmin || isComptable }
+        
+        // Configuration
+        { id: 'config-financiere', text: 'Configuration Financière', icon: Cog, path: '/config-financiere', permission: isAdmin },
+        
+        // Séparateur
+        { id: 'separator-finances', text: '', icon: null, path: '#', permission: true, separator: true },
+        
+        // Actions rapides
+        { id: 'nouvelle-depense', text: 'Nouvelle Dépense', icon: PlusCircle, path: '/depenses/nouveau', permission: isAdmin || isComptable },
+        { id: 'nouveau-budget', text: 'Nouveau Budget', icon: PlusCircle, path: '/budgets/nouveau', permission: isAdmin || isComptable },
+        { id: 'nouvelle-ecriture', text: 'Nouvelle Écriture', icon: PlusCircle, path: '/ecritures-comptables/nouveau', permission: isAdmin || isComptable }
       ]
     });
 
-    // Insérer TRÉSORERIE
+    // TRÉSORERIE
     menuSections.splice(5, 0, {
       name: 'TRÉSORERIE',
       icon: Wallet,
       items: [
-        { id: 'dashboard-tresorerie', text: 'Tableau de Bord', icon: Gauge, path: '/dashboard-tresorerie', permission: isAdmin || isComptable },
+        { id: 'dashboard-tresorerie', text: 'Tableau de Bord', icon: Gauge, path: '/dashboard-tresorerie', permission: isAdmin || isComptable, badge: tresorerieAlerte > 0 ? tresorerieAlerte : 0 },
         { id: 'caisses', text: 'Caisses', icon: Banknote, path: '/caisses', permission: isAdmin || isComptable },
         { id: 'comptes-bancaires', text: 'Comptes Bancaires', icon: Landmark, path: '/comptes-bancaires', permission: isAdmin || isComptable },
         { id: 'mouvements-tresorerie', text: 'Mouvements Trésorerie', icon: Coins, path: '/mouvements-tresorerie', permission: isAdmin || isComptable },
@@ -505,7 +550,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
       ]
     });
 
-    // Insérer LIVRAISONS
+    // LIVRAISONS
     menuSections.splice(6, 0, {
       name: 'LIVRAISONS',
       icon: Truck,
@@ -517,7 +562,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
       ]
     });
 
-    // Insérer PARAMÈTRES
+    // PARAMÈTRES
     menuSections.splice(7, 0, {
       name: 'PARAMÈTRES',
       icon: Settings,
@@ -583,7 +628,6 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
 
   // Fonction de rendu des items de menu
   const renderMenuItem = (item, sectionName, isActive) => {
-    // Gérer le séparateur
     if (item.separator) {
       return (
         <div key={item.id} className="border-t border-primary/20 my-2 mx-1"></div>
@@ -615,7 +659,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
     );
   };
 
-  // Fonction pour afficher le logo (utilisée partout)
+  // Fonction pour afficher le logo
   const renderLogo = (className = "w-full h-full object-cover rounded-xl") => {
     if (!loadingEtab && logoUrl) {
       return (
@@ -624,9 +668,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
           alt={etablissement?.nom || 'Logo établissement'}
           className={className}
           onError={(e) => {
-            // Si l'image ne charge pas, afficher l'icône par défaut
             e.target.style.display = 'none';
-            e.target.parentElement.innerHTML = `<svg class="w-6 h-6 text-primary" ...>`;
           }}
         />
       );
@@ -711,7 +753,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                 {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
               </button>
 
-              {/* Logo Desktop avec chargement dynamique */}
+              {/* Logo Desktop */}
               <Link to="/dashboard" className="hidden lg:flex items-center gap-3 group">
                 <div className="relative">
                   <div className="absolute inset-0 bg-primary-content/20 rounded-xl blur-md group-hover:blur-lg transition-all"></div>
@@ -740,7 +782,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                 </div>
               </Link>
 
-              {/* Logo Mobile avec chargement dynamique */}
+              {/* Logo Mobile */}
               <div className="lg:hidden flex items-center gap-2">
                 <div className="w-8 h-8 bg-base-100 rounded-lg flex items-center justify-center border-2 border-accent overflow-hidden">
                   {!loadingEtab && logoUrl ? (
@@ -793,6 +835,9 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                 {isGestionnaire && !isAdmin && (
                   <span className="badge badge-warning badge-xs ml-1">Gestion</span>
                 )}
+                {isComptable && !isAdmin && !isGestionnaire && (
+                  <span className="badge badge-secondary badge-xs ml-1">Compta</span>
+                )}
               </div>
 
               <button
@@ -833,6 +878,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                               </span>
                               {isAdmin && <span className="badge badge-error badge-sm">Admin</span>}
                               {isGestionnaire && !isAdmin && <span className="badge badge-warning badge-sm">Gestion</span>}
+                              {isComptable && !isAdmin && !isGestionnaire && <span className="badge badge-secondary badge-sm">Compta</span>}
                             </div>
                           </div>
                         </div>
@@ -891,7 +937,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
       `}>
         <div className="h-full flex flex-col">
           
-          {/* Logo dans la sidebar - Version dynamique */}
+          {/* Logo dans la sidebar */}
           <div className={`p-4 border-b border-primary/20 ${!sidebarOpen && 'text-center'} bg-gradient-to-r from-primary/5 to-transparent`}>
             <div className={`flex items-center ${!sidebarOpen && 'justify-center'} gap-3`}>
               <div className="w-10 h-10 bg-gradient-to-br from-primary to-primary/80 rounded-xl flex items-center justify-center shadow-lg overflow-hidden">
@@ -932,12 +978,13 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
                 <div className="flex-1 min-w-0">
                   <p className="font-semibold text-sm truncate text-base-content">{userFullName || userName}</p>
                   <p className="text-xs text-base-content/50 truncate">{userEmail}</p>
-                  <div className="flex items-center gap-1 mt-1">
+                  <div className="flex items-center gap-1 mt-1 flex-wrap">
                     <span className={`badge badge-${roleConfig.color} badge-sm`}>
                       <RoleIcon className="w-3 h-3 mr-1" />
                       {roleConfig.label}
                     </span>
                     {isAdmin && <span className="badge badge-error badge-sm">Admin</span>}
+                    {isGestionnaire && !isAdmin && <span className="badge badge-warning badge-sm">Gestion</span>}
                   </div>
                 </div>
               )}

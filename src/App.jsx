@@ -74,19 +74,18 @@ import PaiementForm from './components/ventesclients/PaiementForm';
 import PaiementDetail from './components/ventesclients/PaiementDetail';
 import PaiementPdf from './components/ventesclients/PaiementPdf';
 import CompteListe from './components/finances/CompteListe';
-import CompteForm from './components/finances/CompteForm';
 import CompteDetail from './components/finances/CompteDetail';
-import EcritureListe from './components/finances/EcritureListe';
-import EcritureDetail from './components/finances/EcritureDetail';
+import EcrituresList from './components/finances/EcrituresList';
 import EcritureForm from './components/finances/EcritureForm';
 import TresorerieListe from './components/finances/TresorerieListe';
 import TresorerieForm from './components/finances/TresorerieForm';
 import TresorerieDetail from './components/finances/TresorerieDetail';
 import MouvementTresorerieListe from './components/finances/MouvementTresorerieListe';
 import MouvementTresorerieForm from './components/finances/MouvementTresorerieForm';
-import DepenseListe from './components/finances/DepenseListe';
+
+import DepensesList from './components/finances/DepensesList';
 import DepenseForm from './components/finances/DepenseForm';
-import DepenseDetail from './components/finances/DepenseDetail';
+
 import ConfigurationFinanciere from './components/finances/ConfigurationFinanciere';
 import BudgetCategorieListe from './components/finances/BudgetCategorieListe';
 import BudgetCategorieForm from './components/finances/BudgetCategorieForm';
@@ -148,9 +147,12 @@ import FactureFournisseurForm from './components/achatsfournisseurs/FactureFourn
 import PaiementFournisseurDetail from './components/achatsfournisseurs/PaiementFournisseurDetail';
 import PaiementsFournisseursList from './components/achatsfournisseurs/PaiementsFournisseursList';
 import PaiementFournisseurForm from './components/achatsfournisseurs/PaiementFournisseurForm';
-
-
 import ClientFacturesPDF from './components/ventesclients/ClientFacturesPDF';
+
+import DashboardFinancier from './components/finances/DashboardFinancier';
+import ComptesList from './components/finances/ComptesList';
+import CompteForm from './components/finances/CompteForm';
+
 
 import EtablissementSettings from './components/settings/EtablissementSettings';
 
@@ -375,10 +377,7 @@ function App() {
         {/* Route pour le centre d'alertes global */}
                <Route path="/dashboard/alerts" element={<AlertsDashboard />} />
               
-<Route path="/ecritures" element={<EcritureListe />} />
-<Route path="/ecritures/nouveau" element={<EcritureForm />} />
-<Route path="/ecritures/:id" element={<EcritureDetail />} />
-<Route path="/ecritures/:id/modifier" element={<EcritureForm />} />
+
 
 
 
@@ -391,12 +390,6 @@ function App() {
 <Route path="/mouvements-tresorerie" element={<MouvementTresorerieListe />} />
 <Route path="/mouvements-tresorerie/nouveau" element={<MouvementTresorerieForm />} />
 
-
-
-<Route path="/depenses" element={<DepenseListe />} />
-<Route path="/depenses/nouveau" element={<DepenseForm />} />
-<Route path="/depenses/:id" element={<DepenseDetail />} />
-<Route path="/depenses/:id/modifier" element={<DepenseForm />} />
 
 
 
@@ -420,10 +413,21 @@ function App() {
 <Route path="/rapports-financiers/:id/pdf" element={<RapportPdf />} />
 {/* ==================== FINANCES ==================== 
 
-<Route path="/finances-dashboard" element={<FinancesDashboard />} />
+<Route path="/finances-dashboard" element={<FinancesDashboard />} />*/}
+<Route path="/dashboard-finances" element={<DashboardFinancier />} />
+<Route path="/comptes-comptables" element={<ComptesList />} />
+<Route path="/comptes-comptables/nouveau" element={<CompteForm />} />
+
+<Route path="/ecritures-comptables" element={<EcrituresList />} />
+<Route path="/ecritures-comptables/nouveau" element={<EcritureForm />} />
+<Route path="/ecritures-comptables/:id/modifier" element={<EcritureForm />} />
 
 
-                */}
+
+<Route path="/depenses" element={<DepensesList />} />
+<Route path="/depenses/nouveau" element={<DepenseForm />} />
+<Route path="/depenses/:id/modifier" element={<DepenseForm />} />
+
   <Route path="/company-config" element={<EtablissementSettings />} />
 
                 {/* ==================== LIVRAISONS ==================== 

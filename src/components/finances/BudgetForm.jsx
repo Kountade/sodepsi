@@ -1,41 +1,48 @@
 // src/components/finances/BudgetForm.jsx
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import AxiosInstance from '../AxiosInstance';
+import axiosInstance from '../AxiosInstance';
 import {
-  ArrowLeft, Save, X, Loader2, AlertCircle,
-  CheckCircle, PiggyBank, Calendar, DollarSign,
-  Plus, Trash2, FileText, Tag
+  ArrowLeft, Save, X, Wallet, Loader2,
+  AlertCircle, CheckCircle, Plus, Trash2
 } from 'lucide-react';
 
 const BudgetForm = () => {
-  const { id } = useParams();
   const navigate = useNavigate();
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
-  const [success, setSuccess] = useState(false);
-  const [categories, setCategories] = useState([]);
-  const [lignes, setLignes] = useState([]);
-  const [totalLignes, setTotalLignes] = useState(0);
+  const { id } = useParams();
+  const isEdit = !!id;
 
+  const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [categories, setCategories] = useState([]);
+  const [notification, setNotification] = useState(null);
+  const [lignes, setLignes] = useState([]);
   const [formData, setFormData] = useState({
     nom: '',
     type: 'annuel',
     montant_total: '',
-    date_debut: new Date().toISOString().split('T')[0],
+    date_debut: '',
     date_fin: '',
     statut: 'en_cours',
     notes: ''
   });
+  const [errors, setErrors] = useState({});
 
   const getToken = () => localStorage.getItem('Token');
+
+  const showNotification = (message, type = 'success') => {
+    setNotification({ message, type });
+    setTimeout(() => setNotification(null), 4000);
+  };
 
   const fetchCategories = async () => {
     try {
       const token = getToken();
-      const response = await AxiosInstance.get('/budget-categories/?is_active=true', {
-        headers: { 'Authorization': `Token ${token}` }
+      if (!token) return;
+
+      const response = await axiosInstance.get('/budget-categories/', {
+        headers: { 'Authorization': `Token ${token}` },
+        params: { is_active: 'true' }
       });
       setCategories(response.data);
     } catch (error) {
@@ -44,13 +51,21 @@ const BudgetForm = () => {
   };
 
   const fetchBudget = async () => {
-    if (!id) return;
+    if (!isEdit) return;
+    
     setLoading(true);
     try {
       const token = getToken();
-      const response = await AxiosInstance.get(`/budgets/${id}/`, {
+      if (!token) {
+        showNotification('Session expirée', 'error');
+        setTimeout(() => navigate('/login'), 2000);
+        return;
+      }
+
+      const response = await axiosInstance.get(`/budgets/${id}/`, {
         headers: { 'Authorization': `Token ${token}` }
       });
+
       const data = response.data;
       setFormData({
         nom: data.nom || '',
@@ -61,22 +76,10 @@ const BudgetForm = () => {
         statut: data.statut || 'en_cours',
         notes: data.notes || ''
       });
-      
-      if (data.lignes) {
-        setLignes(data.lignes.map(l => ({
-          id: l.id,
-          categorie: l.categorie || '',
-          categorie_nom: l.categorie_nom || '',
-          montant_prevu: l.montant_prevu || '',
-          montant_utilise: l.montant_utilise || 0,
-          montant_restant: l.montant_restant || 0,
-          notes: l.notes || ''
-        })));
-        setTotalLignes(data.lignes.reduce((sum, l) => sum + (l.montant_prevu || 0), 0));
-      }
+      setLignes(data.lignes || []);
     } catch (error) {
       console.error('Erreur:', error);
-      setError('Erreur lors du chargement du budget');
+      showNotification('Erreur de chargement', 'error');
     } finally {
       setLoading(false);
     }
@@ -84,10 +87,8 @@ const BudgetForm = () => {
 
   useEffect(() => {
     fetchCategories();
-    if (id) {
-      fetchBudget();
-    }
-  }, [id]);
+    if (isEdit) fetchBudget();
+  }, []);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -97,383 +98,347 @@ const BudgetForm = () => {
   const handleLigneChange = (index, field, value) => {
     const newLignes = [...lignes];
     newLignes[index][field] = value;
-    
-    if (field === 'categorie') {
-      const cat = categories.find(c => c.id === parseInt(value));
-      newLignes[index].categorie_nom = cat ? cat.nom : '';
-    }
-    
     setLignes(newLignes);
-    updateTotalLignes(newLignes);
   };
 
   const addLigne = () => {
-    setLignes([...lignes, {
-      categorie: '',
-      categorie_nom: '',
-      montant_prevu: '',
-      montant_utilise: 0,
-      montant_restant: 0,
-      notes: ''
-    }]);
+    setLignes([...lignes, { categorie: '', montant_prevu: '' }]);
   };
 
   const removeLigne = (index) => {
-    const newLignes = lignes.filter((_, i) => i !== index);
-    setLignes(newLignes);
-    updateTotalLignes(newLignes);
+    setLignes(lignes.filter((_, i) => i !== index));
   };
 
-  const updateTotalLignes = (newLignes) => {
-    const total = newLignes.reduce((sum, l) => sum + (parseFloat(l.montant_prevu) || 0), 0);
-    setTotalLignes(total);
-    setFormData(prev => ({ ...prev, montant_total: total }));
+  const validateForm = () => {
+    const newErrors = {};
+    if (!formData.nom) newErrors.nom = 'Le nom est requis';
+    if (!formData.date_debut) newErrors.date_debut = 'La date de début est requise';
+    if (!formData.date_fin) newErrors.date_fin = 'La date de fin est requise';
+    if (formData.date_debut && formData.date_fin && formData.date_debut > formData.date_fin) {
+      newErrors.date_fin = 'La date de fin doit être postérieure à la date de début';
+    }
+    if (!formData.montant_total || parseFloat(formData.montant_total) <= 0) {
+      newErrors.montant_total = 'Le montant total doit être supérieur à 0';
+    }
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setSaving(true);
-    setError(null);
-    setSuccess(false);
+    if (!validateForm()) return;
 
+    setSubmitting(true);
     try {
       const token = getToken();
-      
-      // Valider que le montant total correspond à la somme des lignes
-      if (Math.abs(totalLignes - parseFloat(formData.montant_total || 0)) > 0.01) {
-        setError('Le montant total ne correspond pas à la somme des lignes');
-        setSaving(false);
+      if (!token) {
+        showNotification('Session expirée', 'error');
+        setTimeout(() => navigate('/login'), 2000);
         return;
       }
 
       const dataToSend = {
         ...formData,
-        montant_total: parseFloat(formData.montant_total) || 0,
+        montant_total: parseFloat(formData.montant_total),
         lignes: lignes.map(l => ({
-          categorie: parseInt(l.categorie),
-          montant_prevu: parseFloat(l.montant_prevu) || 0,
-          notes: l.notes || ''
+          ...l,
+          montant_prevu: parseFloat(l.montant_prevu) || 0
         }))
       };
 
-      let response;
-      if (id) {
-        response = await AxiosInstance.put(`/budgets/${id}/`, dataToSend, {
+      if (isEdit) {
+        await axiosInstance.put(`/budgets/${id}/`, dataToSend, {
           headers: { 'Authorization': `Token ${token}` }
         });
+        showNotification('Budget modifié avec succès');
       } else {
-        response = await AxiosInstance.post('/budgets/', dataToSend, {
+        await axiosInstance.post('/budgets/', dataToSend, {
           headers: { 'Authorization': `Token ${token}` }
         });
+        showNotification('Budget créé avec succès');
       }
 
-      setSuccess(true);
-      setTimeout(() => {
-        navigate('/budgets');
-      }, 1500);
+      setTimeout(() => navigate('/finances/budgets'), 1500);
+
     } catch (error) {
       console.error('Erreur:', error);
-      if (error.response?.data) {
-        const errors = Object.values(error.response.data).flat().join(' ');
-        setError(errors || 'Erreur lors de l\'enregistrement');
-      } else {
-        setError('Erreur lors de l\'enregistrement');
-      }
+      const errorMsg = error.response?.data?.error || error.response?.data?.message || 'Erreur lors de l\'enregistrement';
+      showNotification(errorMsg, 'error');
     } finally {
-      setSaving(false);
+      setSubmitting(false);
     }
   };
 
+  const typeOptions = [
+    { value: 'annuel', label: 'Annuel' },
+    { value: 'trimestriel', label: 'Trimestriel' },
+    { value: 'mensuel', label: 'Mensuel' },
+    { value: 'projet', label: 'Projet' }
+  ];
+
+  const statutOptions = [
+    { value: 'en_cours', label: 'En cours' },
+    { value: 'termine', label: 'Terminé' },
+    { value: 'annule', label: 'Annulé' }
+  ];
+
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[400px] bg-gray-50">
+      <div className="flex items-center justify-center min-h-[calc(100vh-200px)] bg-gray-50">
         <div className="text-center space-y-4">
-          <Loader2 className="animate-spin text-primary w-12 h-12 mx-auto" />
-          <p className="text-base font-medium text-gray-500">Chargement du budget...</p>
+          <Loader2 className="animate-spin text-primary w-14 h-14 mx-auto" />
+          <p className="text-lg font-medium text-gray-500">Chargement...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6 p-4 sm:p-6 bg-gray-50 min-h-screen">
-      {/* En-tête */}
-      <div className="flex items-center gap-4">
-        <button 
-          onClick={() => navigate('/budgets')}
-          className="btn btn-ghost btn-sm btn-circle"
-        >
-          <ArrowLeft className="w-5 h-5" />
-        </button>
-        <div>
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-primary/10 rounded-xl">
-              <PiggyBank className="w-6 h-6 text-primary" />
+    <div className="w-full min-h-screen bg-gray-50">
+      {notification && (
+        <div className="fixed top-20 right-4 z-50 animate-slideDown">
+          <div className={`alert ${notification.type === 'success' ? 'alert-success' : 'alert-error'} shadow-xl rounded-xl max-w-md`}>
+            <div className="flex items-center gap-2">
+              {notification.type === 'success' ? <CheckCircle className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
+              <span className="font-medium">{notification.message}</span>
             </div>
-            <h1 className="text-2xl font-bold text-gray-800">
-              {id ? 'Modifier le budget' : 'Nouveau budget'}
-            </h1>
+            <button className="btn btn-ghost btn-xs btn-circle" onClick={() => setNotification(null)}>
+              <X className="w-3 h-3" />
+            </button>
           </div>
-          <p className="text-sm text-gray-500 ml-1">
-            {id ? `Budget #${id}` : 'Créer un nouveau budget'}
-          </p>
-        </div>
-      </div>
-
-      {/* Notification de succès */}
-      {success && (
-        <div className="alert alert-success shadow-lg animate-slideDown">
-          <CheckCircle className="w-5 h-5" />
-          <span>Budget enregistré avec succès !</span>
         </div>
       )}
 
-      {/* Formulaire */}
-      <div className="bg-white rounded-xl shadow-md p-6">
-        <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Erreur */}
-          {error && (
-            <div className="alert alert-error shadow-lg">
-              <AlertCircle className="w-5 h-5" />
-              <span>{error}</span>
-              <button className="btn btn-ghost btn-xs btn-circle" onClick={() => setError(null)}>
-                <X className="w-3 h-3" />
-              </button>
-            </div>
-          )}
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Nom */}
-            <div className="form-control">
-              <label className="label">
-                <span className="label-text font-medium">Nom du budget *</span>
-              </label>
-              <input
-                type="text"
-                name="nom"
-                value={formData.nom}
-                onChange={handleChange}
-                className="input input-bordered w-full"
-                placeholder="Ex: Budget 2024, Projet X..."
-                required
-              />
-            </div>
-
-            {/* Type */}
-            <div className="form-control">
-              <label className="label">
-                <span className="label-text font-medium">Type *</span>
-              </label>
-              <select
-                name="type"
-                value={formData.type}
-                onChange={handleChange}
-                className="select select-bordered w-full"
-                required
-              >
-                <option value="annuel">Annuel</option>
-                <option value="trimestriel">Trimestriel</option>
-                <option value="mensuel">Mensuel</option>
-                <option value="projet">Projet</option>
-              </select>
-            </div>
-
-            {/* Date début */}
-            <div className="form-control">
-              <label className="label">
-                <span className="label-text font-medium">Date début *</span>
-              </label>
-              <input
-                type="date"
-                name="date_debut"
-                value={formData.date_debut}
-                onChange={handleChange}
-                className="input input-bordered w-full"
-                required
-              />
-            </div>
-
-            {/* Date fin */}
-            <div className="form-control">
-              <label className="label">
-                <span className="label-text font-medium">Date fin *</span>
-              </label>
-              <input
-                type="date"
-                name="date_fin"
-                value={formData.date_fin}
-                onChange={handleChange}
-                className="input input-bordered w-full"
-                required
-              />
-            </div>
-
-            {/* Statut */}
-            <div className="form-control">
-              <label className="label">
-                <span className="label-text font-medium">Statut</span>
-              </label>
-              <select
-                name="statut"
-                value={formData.statut}
-                onChange={handleChange}
-                className="select select-bordered w-full"
-              >
-                <option value="en_cours">En cours</option>
-                <option value="termine">Terminé</option>
-                <option value="annule">Annulé</option>
-              </select>
-            </div>
-
-            {/* Montant total (automatique) */}
-            <div className="form-control">
-              <label className="label">
-                <span className="label-text font-medium">Montant total</span>
-              </label>
-              <input
-                type="number"
-                name="montant_total"
-                value={formData.montant_total}
-                onChange={handleChange}
-                className="input input-bordered w-full bg-gray-100"
-                placeholder="Calculé automatiquement"
-                step="0.01"
-                readOnly
-              />
-              <label className="label">
-                <span className="label-text-alt text-gray-400">Calculé à partir des lignes</span>
-              </label>
-            </div>
-
-            {/* Notes */}
-            <div className="form-control md:col-span-2">
-              <label className="label">
-                <span className="label-text font-medium">Notes</span>
-              </label>
-              <textarea
-                name="notes"
-                value={formData.notes}
-                onChange={handleChange}
-                className="textarea textarea-bordered w-full h-20"
-                placeholder="Notes supplémentaires..."
-              />
+      <div className="bg-white border-b border-gray-200 shadow-sm w-full">
+        <div className="w-full px-6 py-5">
+          <div className="flex items-center gap-4">
+            <button onClick={() => navigate('/finances/budgets')} className="btn btn-ghost gap-2">
+              <ArrowLeft className="w-5 h-5" /> Retour
+            </button>
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-green-50 rounded-xl">
+                <Wallet className="w-7 h-7 text-green-600" />
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold text-gray-800">
+                  {isEdit ? 'Modifier le budget' : 'Nouveau budget'}
+                </h1>
+                <p className="text-sm text-gray-500">
+                  {isEdit ? 'Modifiez les informations du budget' : 'Créez un nouveau budget'}
+                </p>
+              </div>
             </div>
           </div>
+        </div>
+      </div>
 
-          {/* Lignes de budget */}
-          <div className="border-t pt-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">
-                <FileText className="w-5 h-5 text-primary" />
-                Lignes de budget
-              </h2>
-              <button
-                type="button"
-                onClick={addLigne}
-                className="btn btn-primary btn-sm gap-2"
-              >
-                <Plus className="w-4 h-4" /> Ajouter une ligne
-              </button>
+      <div className="w-full px-6 py-6">
+        <div className="max-w-4xl mx-auto">
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+              <div className="bg-gray-50 px-6 py-3.5 border-b border-gray-200">
+                <h3 className="font-semibold flex items-center gap-2 text-gray-700">
+                  <Wallet className="w-5 h-5 text-green-600" />
+                  Informations du budget
+                </h3>
+              </div>
+              <div className="p-6 space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="label text-sm font-medium text-gray-700">
+                      Nom <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      name="nom"
+                      value={formData.nom}
+                      onChange={handleChange}
+                      className={`input input-bordered w-full ${errors.nom ? 'input-error' : ''}`}
+                      placeholder="Ex: Budget 2024"
+                    />
+                    {errors.nom && <p className="text-red-500 text-xs mt-1">{errors.nom}</p>}
+                  </div>
+                  <div>
+                    <label className="label text-sm font-medium text-gray-700">
+                      Type <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      name="type"
+                      value={formData.type}
+                      onChange={handleChange}
+                      className="select select-bordered w-full"
+                    >
+                      {typeOptions.map(opt => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="label text-sm font-medium text-gray-700">
+                      Date début <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="date"
+                      name="date_debut"
+                      value={formData.date_debut}
+                      onChange={handleChange}
+                      className={`input input-bordered w-full ${errors.date_debut ? 'input-error' : ''}`}
+                    />
+                    {errors.date_debut && <p className="text-red-500 text-xs mt-1">{errors.date_debut}</p>}
+                  </div>
+                  <div>
+                    <label className="label text-sm font-medium text-gray-700">
+                      Date fin <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="date"
+                      name="date_fin"
+                      value={formData.date_fin}
+                      onChange={handleChange}
+                      className={`input input-bordered w-full ${errors.date_fin ? 'input-error' : ''}`}
+                    />
+                    {errors.date_fin && <p className="text-red-500 text-xs mt-1">{errors.date_fin}</p>}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="label text-sm font-medium text-gray-700">
+                      Montant total <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      name="montant_total"
+                      value={formData.montant_total}
+                      onChange={handleChange}
+                      className={`input input-bordered w-full ${errors.montant_total ? 'input-error' : ''}`}
+                      placeholder="0"
+                      step="1000"
+                    />
+                    {errors.montant_total && <p className="text-red-500 text-xs mt-1">{errors.montant_total}</p>}
+                  </div>
+                  <div>
+                    <label className="label text-sm font-medium text-gray-700">Statut</label>
+                    <select
+                      name="statut"
+                      value={formData.statut}
+                      onChange={handleChange}
+                      className="select select-bordered w-full"
+                    >
+                      {statutOptions.map(opt => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="label text-sm font-medium text-gray-700">Notes</label>
+                  <textarea
+                    name="notes"
+                    value={formData.notes}
+                    onChange={handleChange}
+                    className="textarea textarea-bordered w-full min-h-[60px]"
+                    placeholder="Informations supplémentaires..."
+                  />
+                </div>
+              </div>
             </div>
 
-            {lignes.length === 0 ? (
-              <div className="text-center py-8 bg-gray-50 rounded-lg">
-                <p className="text-gray-500">Aucune ligne de budget</p>
+            {/* Lignes budgétaires */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+              <div className="bg-gray-50 px-6 py-3.5 border-b border-gray-200 flex items-center justify-between">
+                <h3 className="font-semibold flex items-center gap-2 text-gray-700">
+                  <Plus className="w-5 h-5 text-primary" />
+                  Lignes budgétaires
+                </h3>
                 <button
                   type="button"
                   onClick={addLigne}
-                  className="btn btn-primary btn-sm mt-2 gap-2"
+                  className="btn btn-sm btn-primary gap-1"
                 >
-                  <Plus className="w-4 h-4" /> Ajouter une ligne
+                  <Plus className="w-4 h-4" /> Ajouter
                 </button>
               </div>
-            ) : (
-              <div className="space-y-3">
-                {lignes.map((ligne, index) => (
-                  <div key={index} className="grid grid-cols-1 md:grid-cols-4 gap-3 p-3 bg-gray-50 rounded-lg">
-                    <div>
-                      <label className="text-xs text-gray-500">Catégorie *</label>
-                      <select
-                        value={ligne.categorie}
-                        onChange={(e) => handleLigneChange(index, 'categorie', e.target.value)}
-                        className="select select-bordered select-sm w-full"
-                        required
-                      >
-                        <option value="">Sélectionner</option>
-                        {categories.map(c => (
-                          <option key={c.id} value={c.id}>{c.code} - {c.nom}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="text-xs text-gray-500">Montant prévu *</label>
-                      <input
-                        type="number"
-                        value={ligne.montant_prevu}
-                        onChange={(e) => handleLigneChange(index, 'montant_prevu', e.target.value)}
-                        className="input input-bordered input-sm w-full"
-                        placeholder="0"
-                        step="0.01"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs text-gray-500">Notes</label>
-                      <input
-                        type="text"
-                        value={ligne.notes || ''}
-                        onChange={(e) => handleLigneChange(index, 'notes', e.target.value)}
-                        className="input input-bordered input-sm w-full"
-                        placeholder="Notes..."
-                      />
-                    </div>
-                    <div className="flex items-end justify-end">
-                      <button
-                        type="button"
-                        onClick={() => removeLigne(index)}
-                        className="btn btn-error btn-sm btn-circle"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
+              <div className="p-4 space-y-3">
+                {lignes.length === 0 ? (
+                  <div className="text-center py-8 text-gray-400">
+                    <p>Aucune ligne budgétaire</p>
+                    <button
+                      type="button"
+                      onClick={addLigne}
+                      className="btn btn-ghost btn-sm gap-1 mt-2"
+                    >
+                      <Plus className="w-4 h-4" /> Ajouter une ligne
+                    </button>
                   </div>
-                ))}
+                ) : (
+                  lignes.map((ligne, index) => (
+                    <div key={index} className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end p-3 bg-gray-50 rounded-lg border border-gray-100">
+                      <div>
+                        <label className="label text-xs font-medium text-gray-600">Catégorie</label>
+                        <select
+                          value={ligne.categorie}
+                          onChange={(e) => handleLigneChange(index, 'categorie', e.target.value)}
+                          className="select select-bordered w-full select-sm"
+                        >
+                          <option value="">Sélectionner</option>
+                          {categories.map(c => (
+                            <option key={c.id} value={c.id}>
+                              {c.code} - {c.nom}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="label text-xs font-medium text-gray-600">Montant prévu</label>
+                        <input
+                          type="number"
+                          value={ligne.montant_prevu}
+                          onChange={(e) => handleLigneChange(index, 'montant_prevu', e.target.value)}
+                          className="input input-bordered w-full input-sm"
+                          placeholder="0"
+                          step="1000"
+                        />
+                      </div>
+                      <div className="flex justify-end">
+                        <button
+                          type="button"
+                          onClick={() => removeLigne(index)}
+                          className="btn btn-ghost btn-sm btn-circle text-error"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
-            )}
+            </div>
 
-            {lignes.length > 0 && (
-              <div className="flex justify-end mt-4 p-3 bg-primary/5 rounded-lg">
-                <div className="text-right">
-                  <p className="text-sm text-gray-500">Total des lignes</p>
-                  <p className="text-lg font-bold text-primary">{totalLignes.toLocaleString('fr-FR')} FCFA</p>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Actions */}
-          <div className="flex flex-wrap gap-3 pt-4 border-t">
-            <button
-              type="submit"
-              className="btn btn-primary gap-2"
-              disabled={saving}
-            >
-              {saving ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Save className="w-4 h-4" />
-              )}
-              {saving ? 'Enregistrement...' : id ? 'Mettre à jour' : 'Créer le budget'}
-            </button>
-            <button
-              type="button"
-              onClick={() => navigate('/budgets')}
-              className="btn btn-ghost gap-2"
-            >
-              <X className="w-4 h-4" /> Annuler
-            </button>
-          </div>
-        </form>
+            <div className="flex flex-col sm:flex-row gap-3 justify-end">
+              <button
+                type="button"
+                onClick={() => navigate('/finances/budgets')}
+                className="btn btn-ghost gap-2"
+                disabled={submitting}
+              >
+                <X className="w-5 h-5" /> Annuler
+              </button>
+              <button
+                type="submit"
+                className="btn btn-primary gap-2 min-w-[180px]"
+                disabled={submitting}
+              >
+                {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
+                {isEdit ? 'Modifier' : 'Créer'}
+              </button>
+            </div>
+          </form>
+        </div>
       </div>
     </div>
   );

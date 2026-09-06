@@ -1,21 +1,34 @@
 // src/components/finances/CompteForm.jsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import AxiosInstance from '../AxiosInstance';
 import {
-  ArrowLeft, Save, X, Loader2, AlertCircle,
-  CheckCircle, Grid3x3, Building2, Wallet
+  ArrowLeft, Save, X, Building2, Loader2,
+  CheckCircle, AlertCircle
 } from 'lucide-react';
 
+// ============================================================
+// COMPOSANT PRINCIPAL
+// ============================================================
 const CompteForm = () => {
-  const { id } = useParams();
+  // ==========================================================
+  // HOOKS
+  // ==========================================================
   const navigate = useNavigate();
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
-  const [success, setSuccess] = useState(false);
-  const [comptesParents, setComptesParents] = useState([]);
+  const { id } = useParams();
+  const isEdit = !!id;
 
+  // ==========================================================
+  // ÉTATS
+  // ==========================================================
+  const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [comptesParents, setComptesParents] = useState([]);
+  const [notification, setNotification] = useState({
+    show: false,
+    message: '',
+    type: 'success'
+  });
   const [formData, setFormData] = useState({
     numero: '',
     nom: '',
@@ -29,17 +42,52 @@ const CompteForm = () => {
     is_active: true,
     notes: ''
   });
+  const [errors, setErrors] = useState({});
 
+  // ==========================================================
+  // FONCTIONS UTILITAIRES
+  // ==========================================================
   const getToken = () => localStorage.getItem('Token');
 
-  const fetchCompte = async () => {
-    if (!id) return;
+  const showNotification = (message, type) => {
+    setNotification({ show: true, message, type });
+    setTimeout(() => setNotification(prev => ({ ...prev, show: false })), 4000);
+  };
+
+  // ==========================================================
+  // REQUÊTES API
+  // ==========================================================
+  const fetchComptesParents = useCallback(async () => {
+    try {
+      const token = getToken();
+      if (!token) return;
+
+      const response = await AxiosInstance.get('/comptes-comptables/', {
+        headers: { 'Authorization': `Token ${token}` },
+        params: { is_active: 'true' }
+      });
+      setComptesParents(response.data);
+    } catch (error) {
+      console.error('Erreur chargement parents:', error);
+    }
+  }, []);
+
+  const fetchCompte = useCallback(async () => {
+    if (!isEdit) return;
+
     setLoading(true);
     try {
       const token = getToken();
-      const response = await AxiosInstance.get(`/comptes/${id}/`, {
+      if (!token) {
+        showNotification('Session expirée', 'error');
+        setTimeout(() => navigate('/login'), 2000);
+        return;
+      }
+
+      const response = await AxiosInstance.get(`/comptes-comptables/${id}/`, {
         headers: { 'Authorization': `Token ${token}` }
       });
+
       const data = response.data;
       setFormData({
         numero: data.numero || '',
@@ -56,31 +104,23 @@ const CompteForm = () => {
       });
     } catch (error) {
       console.error('Erreur:', error);
-      setError('Erreur lors du chargement du compte');
+      showNotification('Erreur de chargement', 'error');
     } finally {
       setLoading(false);
     }
-  };
+  }, [id, isEdit, navigate]);
 
-  const fetchComptesParents = async () => {
-    try {
-      const token = getToken();
-      const response = await AxiosInstance.get('/comptes/?parent=null', {
-        headers: { 'Authorization': `Token ${token}` }
-      });
-      setComptesParents(response.data.filter(c => c.id !== parseInt(id)));
-    } catch (error) {
-      console.error('Erreur chargement parents:', error);
-    }
-  };
-
+  // ==========================================================
+  // EFFETS
+  // ==========================================================
   useEffect(() => {
-    if (id) {
-      fetchCompte();
-    }
     fetchComptesParents();
-  }, [id]);
+    if (isEdit) fetchCompte();
+  }, [fetchComptesParents, fetchCompte, isEdit]);
 
+  // ==========================================================
+  // GESTIONNAIRES
+  // ==========================================================
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
     setFormData(prev => ({
@@ -89,235 +129,281 @@ const CompteForm = () => {
     }));
   };
 
+  const validateForm = () => {
+    const newErrors = {};
+    if (!formData.numero) newErrors.numero = 'Le numéro est requis';
+    if (!formData.nom) newErrors.nom = 'Le nom est requis';
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  // ==========================================================
+  // SOUMISSION
+  // ==========================================================
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setSaving(true);
-    setError(null);
-    setSuccess(false);
+    if (!validateForm()) return;
 
+    setSubmitting(true);
     try {
       const token = getToken();
+      if (!token) {
+        showNotification('Session expirée', 'error');
+        setTimeout(() => navigate('/login'), 2000);
+        return;
+      }
+
       const dataToSend = {
         ...formData,
-        solde_initial: parseFloat(formData.solde_initial) || 0,
         parent: formData.parent || null
       };
 
-      let response;
-      if (id) {
-        response = await AxiosInstance.put(`/comptes/${id}/`, dataToSend, {
+      if (isEdit) {
+        await AxiosInstance.put(`/comptes-comptables/${id}/`, dataToSend, {
           headers: { 'Authorization': `Token ${token}` }
         });
+        showNotification('Compte modifié avec succès', 'success');
       } else {
-        response = await AxiosInstance.post('/comptes/', dataToSend, {
+        await AxiosInstance.post('/comptes-comptables/', dataToSend, {
           headers: { 'Authorization': `Token ${token}` }
         });
+        showNotification('Compte créé avec succès', 'success');
       }
 
-      setSuccess(true);
-      setTimeout(() => {
-        navigate('/comptes');
-      }, 1500);
+      setTimeout(() => navigate('/comptes-comptables'), 1500);
+
     } catch (error) {
       console.error('Erreur:', error);
-      if (error.response?.data) {
-        const errors = Object.values(error.response.data).flat().join(' ');
-        setError(errors || 'Erreur lors de l\'enregistrement');
-      } else {
-        setError('Erreur lors de l\'enregistrement');
-      }
+      showNotification('Erreur lors de l\'enregistrement', 'error');
     } finally {
-      setSaving(false);
+      setSubmitting(false);
     }
   };
 
+  // ==========================================================
+  // OPTIONS
+  // ==========================================================
+  const typeOptions = [
+    { value: 'actif', label: 'Actif' },
+    { value: 'passif', label: 'Passif' },
+    { value: 'capitaux', label: 'Capitaux propres' },
+    { value: 'produits', label: 'Produits' },
+    { value: 'charges', label: 'Charges' }
+  ];
+
+  const classeOptions = [
+    { value: '1', label: 'Classe 1 - Capital' },
+    { value: '2', label: 'Classe 2 - Immobilisations' },
+    { value: '3', label: 'Classe 3 - Stocks' },
+    { value: '4', label: 'Classe 4 - Tiers' },
+    { value: '5', label: 'Classe 5 - Trésorerie' },
+    { value: '6', label: 'Classe 6 - Charges' },
+    { value: '7', label: 'Classe 7 - Produits' },
+    { value: '8', label: 'Classe 8 - Régularisation' }
+  ];
+
+  // ==========================================================
+  // RENDU : CHARGEMENT
+  // ==========================================================
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[400px] bg-gray-50">
+      <div className="flex items-center justify-center min-h-[calc(100vh-200px)] bg-gray-50">
         <div className="text-center space-y-4">
-          <Loader2 className="animate-spin text-primary w-12 h-12 mx-auto" />
-          <p className="text-base font-medium text-gray-500">Chargement du compte...</p>
+          <Loader2 className="animate-spin text-primary w-14 h-14 mx-auto" />
+          <p className="text-lg font-medium text-gray-500">Chargement...</p>
         </div>
       </div>
     );
   }
 
+  // ==========================================================
+  // RENDU : COMPOSANT PRINCIPAL
+  // ==========================================================
   return (
-    <div className="space-y-6 p-4 sm:p-6 bg-gray-50 min-h-screen">
-      {/* En-tête */}
-      <div className="flex items-center gap-4">
-        <button 
-          onClick={() => navigate('/comptes')}
-          className="btn btn-ghost btn-sm btn-circle"
-        >
-          <ArrowLeft className="w-5 h-5" />
-        </button>
-        <div>
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-primary/10 rounded-xl">
-              <Grid3x3 className="w-6 h-6 text-primary" />
-            </div>
-            <h1 className="text-2xl font-bold text-gray-800">
-              {id ? 'Modifier le compte' : 'Nouveau compte comptable'}
-            </h1>
-          </div>
-          <p className="text-sm text-gray-500 ml-1">
-            {id ? `Compte #${id}` : 'Créer un nouveau compte dans le plan comptable'}
-          </p>
-        </div>
-      </div>
+    <div className="space-y-4 sm:space-y-6 p-4 sm:p-6 bg-gray-50 min-h-screen">
 
-      {/* Notification de succès */}
-      {success && (
-        <div className="alert alert-success shadow-lg animate-slideDown">
-          <CheckCircle className="w-5 h-5" />
-          <span>Compte enregistré avec succès !</span>
+      {/* ======================================================
+          NOTIFICATION
+          ====================================================== */}
+      {notification.show && (
+        <div className="fixed top-20 right-4 z-50 animate-slideDown">
+          <div className={`alert ${notification.type === 'success' ? 'alert-success' : 'alert-error'} shadow-xl rounded-xl`}>
+            <div className="flex items-center gap-2">
+              {notification.type === 'success' ? (
+                <CheckCircle className="w-4 h-4" />
+              ) : (
+                <AlertCircle className="w-4 h-4" />
+              )}
+              <span className="font-medium">{notification.message}</span>
+            </div>
+            <button
+              className="btn btn-ghost btn-xs btn-circle"
+              onClick={() => setNotification(prev => ({ ...prev, show: false }))}
+            >
+              <X className="w-3 h-3" />
+            </button>
+          </div>
         </div>
       )}
 
-      {/* Formulaire */}
-      <div className="bg-white rounded-xl shadow-md p-6">
+      {/* ======================================================
+          EN-TÊTE
+          ====================================================== */}
+      <div className="relative overflow-hidden bg-gradient-to-r from-primary/10 via-primary/5 to-transparent rounded-2xl p-5">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => navigate('/comptes-comptables')}
+              className="btn btn-ghost btn-sm gap-2"
+            >
+              <ArrowLeft className="w-4 h-4" /> Retour
+            </button>
+            <div>
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-primary/10 rounded-xl">
+                  <Building2 className="w-7 h-7 text-primary" />
+                </div>
+                <div>
+                  <h1 className="text-2xl sm:text-3xl font-black text-primary">
+                    {isEdit ? 'Modifier le compte' : 'Nouveau compte comptable'}
+                  </h1>
+                  <p className="text-sm text-gray-500">
+                    {isEdit ? 'Modifiez les informations du compte' : 'Créez un nouveau compte comptable'}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ======================================================
+          FORMULAIRE
+          ====================================================== */}
+      <div className="max-w-4xl mx-auto">
         <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Erreur */}
-          {error && (
-            <div className="alert alert-error shadow-lg">
-              <AlertCircle className="w-5 h-5" />
-              <span>{error}</span>
-              <button className="btn btn-ghost btn-xs btn-circle" onClick={() => setError(null)}>
-                <X className="w-3 h-3" />
-              </button>
-            </div>
-          )}
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Numéro */}
-            <div className="form-control">
-              <label className="label">
-                <span className="label-text font-medium">Numéro de compte *</span>
-              </label>
-              <input
-                type="text"
-                name="numero"
-                value={formData.numero}
-                onChange={handleChange}
-                className="input input-bordered w-full"
-                placeholder="Ex: 101, 411, 512..."
-                required
-              />
+          <div className="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden">
+            <div className="bg-gray-50 px-6 py-3.5 border-b border-gray-200">
+              <h3 className="font-semibold flex items-center gap-2 text-gray-700">
+                <Building2 className="w-5 h-5 text-primary" />
+                Informations du compte
+              </h3>
             </div>
+            <div className="p-6 space-y-4">
 
-            {/* Nom */}
-            <div className="form-control">
-              <label className="label">
-                <span className="label-text font-medium">Nom du compte *</span>
-              </label>
-              <input
-                type="text"
-                name="nom"
-                value={formData.nom}
-                onChange={handleChange}
-                className="input input-bordered w-full"
-                placeholder="Ex: Caisse, Banque, Clients..."
-                required
-              />
-            </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="label text-sm font-medium text-gray-700">
+                    Numéro <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    name="numero"
+                    value={formData.numero}
+                    onChange={handleChange}
+                    className={`input input-bordered w-full ${errors.numero ? 'input-error' : ''}`}
+                    placeholder="Ex: 411"
+                    disabled={isEdit}
+                  />
+                  {errors.numero && <p className="text-red-500 text-xs mt-1">{errors.numero}</p>}
+                </div>
+                <div>
+                  <label className="label text-sm font-medium text-gray-700">
+                    Nom <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    name="nom"
+                    value={formData.nom}
+                    onChange={handleChange}
+                    className={`input input-bordered w-full ${errors.nom ? 'input-error' : ''}`}
+                    placeholder="Ex: Clients"
+                  />
+                  {errors.nom && <p className="text-red-500 text-xs mt-1">{errors.nom}</p>}
+                </div>
+              </div>
 
-            {/* Nom complet */}
-            <div className="form-control md:col-span-2">
-              <label className="label">
-                <span className="label-text font-medium">Nom complet</span>
-              </label>
-              <input
-                type="text"
-                name="nom_complet"
-                value={formData.nom_complet}
-                onChange={handleChange}
-                className="input input-bordered w-full"
-                placeholder="Ex: Caisse centrale, Banque VISTA BANK..."
-              />
-            </div>
+              <div>
+                <label className="label text-sm font-medium text-gray-700">Nom complet</label>
+                <input
+                  type="text"
+                  name="nom_complet"
+                  value={formData.nom_complet}
+                  onChange={handleChange}
+                  className="input input-bordered w-full"
+                  placeholder="Ex: Clients - Comptes clients"
+                />
+              </div>
 
-            {/* Type */}
-            <div className="form-control">
-              <label className="label">
-                <span className="label-text font-medium">Type *</span>
-              </label>
-              <select
-                name="type"
-                value={formData.type}
-                onChange={handleChange}
-                className="select select-bordered w-full"
-                required
-              >
-                <option value="actif">Actif</option>
-                <option value="passif">Passif</option>
-                <option value="capitaux">Capitaux propres</option>
-                <option value="produits">Produits</option>
-                <option value="charges">Charges</option>
-              </select>
-            </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="label text-sm font-medium text-gray-700">
+                    Type <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    name="type"
+                    value={formData.type}
+                    onChange={handleChange}
+                    className="select select-bordered w-full"
+                  >
+                    {typeOptions.map(opt => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="label text-sm font-medium text-gray-700">
+                    Classe <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    name="classe"
+                    value={formData.classe}
+                    onChange={handleChange}
+                    className="select select-bordered w-full"
+                  >
+                    {classeOptions.map(opt => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
 
-            {/* Classe */}
-            <div className="form-control">
-              <label className="label">
-                <span className="label-text font-medium">Classe *</span>
-              </label>
-              <select
-                name="classe"
-                value={formData.classe}
-                onChange={handleChange}
-                className="select select-bordered w-full"
-                required
-              >
-                <option value="1">Classe 1 - Capital</option>
-                <option value="2">Classe 2 - Immobilisations</option>
-                <option value="3">Classe 3 - Stocks</option>
-                <option value="4">Classe 4 - Tiers</option>
-                <option value="5">Classe 5 - Trésorerie</option>
-                <option value="6">Classe 6 - Charges</option>
-                <option value="7">Classe 7 - Produits</option>
-                <option value="8">Classe 8 - Régularisation</option>
-              </select>
-            </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="label text-sm font-medium text-gray-700">Compte parent</label>
+                  <select
+                    name="parent"
+                    value={formData.parent}
+                    onChange={handleChange}
+                    className="select select-bordered w-full"
+                  >
+                    <option value="">Aucun (compte racine)</option>
+                    {comptesParents
+                      .filter(c => c.id !== parseInt(id))
+                      .map(c => (
+                        <option key={c.id} value={c.id}>
+                          {c.numero} - {c.nom}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="label text-sm font-medium text-gray-700">Solde initial</label>
+                  <input
+                    type="number"
+                    name="solde_initial"
+                    value={formData.solde_initial}
+                    onChange={handleChange}
+                    className="input input-bordered w-full"
+                    step="100"
+                  />
+                </div>
+              </div>
 
-            {/* Compte parent */}
-            <div className="form-control">
-              <label className="label">
-                <span className="label-text font-medium">Compte parent</span>
-              </label>
-              <select
-                name="parent"
-                value={formData.parent}
-                onChange={handleChange}
-                className="select select-bordered w-full"
-              >
-                <option value="">Aucun (compte principal)</option>
-                {comptesParents.map(c => (
-                  <option key={c.id} value={c.id}>{c.numero} - {c.nom}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Solde initial */}
-            <div className="form-control">
-              <label className="label">
-                <span className="label-text font-medium">Solde initial</span>
-              </label>
-              <input
-                type="number"
-                name="solde_initial"
-                value={formData.solde_initial}
-                onChange={handleChange}
-                className="input input-bordered w-full"
-                placeholder="0"
-                step="0.01"
-              />
-            </div>
-
-            {/* Options */}
-            <div className="form-control md:col-span-2">
-              <div className="flex flex-wrap gap-6 mt-2">
-                <label className="flex items-center gap-2 cursor-pointer">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <label className="flex items-center gap-3 cursor-pointer">
                   <input
                     type="checkbox"
                     name="is_analytique"
@@ -325,9 +411,9 @@ const CompteForm = () => {
                     onChange={handleChange}
                     className="checkbox checkbox-primary"
                   />
-                  <span className="text-sm">Compte analytique</span>
+                  <span className="text-sm text-gray-700">Compte analytique</span>
                 </label>
-                <label className="flex items-center gap-2 cursor-pointer">
+                <label className="flex items-center gap-3 cursor-pointer">
                   <input
                     type="checkbox"
                     name="is_budgetaire"
@@ -335,58 +421,53 @@ const CompteForm = () => {
                     onChange={handleChange}
                     className="checkbox checkbox-primary"
                   />
-                  <span className="text-sm">Compte budgétaire</span>
+                  <span className="text-sm text-gray-700">Compte budgétaire</span>
                 </label>
-                <label className="flex items-center gap-2 cursor-pointer">
+                <label className="flex items-center gap-3 cursor-pointer">
                   <input
                     type="checkbox"
                     name="is_active"
                     checked={formData.is_active}
                     onChange={handleChange}
-                    className="checkbox checkbox-success"
+                    className="checkbox checkbox-primary"
                   />
-                  <span className="text-sm">Actif</span>
+                  <span className="text-sm text-gray-700">Actif</span>
                 </label>
               </div>
-            </div>
 
-            {/* Notes */}
-            <div className="form-control md:col-span-2">
-              <label className="label">
-                <span className="label-text font-medium">Notes</span>
-              </label>
-              <textarea
-                name="notes"
-                value={formData.notes}
-                onChange={handleChange}
-                className="textarea textarea-bordered w-full h-24"
-                placeholder="Notes supplémentaires..."
-              />
+              <div>
+                <label className="label text-sm font-medium text-gray-700">Notes</label>
+                <textarea
+                  name="notes"
+                  value={formData.notes}
+                  onChange={handleChange}
+                  className="textarea textarea-bordered w-full min-h-[80px]"
+                  placeholder="Informations supplémentaires..."
+                />
+              </div>
             </div>
           </div>
 
-          {/* Actions */}
-          <div className="flex flex-wrap gap-3 pt-4 border-t">
-            <button
-              type="submit"
-              className="btn btn-primary gap-2"
-              disabled={saving}
-            >
-              {saving ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Save className="w-4 h-4" />
-              )}
-              {saving ? 'Enregistrement...' : id ? 'Mettre à jour' : 'Créer le compte'}
-            </button>
+          {/* Boutons */}
+          <div className="flex flex-col sm:flex-row gap-3 justify-end">
             <button
               type="button"
-              onClick={() => navigate('/comptes')}
+              onClick={() => navigate('/comptes-comptables')}
               className="btn btn-ghost gap-2"
+              disabled={submitting}
             >
-              <X className="w-4 h-4" /> Annuler
+              <X className="w-5 h-5" /> Annuler
+            </button>
+            <button
+              type="submit"
+              className="btn btn-primary gap-2 min-w-[180px]"
+              disabled={submitting}
+            >
+              {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
+              {isEdit ? 'Modifier' : 'Créer'}
             </button>
           </div>
+
         </form>
       </div>
     </div>

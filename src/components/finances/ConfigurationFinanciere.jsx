@@ -1,21 +1,18 @@
 // src/components/finances/ConfigurationFinanciere.jsx
-import React, { useEffect, useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import AxiosInstance from '../AxiosInstance';
+import axiosInstance from '../AxiosInstance';
 import {
-  Save, X, Loader2, AlertCircle, CheckCircle,
-  Settings, DollarSign, Calendar, Shield,
-  RefreshCw, TrendingUp, Clock
+  Save, Loader2, Settings, AlertCircle, CheckCircle,
+  DollarSign, Calendar, Percent, RefreshCw
 } from 'lucide-react';
 
 const ConfigurationFinanciere = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
-  const [success, setSuccess] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [notification, setNotification] = useState(null);
   const [config, setConfig] = useState(null);
-
   const [formData, setFormData] = useState({
     devise: 'XOF',
     devise_symbole: 'CFA',
@@ -26,18 +23,29 @@ const ConfigurationFinanciere = () => {
     auto_validation: false,
     budget_alerte: 80
   });
+  const [errors, setErrors] = useState({});
 
   const getToken = () => localStorage.getItem('Token');
 
-  const fetchConfiguration = async () => {
+  const showNotification = (message, type = 'success') => {
+    setNotification({ message, type });
+    setTimeout(() => setNotification(null), 4000);
+  };
+
+  const fetchConfig = async () => {
     setLoading(true);
     try {
       const token = getToken();
-      const response = await AxiosInstance.get('/configuration/', {
+      if (!token) {
+        showNotification('Session expirée', 'error');
+        setTimeout(() => navigate('/login'), 2000);
+        return;
+      }
+
+      const response = await axiosInstance.get('/configuration-financiere/', {
         headers: { 'Authorization': `Token ${token}` }
       });
-      
-      // Si une configuration existe, prendre la première
+
       if (response.data && response.data.length > 0) {
         const data = response.data[0];
         setConfig(data);
@@ -51,25 +59,17 @@ const ConfigurationFinanciere = () => {
           auto_validation: data.auto_validation || false,
           budget_alerte: data.budget_alerte || 80
         });
-      } else {
-        // Configurer des valeurs par défaut
-        const currentYear = new Date().getFullYear();
-        setFormData(prev => ({
-          ...prev,
-          exercice_debut: `${currentYear}-01-01`,
-          exercice_fin: `${currentYear}-12-31`
-        }));
       }
     } catch (error) {
       console.error('Erreur:', error);
-      setError('Erreur lors du chargement de la configuration');
+      showNotification('Erreur de chargement de la configuration', 'error');
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchConfiguration();
+    fetchConfig();
   }, []);
 
   const handleChange = (e) => {
@@ -80,296 +80,274 @@ const ConfigurationFinanciere = () => {
     }));
   };
 
+  const validateForm = () => {
+    const newErrors = {};
+    if (!formData.devise) newErrors.devise = 'La devise est requise';
+    if (!formData.exercice_debut) newErrors.exercice_debut = 'La date de début d\'exercice est requise';
+    if (!formData.exercice_fin) newErrors.exercice_fin = 'La date de fin d\'exercice est requise';
+    if (formData.exercice_debut && formData.exercice_fin && formData.exercice_debut > formData.exercice_fin) {
+      newErrors.exercice_fin = 'La date de fin doit être postérieure à la date de début';
+    }
+    if (formData.taxe_default < 0 || formData.taxe_default > 100) {
+      newErrors.taxe_default = 'Le taux de TVA doit être entre 0 et 100';
+    }
+    if (formData.budget_alerte < 0 || formData.budget_alerte > 100) {
+      newErrors.budget_alerte = 'Le seuil d\'alerte doit être entre 0 et 100';
+    }
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setSaving(true);
-    setError(null);
-    setSuccess(false);
+    if (!validateForm()) return;
 
+    setSubmitting(true);
     try {
       const token = getToken();
+      if (!token) {
+        showNotification('Session expirée', 'error');
+        setTimeout(() => navigate('/login'), 2000);
+        return;
+      }
+
       const dataToSend = {
         ...formData,
-        taxe_default: parseFloat(formData.taxe_default) || 0,
-        arrondi: parseInt(formData.arrondi) || 0,
-        budget_alerte: parseInt(formData.budget_alerte) || 80
+        taxe_default: parseFloat(formData.taxe_default),
+        budget_alerte: parseFloat(formData.budget_alerte),
+        arrondi: parseInt(formData.arrondi) || 0
       };
 
-      let response;
-      if (config && config.id) {
-        // Mettre à jour la configuration existante
-        response = await AxiosInstance.put(`/configuration/${config.id}/`, dataToSend, {
+      if (config) {
+        await axiosInstance.put(`/configuration-financiere/${config.id}/`, dataToSend, {
           headers: { 'Authorization': `Token ${token}` }
         });
+        showNotification('Configuration mise à jour avec succès');
       } else {
-        // Créer une nouvelle configuration
-        response = await AxiosInstance.post('/configuration/', dataToSend, {
+        await axiosInstance.post('/configuration-financiere/', dataToSend, {
           headers: { 'Authorization': `Token ${token}` }
         });
+        showNotification('Configuration créée avec succès');
       }
 
-      setConfig(response.data);
-      setSuccess(true);
-      setTimeout(() => setSuccess(false), 3000);
+      setTimeout(() => fetchConfig(), 500);
+
     } catch (error) {
       console.error('Erreur:', error);
-      if (error.response?.data) {
-        const errors = Object.values(error.response.data).flat().join(' ');
-        setError(errors || 'Erreur lors de l\'enregistrement');
-      } else {
-        setError('Erreur lors de l\'enregistrement');
-      }
+      const errorMsg = error.response?.data?.error || error.response?.data?.message || 'Erreur lors de l\'enregistrement';
+      showNotification(errorMsg, 'error');
     } finally {
-      setSaving(false);
+      setSubmitting(false);
     }
   };
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[400px] bg-gray-50">
+      <div className="flex items-center justify-center min-h-[calc(100vh-200px)] bg-gray-50">
         <div className="text-center space-y-4">
-          <Loader2 className="animate-spin text-primary w-12 h-12 mx-auto" />
-          <p className="text-base font-medium text-gray-500">Chargement de la configuration...</p>
+          <Loader2 className="animate-spin text-primary w-14 h-14 mx-auto" />
+          <p className="text-lg font-medium text-gray-500">Chargement de la configuration...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6 p-4 sm:p-6 bg-gray-50 min-h-screen">
-      {/* En-tête */}
-      <div className="flex items-center gap-4">
-        <div className="p-2 bg-primary/10 rounded-xl">
-          <Settings className="w-7 h-7 text-primary" />
-        </div>
-        <div>
-          <h1 className="text-2xl font-bold text-gray-800">Configuration Financière</h1>
-          <p className="text-sm text-gray-500">Paramètres généraux de la comptabilité</p>
-        </div>
-      </div>
-
-      {/* Notification de succès */}
-      {success && (
-        <div className="alert alert-success shadow-lg animate-slideDown">
-          <CheckCircle className="w-5 h-5" />
-          <span>Configuration enregistrée avec succès !</span>
+    <div className="w-full min-h-screen bg-gray-50">
+      {notification && (
+        <div className="fixed top-20 right-4 z-50 animate-slideDown">
+          <div className={`alert ${notification.type === 'success' ? 'alert-success' : 'alert-error'} shadow-xl rounded-xl max-w-md`}>
+            <div className="flex items-center gap-2">
+              {notification.type === 'success' ? <CheckCircle className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
+              <span className="font-medium">{notification.message}</span>
+            </div>
+            <button className="btn btn-ghost btn-xs btn-circle" onClick={() => setNotification(null)}>
+              <X className="w-3 h-3" />
+            </button>
+          </div>
         </div>
       )}
 
-      {/* Formulaire */}
-      <div className="bg-white rounded-xl shadow-md p-6">
-        <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Erreur */}
-          {error && (
-            <div className="alert alert-error shadow-lg">
-              <AlertCircle className="w-5 h-5" />
-              <span>{error}</span>
-              <button className="btn btn-ghost btn-xs btn-circle" onClick={() => setError(null)}>
-                <X className="w-3 h-3" />
-              </button>
+      <div className="bg-white border-b border-gray-200 shadow-sm w-full">
+        <div className="w-full px-6 py-5">
+          <div className="flex items-center gap-4">
+            <div className="p-3 bg-primary/10 rounded-xl">
+              <Settings className="w-7 h-7 text-primary" />
             </div>
-          )}
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Devise */}
-            <div className="form-control">
-              <label className="label">
-                <span className="label-text font-medium flex items-center gap-2">
-                  <DollarSign className="w-4 h-4" /> Devise *
-                </span>
-              </label>
-              <select
-                name="devise"
-                value={formData.devise}
-                onChange={handleChange}
-                className="select select-bordered w-full"
-                required
-              >
-                <option value="XOF">XOF - Franc CFA (Afrique de l'Ouest)</option>
-                <option value="XAF">XAF - Franc CFA (Afrique Centrale)</option>
-                <option value="EUR">EUR - Euro</option>
-                <option value="USD">USD - Dollar Américain</option>
-                <option value="GNF">GNF - Franc Guinéen</option>
-                <option value="NGN">NGN - Naira Nigérian</option>
-                <option value="CDF">CDF - Franc Congolais</option>
-              </select>
-            </div>
-
-            {/* Symbole devise */}
-            <div className="form-control">
-              <label className="label">
-                <span className="label-text font-medium">Symbole de la devise *</span>
-              </label>
-              <input
-                type="text"
-                name="devise_symbole"
-                value={formData.devise_symbole}
-                onChange={handleChange}
-                className="input input-bordered w-full"
-                placeholder="Ex: CFA, €, $..."
-                required
-              />
-            </div>
-
-            {/* Début exercice */}
-            <div className="form-control">
-              <label className="label">
-                <span className="label-text font-medium flex items-center gap-2">
-                  <Calendar className="w-4 h-4" /> Début de l'exercice *
-                </span>
-              </label>
-              <input
-                type="date"
-                name="exercice_debut"
-                value={formData.exercice_debut}
-                onChange={handleChange}
-                className="input input-bordered w-full"
-                required
-              />
-            </div>
-
-            {/* Fin exercice */}
-            <div className="form-control">
-              <label className="label">
-                <span className="label-text font-medium flex items-center gap-2">
-                  <Calendar className="w-4 h-4" /> Fin de l'exercice *
-                </span>
-              </label>
-              <input
-                type="date"
-                name="exercice_fin"
-                value={formData.exercice_fin}
-                onChange={handleChange}
-                className="input input-bordered w-full"
-                required
-              />
-            </div>
-
-            {/* TVA par défaut */}
-            <div className="form-control">
-              <label className="label">
-                <span className="label-text font-medium flex items-center gap-2">
-                  <TrendingUp className="w-4 h-4" /> TVA par défaut (%)
-                </span>
-              </label>
-              <input
-                type="number"
-                name="taxe_default"
-                value={formData.taxe_default}
-                onChange={handleChange}
-                className="input input-bordered w-full"
-                placeholder="18"
-                step="0.01"
-                min="0"
-                max="100"
-              />
-            </div>
-
-            {/* Arrondi */}
-            <div className="form-control">
-              <label className="label">
-                <span className="label-text font-medium">Nombre de décimales</span>
-              </label>
-              <input
-                type="number"
-                name="arrondi"
-                value={formData.arrondi}
-                onChange={handleChange}
-                className="input input-bordered w-full"
-                placeholder="0"
-                min="0"
-                max="2"
-              />
-              <label className="label">
-                <span className="label-text-alt text-gray-400">0 = Pas d'arrondi, 2 = Deux décimales</span>
-              </label>
-            </div>
-
-            {/* Alerte budget */}
-            <div className="form-control">
-              <label className="label">
-                <span className="label-text font-medium flex items-center gap-2">
-                  <Clock className="w-4 h-4" /> Alerte budget (%)
-                </span>
-              </label>
-              <input
-                type="number"
-                name="budget_alerte"
-                value={formData.budget_alerte}
-                onChange={handleChange}
-                className="input input-bordered w-full"
-                placeholder="80"
-                min="0"
-                max="100"
-              />
-              <label className="label">
-                <span className="label-text-alt text-gray-400">Alerte lorsque le budget est utilisé à ce pourcentage</span>
-              </label>
-            </div>
-
-            {/* Options */}
-            <div className="form-control md:col-span-2">
-              <div className="flex flex-wrap gap-6 mt-2">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    name="auto_validation"
-                    checked={formData.auto_validation}
-                    onChange={handleChange}
-                    className="checkbox checkbox-primary"
-                  />
-                  <span className="text-sm">Validation automatique des écritures comptables</span>
-                </label>
-              </div>
+            <div>
+              <h1 className="text-2xl font-bold text-gray-800">Configuration financière</h1>
+              <p className="text-sm text-gray-500">Paramètres financiers de l'entreprise</p>
             </div>
           </div>
-
-          {/* Actions */}
-          <div className="flex flex-wrap gap-3 pt-4 border-t">
-            <button
-              type="submit"
-              className="btn btn-primary gap-2"
-              disabled={saving}
-            >
-              {saving ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Save className="w-4 h-4" />
-              )}
-              {saving ? 'Enregistrement...' : 'Enregistrer la configuration'}
-            </button>
-            <button
-              type="button"
-              onClick={fetchConfiguration}
-              className="btn btn-outline gap-2"
-            >
-              <RefreshCw className="w-4 h-4" /> Réinitialiser
-            </button>
-          </div>
-        </form>
+        </div>
       </div>
 
-      {/* Informations supplémentaires */}
-      <div className="bg-white rounded-xl shadow-md p-6">
-        <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
-          <Shield className="w-5 h-5 text-primary" />
-          Informations
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-          <div className="p-4 bg-gray-50 rounded-lg">
-            <p className="text-gray-500">Statut</p>
-            <p className="font-semibold text-success">✅ Configuration active</p>
-          </div>
-          <div className="p-4 bg-gray-50 rounded-lg">
-            <p className="text-gray-500">Devise</p>
-            <p className="font-semibold">{formData.devise} ({formData.devise_symbole})</p>
-          </div>
-          <div className="p-4 bg-gray-50 rounded-lg">
-            <p className="text-gray-500">Exercice comptable</p>
-            <p className="font-semibold">
-              {formData.exercice_debut} → {formData.exercice_fin}
-            </p>
-          </div>
+      <div className="w-full px-6 py-6">
+        <div className="max-w-4xl mx-auto">
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+              <div className="bg-gray-50 px-6 py-3.5 border-b border-gray-200">
+                <h3 className="font-semibold flex items-center gap-2 text-gray-700">
+                  <Settings className="w-5 h-5 text-primary" />
+                  Paramètres généraux
+                </h3>
+              </div>
+              <div className="p-6 space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="label text-sm font-medium text-gray-700">
+                      Devise <span className="text-red-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <div className="absolute left-3 top-1/2 -translate-y-1/2">
+                        <DollarSign className="w-4 h-4 text-gray-400" />
+                      </div>
+                      <input
+                        type="text"
+                        name="devise"
+                        value={formData.devise}
+                        onChange={handleChange}
+                        className={`input input-bordered w-full pl-9 ${errors.devise ? 'input-error' : ''}`}
+                        placeholder="Ex: XOF"
+                        maxLength="3"
+                      />
+                    </div>
+                    {errors.devise && <p className="text-red-500 text-xs mt-1">{errors.devise}</p>}
+                  </div>
+                  <div>
+                    <label className="label text-sm font-medium text-gray-700">Symbole devise</label>
+                    <input
+                      type="text"
+                      name="devise_symbole"
+                      value={formData.devise_symbole}
+                      onChange={handleChange}
+                      className="input input-bordered w-full"
+                      placeholder="Ex: CFA"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="label text-sm font-medium text-gray-700">
+                      Début d'exercice <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="date"
+                      name="exercice_debut"
+                      value={formData.exercice_debut}
+                      onChange={handleChange}
+                      className={`input input-bordered w-full ${errors.exercice_debut ? 'input-error' : ''}`}
+                    />
+                    {errors.exercice_debut && <p className="text-red-500 text-xs mt-1">{errors.exercice_debut}</p>}
+                  </div>
+                  <div>
+                    <label className="label text-sm font-medium text-gray-700">
+                      Fin d'exercice <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="date"
+                      name="exercice_fin"
+                      value={formData.exercice_fin}
+                      onChange={handleChange}
+                      className={`input input-bordered w-full ${errors.exercice_fin ? 'input-error' : ''}`}
+                    />
+                    {errors.exercice_fin && <p className="text-red-500 text-xs mt-1">{errors.exercice_fin}</p>}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="label text-sm font-medium text-gray-700">
+                      TVA par défaut (%) <span className="text-red-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <div className="absolute left-3 top-1/2 -translate-y-1/2">
+                        <Percent className="w-4 h-4 text-gray-400" />
+                      </div>
+                      <input
+                        type="number"
+                        name="taxe_default"
+                        value={formData.taxe_default}
+                        onChange={handleChange}
+                        className={`input input-bordered w-full pl-9 ${errors.taxe_default ? 'input-error' : ''}`}
+                        min="0"
+                        max="100"
+                        step="0.5"
+                      />
+                    </div>
+                    {errors.taxe_default && <p className="text-red-500 text-xs mt-1">{errors.taxe_default}</p>}
+                  </div>
+                  <div>
+                    <label className="label text-sm font-medium text-gray-700">Arrondi (décimales)</label>
+                    <input
+                      type="number"
+                      name="arrondi"
+                      value={formData.arrondi}
+                      onChange={handleChange}
+                      className="input input-bordered w-full"
+                      min="0"
+                      max="2"
+                    />
+                  </div>
+                  <div>
+                    <label className="label text-sm font-medium text-gray-700">
+                      Seuil d'alerte budget (%) <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      name="budget_alerte"
+                      value={formData.budget_alerte}
+                      onChange={handleChange}
+                      className={`input input-bordered w-full ${errors.budget_alerte ? 'input-error' : ''}`}
+                      min="0"
+                      max="100"
+                    />
+                    {errors.budget_alerte && <p className="text-red-500 text-xs mt-1">{errors.budget_alerte}</p>}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3 pt-2">
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      name="auto_validation"
+                      checked={formData.auto_validation}
+                      onChange={handleChange}
+                      className="checkbox checkbox-primary"
+                    />
+                    <span className="text-sm text-gray-700">Validation automatique des écritures</span>
+                  </label>
+                </div>
+
+                <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-100">
+                  <p className="text-sm text-blue-700">
+                    <strong>💡 Informations :</strong> La TVA par défaut sera appliquée automatiquement sur les nouvelles écritures. 
+                    Le seuil d'alerte déclenchera des notifications lorsque l'utilisation du budget dépasse ce pourcentage.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-3 justify-end">
+              <button
+                type="button"
+                onClick={() => navigate('/finances')}
+                className="btn btn-ghost gap-2"
+                disabled={submitting}
+              >
+                <X className="w-5 h-5" /> Annuler
+              </button>
+              <button
+                type="submit"
+                className="btn btn-primary gap-2 min-w-[200px]"
+                disabled={submitting}
+              >
+                {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
+                {submitting ? 'Enregistrement...' : 'Enregistrer la configuration'}
+              </button>
+            </div>
+          </form>
         </div>
       </div>
     </div>
