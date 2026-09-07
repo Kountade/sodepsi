@@ -352,34 +352,10 @@ const TicketPOS = async (venteOrId, options = {}) => {
     doc.text(formatCurrency(total), pageWidth - margins.right, y, { align: 'right' });
     y += lineHeight + 1.5;
 
-    if (amountPaid > 0) {
-      doc.setFontSize(10);
-      doc.setFont('helvetica', 'bold');
-      doc.text('Payé', margins.left, y);
-      doc.text(formatCurrency(amountPaid), pageWidth - margins.right, y, { align: 'right' });
-      y += lineHeight;
-    }
-
-    if (amountDue > 0) {
-      doc.setFontSize(11);
-      doc.setFont('helvetica', 'bold');
-      doc.text('Reste à payer', margins.left, y);
-      doc.text(formatCurrency(amountDue), pageWidth - margins.right, y, { align: 'right' });
-      y += lineHeight;
-    }
-
-    if (vente.payment_status) {
-      const statusMap = {
-        'paid': '✓ Payé',
-        'partial': 'Partiel',
-        'pending': 'En attente'
-      };
-      const statusLabel = statusMap[vente.payment_status] || vente.payment_status;
-      doc.setFontSize(9);
-      doc.setFont('helvetica', 'bold');
-      doc.text('Paiement: ' + statusLabel, margins.left, y);
-      y += lineHeight;
-    }
+    // ============================================================
+    // SECTION SUPPRIMÉE : "Payé", "Reste à payer" et "Paiement"
+    // Toutes ces lignes ont été complètement retirées
+    // ============================================================
 
     y = sectionSpacer(1.5);
     y = separator('-');
