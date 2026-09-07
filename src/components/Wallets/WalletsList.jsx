@@ -1,6 +1,10 @@
 // src/pages/wallets/WalletsList.jsx
+// ============================================================
+// PAGE PRINCIPALE DES PORTE-MONNAIE
+// - Utilise /wallet/list/ pour récupérer tous les wallets
+// ============================================================
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   Wallet,
@@ -13,16 +17,14 @@ import {
   ChevronDown,
   ChevronUp,
   RefreshCw,
-  User,
   Phone,
-  Calendar,
-  CreditCard,
   History,
   Loader2,
   AlertCircle,
   CheckCircle,
   XCircle,
-  ChevronRight
+  Users,
+  UserPlus
 } from 'lucide-react';
 import axiosInstance from '../../components/AxiosInstance';
 
@@ -44,17 +46,12 @@ const WalletsList = () => {
     activeCount: 0,
     inactiveCount: 0
   });
+  const [error, setError] = useState('');
 
-  useEffect(() => {
-    fetchWallets();
-  }, []);
-
-  useEffect(() => {
-    applyFilters();
-  }, [wallets, searchTerm, filters]);
-
-  const fetchWallets = async () => {
+  // Charger les wallets via /wallet/list/
+  const fetchWallets = useCallback(async () => {
     setLoading(true);
+    setError('');
     try {
       const token = localStorage.getItem('Token');
       if (!token) {
@@ -62,55 +59,87 @@ const WalletsList = () => {
         return;
       }
 
-      const response = await axiosInstance.get('/clients/', {
-        headers: { Authorization: `Token ${token}` }
-      });
+      const headers = { Authorization: `Token ${token}` };
 
-      const walletsData = [];
-      for (const client of response.data) {
-        try {
-          const walletRes = await axiosInstance.get(`/clients/${client.id}/wallet/`, {
-            headers: { Authorization: `Token ${token}` }
-          });
-          if (walletRes.data) {
-            walletsData.push({
-              ...walletRes.data,
-              client: client
-            });
+      // ✅ Utiliser /wallet/list/ pour récupérer tous les wallets
+      const response = await axiosInstance.get('/wallet/list/', { headers });
+      
+      console.log('📋 Réponse wallets:', response.data);
+
+      let walletsData = [];
+      let totalBalance = 0;
+      let activeCount = 0;
+      let inactiveCount = 0;
+
+      // Vérifier la structure de la réponse
+      let results = [];
+      if (response.data.results) {
+        results = response.data.results;
+        // Mettre à jour les statistiques depuis la réponse
+        setStats({
+          total: response.data.count || 0,
+          totalBalance: response.data.total_balance || 0,
+          activeCount: response.data.active_count || 0,
+          inactiveCount: response.data.inactive_count || 0
+        });
+      } else if (Array.isArray(response.data)) {
+        results = response.data;
+      }
+
+      // Transformer les données pour inclure les infos client
+      for (const wallet of results) {
+        const walletData = {
+          ...wallet,
+          client: wallet.client || {
+            id: wallet.client_id,
+            name: wallet.client_name || 'Client inconnu',
+            code: wallet.client_code || 'N/A',
+            phone: wallet.client_phone || 'N/A'
           }
-        } catch (error) {
-          console.warn(`Wallet non trouvé pour le client ${client.id}`);
+        };
+        walletsData.push(walletData);
+        totalBalance += wallet.balance || 0;
+        if (wallet.is_active !== false) {
+          activeCount++;
+        } else {
+          inactiveCount++;
         }
       }
 
+      console.log(`💰 ${walletsData.length} wallets trouvés`);
       setWallets(walletsData);
-      calculateStats(walletsData);
+
+      // Si les stats ne sont pas venues de la réponse, les calculer
+      if (!response.data.results) {
+        setStats({
+          total: walletsData.length,
+          totalBalance,
+          activeCount,
+          inactiveCount
+        });
+      }
 
     } catch (error) {
-      console.error('Erreur chargement wallets:', error);
+      console.error('❌ Erreur chargement wallets:', error);
+      if (error.response?.status === 403) {
+        setError('Accès non autorisé. Veuillez contacter l\'administrateur.');
+      } else {
+        setError('Erreur lors du chargement des porte-monnaie');
+      }
       if (error.response?.status === 401) {
         navigate('/login');
       }
     } finally {
       setLoading(false);
     }
-  };
+  }, [navigate]);
 
-  const calculateStats = (data) => {
-    const total = data.length;
-    const totalBalance = data.reduce((sum, w) => sum + (w.balance || 0), 0);
-    const activeCount = data.filter(w => w.is_active !== false).length;
-    const inactiveCount = data.filter(w => w.is_active === false).length;
-    
-    setStats({
-      total,
-      totalBalance,
-      activeCount,
-      inactiveCount
-    });
-  };
+  useEffect(() => {
+    fetchWallets();
+  }, [fetchWallets]);
 
-  const applyFilters = () => {
+  // Appliquer les filtres
+  useEffect(() => {
     let filtered = [...wallets];
 
     if (searchTerm.trim()) {
@@ -139,7 +168,7 @@ const WalletsList = () => {
     }
 
     setFilteredWallets(filtered);
-  };
+  }, [wallets, searchTerm, filters]);
 
   const handleFilterChange = (key, value) => {
     setFilters(prev => ({ ...prev, [key]: value }));
@@ -186,11 +215,9 @@ const WalletsList = () => {
   }
 
   return (
-    // ✅ SUPPRESSION de max-w-7xl et mx-auto pour pleine largeur
-    // ✅ Ajout de px-0 pour aucun padding
     <div className="w-full px-0 space-y-6">
       
-      {/* En-tête - avec un peu de padding interne mais pas de marge externe */}
+      {/* En-tête */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 px-4 sm:px-6">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
@@ -201,21 +228,38 @@ const WalletsList = () => {
             Gérez les porte-monnaie de vos clients
           </p>
         </div>
-        <button
-          onClick={() => navigate('/clients')}
-          className="btn btn-primary btn-sm gap-2"
-        >
-          <Plus className="w-4 h-4" />
-          Voir les clients
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={fetchWallets}
+            className="btn btn-ghost btn-sm gap-2"
+            disabled={loading}
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            Actualiser
+          </button>
+          <button
+            onClick={() => navigate('/wallets/nouveau')}
+            className="btn btn-primary btn-sm gap-2"
+          >
+            <Plus className="w-4 h-4" />
+            Nouveau wallet
+          </button>
+          <button
+            onClick={() => navigate('/clients')}
+            className="btn btn-outline btn-sm gap-2"
+          >
+            <Users className="w-4 h-4" />
+            Clients
+          </button>
+        </div>
       </div>
 
-      {/* Statistiques - pleine largeur avec padding interne */}
+      {/* Statistiques */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 px-4 sm:px-6">
         <div className="bg-base-100 rounded-xl p-4 border border-base-200 shadow-sm">
           <div className="flex items-center gap-2 text-primary">
-            <Wallet className="w-4 h-4" />
-            <span className="text-xs text-base-content/60">Total</span>
+            <Users className="w-4 h-4" />
+            <span className="text-xs text-base-content/60">Total wallets</span>
           </div>
           <p className="text-xl font-bold">{stats.total}</p>
         </div>
@@ -229,20 +273,20 @@ const WalletsList = () => {
         <div className="bg-base-100 rounded-xl p-4 border border-base-200 shadow-sm">
           <div className="flex items-center gap-2 text-success">
             <CheckCircle className="w-4 h-4" />
-            <span className="text-xs text-base-content/60">Actifs</span>
+            <span className="text-xs text-base-content/60">Wallet actifs</span>
           </div>
           <p className="text-xl font-bold">{stats.activeCount}</p>
         </div>
         <div className="bg-base-100 rounded-xl p-4 border border-base-200 shadow-sm">
           <div className="flex items-center gap-2 text-error">
             <XCircle className="w-4 h-4" />
-            <span className="text-xs text-base-content/60">Inactifs</span>
+            <span className="text-xs text-base-content/60">Wallet inactifs</span>
           </div>
           <p className="text-xl font-bold">{stats.inactiveCount}</p>
         </div>
       </div>
 
-      {/* Barre de recherche - pleine largeur */}
+      {/* Barre de recherche et filtres */}
       <div className="bg-base-100 shadow-sm border-t border-b border-base-200 py-4 px-4 sm:px-6">
         <div className="flex flex-col md:flex-row gap-4">
           <div className="flex-1 relative">
@@ -263,13 +307,6 @@ const WalletsList = () => {
               <Filter className="w-4 h-4" />
               Filtres
               {showFilters ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-            </button>
-            <button
-              onClick={fetchWallets}
-              className="btn btn-ghost btn-sm gap-2"
-              title="Actualiser"
-            >
-              <RefreshCw className="w-4 h-4" />
             </button>
           </div>
         </div>
@@ -326,7 +363,14 @@ const WalletsList = () => {
         )}
       </div>
 
-      {/* Liste des wallets - pleine largeur, sans padding */}
+      {/* Liste des wallets */}
+      {error && (
+        <div className="bg-error/10 border border-error/20 text-error rounded-lg p-3 mx-4 sm:mx-6 flex items-start gap-2">
+          <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+          <p className="text-sm">{error}</p>
+        </div>
+      )}
+
       {filteredWallets.length === 0 ? (
         <div className="bg-base-100 shadow-sm border-t border-b border-base-200 p-12 text-center">
           <Wallet className="w-16 h-16 text-base-content/20 mx-auto" />
@@ -337,9 +381,18 @@ const WalletsList = () => {
             }
           </p>
           {wallets.length === 0 && (
-            <p className="text-sm text-base-content/30 mt-1">
-              Les porte-monnaie sont créés automatiquement lors de la création des clients
-            </p>
+            <div className="mt-4 space-y-2">
+              <p className="text-sm text-base-content/30">
+                Les porte-monnaie sont créés automatiquement ou manuellement
+              </p>
+              <button
+                onClick={() => navigate('/wallets/nouveau')}
+                className="btn btn-primary btn-sm gap-2"
+              >
+                <Plus className="w-4 h-4" />
+                Créer un porte-monnaie
+              </button>
+            </div>
           )}
         </div>
       ) : (

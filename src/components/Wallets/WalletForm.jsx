@@ -1,6 +1,9 @@
 // src/pages/wallets/WalletForm.jsx
+// ============================================================
+// FORMULAIRE DE CRÉATION DE PORTE-MONNAIE - AVEC COMBOBOX
+// ============================================================
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -15,9 +18,12 @@ import {
   UserPlus,
   RefreshCw,
   Mail,
-  Building2,
   Calendar,
-  X
+  X,
+  ChevronDown,
+  ChevronUp,
+  Users,
+  XCircle
 } from 'lucide-react';
 import axiosInstance from '../../components/AxiosInstance';
 
@@ -25,21 +31,16 @@ const WalletForm = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [clients, setClients] = useState([]);
-  const [selectedClient, setSelectedClient] = useState(null);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [showClientList, setShowClientList] = useState(false);
+  const [selectedClientId, setSelectedClientId] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const [creating, setCreating] = useState(false);
   const [walletCreated, setWalletCreated] = useState(null);
 
   // Charger les clients sans wallet
-  useEffect(() => {
-    fetchClientsWithoutWallet();
-  }, []);
-
-  const fetchClientsWithoutWallet = async () => {
+  const fetchClientsWithoutWallet = useCallback(async () => {
     setLoading(true);
+    setError('');
     try {
       const token = localStorage.getItem('Token');
       if (!token) {
@@ -47,21 +48,18 @@ const WalletForm = () => {
         return;
       }
 
-      // Récupérer tous les clients
-      const response = await axiosInstance.get('/clients/', {
+      const response = await axiosInstance.get('/clients/?limit=1000', {
         headers: { Authorization: `Token ${token}` }
       });
 
-      // Filtrer les clients qui n'ont pas de wallet
-      const clientsWithWallet = [];
       const clientsWithoutWallet = [];
 
       for (const client of response.data) {
         try {
-          await axiosInstance.get(`/clients/${client.id}/wallet/`, {
+          await axiosInstance.get(`/wallet/client_wallet/${client.id}/`, {
             headers: { Authorization: `Token ${token}` }
           });
-          clientsWithWallet.push(client);
+          // Client a un wallet, on l'ignore
         } catch (error) {
           if (error.response?.status === 404) {
             clientsWithoutWallet.push(client);
@@ -77,23 +75,17 @@ const WalletForm = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [navigate]);
 
-  const filteredClients = clients.filter(client =>
-    client.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    client.code?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    client.phone?.includes(searchTerm)
-  );
+  useEffect(() => {
+    fetchClientsWithoutWallet();
+  }, [fetchClientsWithoutWallet]);
 
-  const selectClient = (client) => {
-    setSelectedClient(client);
-    setShowClientList(false);
-    setSearchTerm('');
-    setError('');
-  };
-
+  // ============================================================
+  // CRÉATION DU WALLET
+  // ============================================================
   const handleCreateWallet = async () => {
-    if (!selectedClient) {
+    if (!selectedClientId) {
       setError('Veuillez sélectionner un client');
       return;
     }
@@ -103,9 +95,20 @@ const WalletForm = () => {
 
     try {
       const token = localStorage.getItem('Token');
+      if (!token) {
+        setError('Session expirée, veuillez vous reconnecter');
+        setTimeout(() => navigate('/login'), 2000);
+        return;
+      }
+
+      const selectedClient = clients.find(c => c.id === parseInt(selectedClientId));
+
       const response = await axiosInstance.post(
-        `/clients/${selectedClient.id}/create-wallet/`,
-        {},
+        `/wallet/create-wallet/`,
+        {
+          client_id: selectedClientId,
+          initial_balance: 0
+        },
         {
           headers: { Authorization: `Token ${token}` }
         }
@@ -113,22 +116,56 @@ const WalletForm = () => {
 
       if (response.data.status === 'success') {
         setSuccess(true);
-        setWalletCreated(response.data.wallet);
+        setWalletCreated({
+          id: response.data.wallet.id,
+          client_name: selectedClient?.name || 'Client',
+          client_code: selectedClient?.code || '',
+          balance: response.data.wallet.balance || 0
+        });
         // Mettre à jour la liste des clients sans wallet
-        setClients(clients.filter(c => c.id !== selectedClient.id));
-        setSelectedClient(null);
+        setClients(clients.filter(c => c.id !== parseInt(selectedClientId)));
+        setSelectedClientId('');
       }
 
     } catch (error) {
       console.error('Erreur création wallet:', error);
-      setError(
-        error.response?.data?.message ||
-        'Erreur lors de la création du porte-monnaie'
-      );
+      
+      let errorMessage = 'Erreur lors de la création du porte-monnaie';
+      
+      if (error.response) {
+        if (error.response.status === 404) {
+          errorMessage = 'Le endpoint de création n\'existe pas. Vérifiez l\'URL.';
+        } else if (error.response.status === 400) {
+          if (typeof error.response.data === 'object') {
+            const messages = Object.values(error.response.data).flat();
+            errorMessage = messages.join(', ');
+          } else {
+            errorMessage = error.response.data.message || 'Données invalides';
+          }
+        } else if (error.response.status === 403) {
+          errorMessage = 'Vous n\'avez pas les droits pour créer un porte-monnaie';
+        } else if (error.response.status === 401) {
+          errorMessage = 'Session expirée, veuillez vous reconnecter';
+          setTimeout(() => navigate('/login'), 2000);
+        } else if (error.response.data?.message) {
+          errorMessage = error.response.data.message;
+        } else if (error.response.data?.detail) {
+          errorMessage = error.response.data.detail;
+        } else if (error.response.data?.error) {
+          errorMessage = error.response.data.error;
+        }
+      } else if (error.request) {
+        errorMessage = 'Impossible de contacter le serveur. Vérifiez votre connexion.';
+      }
+      
+      setError(errorMessage);
     } finally {
       setCreating(false);
     }
   };
+
+  // Récupérer le client sélectionné
+  const selectedClient = clients.find(c => c.id === parseInt(selectedClientId));
 
   const formatDate = (dateString) => {
     if (!dateString) return 'N/A';
@@ -141,7 +178,7 @@ const WalletForm = () => {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[60vh]">
+      <div className="flex items-center justify-center min-h-[400px]">
         <div className="text-center">
           <Loader2 className="w-12 h-12 text-primary animate-spin mx-auto" />
           <p className="mt-4 text-base-content/60">Chargement des clients...</p>
@@ -152,14 +189,14 @@ const WalletForm = () => {
 
   if (success && walletCreated) {
     return (
-      <div className="max-w-2xl mx-auto p-4">
-        <div className="bg-base-100 rounded-xl shadow-lg border border-base-200 p-8 text-center">
+      <div className="w-full px-4 sm:px-6 py-6">
+        <div className="bg-base-100 rounded-xl shadow-lg border border-base-200 p-8 max-w-2xl mx-auto text-center">
           <div className="w-20 h-20 rounded-full bg-success/10 flex items-center justify-center mx-auto">
             <CheckCircle className="w-10 h-10 text-success" />
           </div>
           <h2 className="text-2xl font-bold mt-4">✅ Porte-monnaie créé avec succès !</h2>
           <p className="text-base-content/60 mt-2">
-            Le porte-monnaie a été créé pour le client sélectionné
+            Le porte-monnaie a été créé pour {walletCreated.client_name}
           </p>
           
           <div className="bg-base-200 rounded-xl p-4 mt-4 text-left">
@@ -168,7 +205,7 @@ const WalletForm = () => {
               Code: {walletCreated.client_code}
             </p>
             <div className="flex items-center gap-4 mt-2">
-              <span className="badge badge-success">Solde: 0 FCFA</span>
+              <span className="badge badge-success">Solde: {walletCreated.balance || 0} FCFA</span>
               <span className="badge badge-primary">Actif</span>
             </div>
           </div>
@@ -206,16 +243,17 @@ const WalletForm = () => {
   }
 
   return (
-    <div className="max-w-3xl mx-auto p-4">
+    <div className="w-full px-4 sm:px-6 py-4 space-y-6">
+      
       {/* En-tête */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <button
-            onClick={() => navigate('/wallets')}
+          <Link
+            to="/wallets"
             className="p-2 rounded-lg hover:bg-base-200 transition-colors"
           >
             <ArrowLeft className="w-5 h-5" />
-          </button>
+          </Link>
           <div>
             <h1 className="text-2xl font-bold flex items-center gap-2">
               <Wallet className="w-7 h-7 text-primary" />
@@ -230,26 +268,40 @@ const WalletForm = () => {
           onClick={fetchClientsWithoutWallet}
           className="btn btn-ghost btn-sm gap-2"
           title="Actualiser la liste"
+          disabled={loading}
         >
-          <RefreshCw className="w-4 h-4" />
+          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           Actualiser
         </button>
       </div>
 
       {/* Statistiques */}
-      <div className="bg-base-100 rounded-xl shadow-sm border border-base-200 p-4 mb-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm text-base-content/60">Clients sans porte-monnaie</p>
-            <p className="text-2xl font-bold text-warning">{clients.length}</p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-base-100 rounded-xl shadow-sm border border-base-200 p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-base-content/60">Clients sans wallet</p>
+              <p className="text-2xl font-bold text-warning">{clients.length}</p>
+            </div>
+            <div className="w-12 h-12 rounded-full bg-warning/10 flex items-center justify-center">
+              <UserPlus className="w-6 h-6 text-warning" />
+            </div>
           </div>
-          <div className="w-12 h-12 rounded-full bg-warning/10 flex items-center justify-center">
-            <UserPlus className="w-6 h-6 text-warning" />
+        </div>
+        <div className="bg-base-100 rounded-xl shadow-sm border border-base-200 p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-base-content/60">Total clients</p>
+              <p className="text-2xl font-bold text-primary">0</p>
+            </div>
+            <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
+              <Users className="w-6 h-6 text-primary" />
+            </div>
           </div>
         </div>
       </div>
 
-      {clients.length === 0 && !selectedClient ? (
+      {clients.length === 0 ? (
         <div className="bg-base-100 rounded-xl shadow-lg border border-base-200 p-12 text-center">
           <CheckCircle className="w-16 h-16 text-success mx-auto" />
           <p className="text-lg font-semibold mt-4">Tous les clients ont un porte-monnaie !</p>
@@ -271,123 +323,41 @@ const WalletForm = () => {
         <div className="bg-base-100 rounded-xl shadow-lg border border-base-200 overflow-hidden">
           <div className="p-6">
             {error && (
-              <div className="bg-error/10 border border-error/20 text-error rounded-lg p-3 mb-4 flex items-start gap-2">
-                <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
-                <p className="text-sm">{error}</p>
+              <div className="bg-error/10 border border-error/20 text-error rounded-lg p-3 mb-4">
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-medium">Erreur</p>
+                    <p className="text-sm">{error}</p>
+                  </div>
+                </div>
               </div>
             )}
 
-            {/* Sélection du client */}
+            {/* ✅ COMBOBOX POUR SÉLECTIONNER LE CLIENT */}
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-base-content/80 mb-2">
                   Client <span className="text-error">*</span>
                 </label>
 
-                {selectedClient ? (
-                  <div className="bg-base-200 rounded-xl p-4 flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                      <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-lg">
-                        {selectedClient.name?.charAt(0) || '?'}
-                      </div>
-                      <div>
-                        <p className="font-semibold text-lg">{selectedClient.name}</p>
-                        <div className="flex flex-wrap gap-3 text-sm text-base-content/60">
-                          <span className="flex items-center gap-1">
-                            <span className="font-mono bg-base-300 px-2 py-0.5 rounded">
-                              {selectedClient.code}
-                            </span>
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <Phone className="w-3 h-3" />
-                            {selectedClient.phone || 'N/A'}
-                          </span>
-                          {selectedClient.email && (
-                            <span className="flex items-center gap-1">
-                              <Mail className="w-3 h-3" />
-                              {selectedClient.email}
-                            </span>
-                          )}
-                          <span className="flex items-center gap-1">
-                            <Calendar className="w-3 h-3" />
-                            {formatDate(selectedClient.created_at)}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => setSelectedClient(null)}
-                      className="btn btn-ghost btn-sm btn-square"
-                      title="Changer de client"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-                ) : (
-                  <div className="relative">
-                    <div className="flex gap-2">
-                      <div className="flex-1 relative">
-                        <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-base-content/40" />
-                        <input
-                          type="text"
-                          placeholder="Rechercher un client (nom, code, téléphone)..."
-                          value={searchTerm}
-                          onChange={(e) => {
-                            setSearchTerm(e.target.value);
-                            setShowClientList(true);
-                          }}
-                          onFocus={() => setShowClientList(true)}
-                          className="input input-bordered w-full pl-9"
-                        />
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setShowClientList(!showClientList)}
-                        className="btn btn-ghost btn-sm"
-                      >
-                        {showClientList ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                      </button>
-                    </div>
+                <select
+                  value={selectedClientId}
+                  onChange={(e) => {
+                    setSelectedClientId(e.target.value);
+                    setError('');
+                  }}
+                  className="select select-bordered w-full text-base"
+                >
+                  <option value="">-- Sélectionner un client --</option>
+                  {clients.map((client) => (
+                    <option key={client.id} value={client.id}>
+                      {client.code} - {client.name} {client.phone ? `(${client.phone})` : ''}
+                    </option>
+                  ))}
+                </select>
 
-                    {showClientList && clients.length > 0 && (
-                      <div className="absolute z-10 mt-1 w-full bg-base-100 rounded-xl shadow-xl border border-base-200 max-h-60 overflow-y-auto">
-                        {filteredClients.length === 0 ? (
-                          <div className="p-4 text-center text-base-content/40 text-sm">
-                            {clients.length === 0 
-                              ? 'Aucun client sans porte-monnaie' 
-                              : 'Aucun client trouvé'}
-                          </div>
-                        ) : (
-                          filteredClients.map((client) => (
-                            <button
-                              key={client.id}
-                              onClick={() => selectClient(client)}
-                              className="w-full text-left p-3 hover:bg-base-200 transition-colors border-b border-base-200/50 last:border-0 flex items-center justify-between"
-                            >
-                              <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold">
-                                  {client.name?.charAt(0) || '?'}
-                                </div>
-                                <div>
-                                  <p className="font-medium text-sm">{client.name}</p>
-                                  <p className="text-xs text-base-content/40 flex items-center gap-2">
-                                    <span className="font-mono">{client.code}</span>
-                                    <span className="w-1 h-1 rounded-full bg-base-content/20"></span>
-                                    <Phone className="w-3 h-3" />
-                                    {client.phone || 'N/A'}
-                                  </p>
-                                </div>
-                              </div>
-                              <span className="badge badge-warning badge-sm">Sans wallet</span>
-                            </button>
-                          ))
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {clients.length === 0 && !selectedClient && (
+                {clients.length === 0 && (
                   <p className="text-sm text-base-content/40 mt-2 flex items-center gap-2">
                     <CheckCircle className="w-4 h-4 text-success" />
                     Tous les clients ont déjà un porte-monnaie
@@ -395,16 +365,16 @@ const WalletForm = () => {
                 )}
               </div>
 
-              {/* Résumé */}
+              {/* Résumé du client sélectionné */}
               {selectedClient && (
                 <div className="bg-primary/5 border border-primary/20 rounded-xl p-4">
                   <h3 className="font-semibold text-sm flex items-center gap-2">
-                    <Wallet className="w-4 h-4 text-primary" />
-                    Résumé de la création
+                    <User className="w-4 h-4 text-primary" />
+                    Client sélectionné
                   </h3>
-                  <div className="grid grid-cols-2 gap-4 mt-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-3">
                     <div>
-                      <p className="text-xs text-base-content/40">Client</p>
+                      <p className="text-xs text-base-content/40">Nom</p>
                       <p className="font-medium">{selectedClient.name}</p>
                     </div>
                     <div>
@@ -416,8 +386,18 @@ const WalletForm = () => {
                       <p>{selectedClient.phone || 'N/A'}</p>
                     </div>
                     <div>
+                      <p className="text-xs text-base-content/40">Type</p>
+                      <p className="capitalize">{selectedClient.type || 'Particulier'}</p>
+                    </div>
+                    <div>
                       <p className="text-xs text-base-content/40">Statut</p>
-                      <span className="badge badge-warning badge-sm">Nouveau wallet</span>
+                      <span className={`badge ${selectedClient.statut === 'actif' ? 'badge-success' : 'badge-error'} badge-sm`}>
+                        {selectedClient.statut || 'Actif'}
+                      </span>
+                    </div>
+                    <div>
+                      <p className="text-xs text-base-content/40">Date création</p>
+                      <p>{formatDate(selectedClient.created_at)}</p>
                     </div>
                   </div>
                   <div className="mt-3 pt-3 border-t border-primary/10">
@@ -430,10 +410,10 @@ const WalletForm = () => {
               {/* Bouton de création */}
               <button
                 onClick={handleCreateWallet}
-                disabled={!selectedClient || creating}
+                disabled={!selectedClientId || creating}
                 className={`
                   btn w-full h-12 text-base font-medium gap-2
-                  ${!selectedClient 
+                  ${!selectedClientId 
                     ? 'btn-disabled' 
                     : 'btn-primary'
                   }
@@ -447,13 +427,18 @@ const WalletForm = () => {
                 ) : (
                   <>
                     <Plus className="w-5 h-5" />
-                    {selectedClient 
-                      ? `Créer le porte-monnaie pour ${selectedClient.name}`
+                    {selectedClientId 
+                      ? `Créer le porte-monnaie pour ${selectedClient?.name || 'le client'}`
                       : 'Sélectionnez un client'
                     }
                   </>
                 )}
               </button>
+
+              {/* Information supplémentaire */}
+              <div className="text-center text-xs text-base-content/40">
+                <p>Le porte-monnaie sera créé avec un solde initial de <span className="font-bold text-success">0 FCFA</span></p>
+              </div>
             </div>
           </div>
         </div>
@@ -461,8 +446,5 @@ const WalletForm = () => {
     </div>
   );
 };
-
-// Ajout des imports manquants
-import { ChevronDown, ChevronUp, Users } from 'lucide-react';
 
 export default WalletForm;
