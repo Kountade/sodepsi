@@ -33,7 +33,6 @@ const PosScanSimple = () => {
   const [priceType, setPriceType] = useState('detail');
   const [barcodeValue, setBarcodeValue] = useState('');
   const [isBarcodeFocused, setIsBarcodeFocused] = useState(false);
-  const [lastBarcode, setLastBarcode] = useState('');
   const [editingQuantity, setEditingQuantity] = useState(null);
   const [quantityInput, setQuantityInput] = useState('');
   const [dataLoaded, setDataLoaded] = useState(false);
@@ -137,18 +136,13 @@ const PosScanSimple = () => {
     setBarcodeValue(value);
 
     if (value.length >= 8) {
-      if (value === lastBarcode) {
-        return;
-      }
-
       // Recherche rapide dans le cache local
       const product = products.find(p => p.barcode === value);
       
       if (product) {
-        addToCart(product);
+        addToCart(product); // Chaque scan = +1 quantité
         setBarcodeValue('');
         e.target.value = '';
-        setLastBarcode(value);
         showNotification(`${product.name} ajouté au panier`, 'success');
         
         if (navigator.vibrate) {

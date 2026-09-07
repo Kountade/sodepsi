@@ -133,6 +133,15 @@ import FraisForm from './components/tresorerie/FraisForm';
 
 import PosScanSimple from './components/ventesclients/PosScanSimple';
 
+import WalletsList from './components/Wallets/WalletsList';
+
+
+
+
+
+
+
+
 
 
 
@@ -333,6 +342,30 @@ function App() {
 <Route path="/paiements/:id" element={<PaiementDetail />} />
 <Route path="/paiements/:id/modifier" element={<PaiementForm />} />
 <Route path="/paiements/:id/pdf" element={<PaiementPdf />} />
+
+
+
+
+
+
+
+
+
+<Route path="/wallets" element={<WalletsList />} />
+{/* Porte-monnaie clients 
+  
+  <Route path="/wallets/:id" element={<WalletDetail />} />
+  <Route path="/wallets/:id/deposit" element={<WalletDeposit />} />
+  <Route path="/wallets/:id/transactions" element={<WalletTransactions />} />
+  <Route path="/wallets/:id/pay" element={<WalletPay />} />  */}
+
+
+
+
+
+
+
+
 
                 {/* ==================== FOURNISSEURS & ACHATS ==================== 
               

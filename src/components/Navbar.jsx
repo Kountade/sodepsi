@@ -1,4 +1,4 @@
-// src/components/Navbar.jsx - Version SODEPCI avec Logo Dynamique et Finances intégrées
+// src/components/Navbar.jsx - Version COMPLETE avec PORTE-MONNAIE CLIENTS
 
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
@@ -26,10 +26,8 @@ import {
   Shield,
   Clock,
   Calendar,
-  MapPin,
   TrendingUp,
   CreditCard,
-  UsersRound,
   Boxes,
   AlertTriangle,
   Search,
@@ -38,10 +36,8 @@ import {
   Truck,
   ArrowLeftRight,
   DollarSign,
-  Grid3x3,
   Ruler,
   ClipboardCheck,
-  LineChart,
   MoveHorizontal,
   Calculator,
   PackageCheck,
@@ -51,15 +47,10 @@ import {
   Wallet,
   BookOpen,
   PiggyBank,
-  ChartPie,
   Cog,
   Database,
-  Mail,
   BellRing,
   Printer,
-  Globe,
-  Lock,
-  Key,
   UserCog,
   CalendarClock,
   RefreshCw,
@@ -77,21 +68,15 @@ import {
   Gauge,           
   AlertCircle,     
   Banknote,        
-  ArrowDownUp,     
   TrendingDown,    
-  Briefcase,       
-  HandCoins,       
   ScrollText,      
   Scale,           
-  Target,          
-  PieChart,        
   FileSpreadsheet,
   Handshake,
   FileCheck,
   RotateCcw,
   Receipt as ReceiptIcon,
   CreditCard as CreditCardIcon,
-  TrendingUp as TrendingUpIcon,
   BarChart,
   Clipboard,
   AlertCircle as AlertCircleIcon,
@@ -104,53 +89,14 @@ import {
   PackagePlus,
   PlusCircle,
   BadgeDollarSign,
-  Hash,
-  PenLine,
-  CalendarClock as CalendarClockIcon,
-  Building,
-  Store,
-  Home,
-  Layers as LayersIcon,
-  AlertTriangle as AlertTriangleIcon,
-  FileSpreadsheet as FileSpreadsheetIcon,
-  Handshake as HandshakeIcon,
-  FileCheck as FileCheckIcon,
-  RotateCcw as RotateCcwIcon,
-  Receipt as ReceiptIcon2,
-  CreditCard as CreditCardIcon2,
-  TrendingUp as TrendingUpIcon2,
-  BarChart as BarChartIcon,
-  Clipboard as ClipboardIcon,
-  AlertCircle as AlertCircleIcon2,
-  Archive as ArchiveIcon,
-  PackageOpen as PackageOpenIcon,
-  Truck as TruckIcon2,
-  Map as MapIcon,
-  UserCheck as UserCheckIcon,
-  Route as RouteIcon,
-  GraduationCap,
   Barcode,
-  FilePieChart,
-  BookMarked,
-  NotebookText,
-  Sigma,
-  CandlestickChart,
-  Percent,
-  LandPlot,
-  Scale3D,
-  TableProperties,
-  CircleDollarSign,
-  Coins as CoinsIcon,
-  ReceiptIndianRupee,
-  BanknoteArrowDown,
-  BanknoteArrowUp,
-  PiggyBank as PiggyBankIcon,
-  Goal,
-  Timer,
-  AlarmClock,
-  BadgePercent,
-  WalletMinimal,
-  WalletCards
+  GraduationCap,
+  UserPlus,
+  FilePlus,
+  CreditCard as CreditCardPlus,
+  Plus,
+  Grid3x3,
+  TableProperties
 } from 'lucide-react';
 
 import axiosInstance from './AxiosInstance';
@@ -208,6 +154,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
   const [openSections, setOpenSections] = useState({
     'TABLEAU DE BORD': true,
     'VENTES': true,
+    'PORTE-MONNAIE CLIENTS': false,
     'PRODUITS & STOCKS': true,
     'ACHATS & FOURNISSEURS': false,
     'FINANCES': true,
@@ -238,14 +185,12 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
   const [receptionsEnAttente, setReceptionsEnAttente] = useState(0);
   const [retoursEnAttente, setRetoursEnAttente] = useState(0);
   const [paiementsFournisseursEnAttente, setPaiementsFournisseursEnAttente] = useState(0);
-
-  // États pour les compteurs Finances
   const [depensesEnAttente, setDepensesEnAttente] = useState(0);
   const [budgetsAlertes, setBudgetsAlertes] = useState(0);
   const [ecrituresBrouillon, setEcrituresBrouillon] = useState(0);
   const [tresorerieAlerte, setTresorerieAlerte] = useState(0);
 
-  // Récupérer l'utilisateur
+  // Récupérer l'utilisateur connecté
   const getUserData = () => {
     try {
       const userData = localStorage.getItem('User');
@@ -435,33 +380,67 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
     navigate('/');
   };
 
-  // Menu sections - Définition complète avec FINANCES
+  // ============================================================
+  // MENU SECTIONS - TOUT EN FRANÇAIS
+  // ============================================================
+  
   const menuSections = [
+    // 1. TABLEAU DE BORD
     {
       name: 'TABLEAU DE BORD',
       icon: LayoutDashboard,
       items: [
-        { id: 'dashboard', text: 'Dashboard', icon: LayoutDashboard, path: '/dashboard', permission: true },
+        { id: 'dashboard', text: 'Tableau de Bord', icon: LayoutDashboard, path: '/dashboard', permission: true },
         { id: 'statistiques', text: 'Statistiques', icon: TrendingUp, path: '/statistiques', permission: isAdmin || isGestionnaire },
         { id: 'analyses', text: 'Analyses', icon: BarChart3, path: '/analyses', permission: isAdmin || isGestionnaire }
       ]
     },
+
+    // 2. VENTES
     {
       name: 'VENTES',
       icon: ShoppingCart,
       items: [
-        { id: 'pos', text: 'Point de Vente', icon: ShoppingBag, path: '/point-de-vente', permission: isAdmin || isGestionnaire || isVendeur },
-        { id: 'pos-scan', text: 'Scan & Vente', icon: Barcode, path: '/pos-scan', permission: isAdmin || isGestionnaire || isVendeur },
         { id: 'ventes', text: 'Ventes', icon: ShoppingCart, path: '/ventes', permission: isAdmin || isGestionnaire || isVendeur, badge: ventesImpayees > 0 ? ventesImpayees : 0 },
+        { id: 'nouvelle-vente', text: 'Nouvelle Vente', icon: PlusCircle, path: '/ventes/nouveau', permission: isAdmin || isGestionnaire || isVendeur },
+        
+        { id: 'separator-ventes-1', text: '', icon: null, path: '#', permission: true, separator: true },
+        
         { id: 'clients', text: 'Clients', icon: Users, path: '/clients', permission: isAdmin || isGestionnaire || isVendeur },
+        { id: 'nouveau-client', text: 'Nouveau Client', icon: UserPlus, path: '/clients/nouveau', permission: isAdmin || isGestionnaire || isVendeur },
+        
+        { id: 'separator-ventes-2', text: '', icon: null, path: '#', permission: true, separator: true },
+        
+        { id: 'devis', text: 'Devis', icon: FileText, path: '/devis', permission: isAdmin || isGestionnaire || isVendeur },
+        { id: 'nouveau-devis', text: 'Nouveau Devis', icon: FilePlus, path: '/devis/nouveau', permission: isAdmin || isGestionnaire || isVendeur },
+        
+        { id: 'separator-ventes-3', text: '', icon: null, path: '#', permission: true, separator: true },
+        
         { id: 'factures', text: 'Factures Clients', icon: Receipt, path: '/factures', permission: isAdmin || isGestionnaire || isVendeur },
         { id: 'paiements', text: 'Paiements Clients', icon: CreditCard, path: '/paiements', permission: isAdmin || isGestionnaire || isVendeur },
-        { id: 'devis', text: 'Devis', icon: FileText, path: '/devis', permission: isAdmin || isGestionnaire || isVendeur },
-        { id: 'retours-clients', text: 'Retours Clients', icon: ReturnIcon, path: '/retours-clients', permission: isAdmin || isGestionnaire },
-        { id: 'separator', text: '', icon: null, path: '#', permission: true, separator: true },
-        { id: 'nouvelle-vente', text: 'Nouvelle Vente', icon: PlusCircle, path: '/ventes/nouveau', permission: isAdmin || isGestionnaire || isVendeur }
+        { id: 'nouveau-paiement', text: 'Nouveau Paiement', icon: CreditCardPlus, path: '/paiements/nouveau', permission: isAdmin || isGestionnaire || isVendeur },
+        
+        { id: 'separator-ventes-4', text: '', icon: null, path: '#', permission: true, separator: true },
+        
+        { id: 'pos', text: 'Point de Vente', icon: ShoppingBag, path: '/point-de-vente', permission: isAdmin || isGestionnaire || isVendeur },
+        { id: 'pos-scan', text: 'Scan & Vente', icon: Barcode, path: '/pos-scan', permission: isAdmin || isGestionnaire || isVendeur },
+        { id: 'retours-clients', text: 'Retours Clients', icon: ReturnIcon, path: '/retours-clients', permission: isAdmin || isGestionnaire }
       ]
     },
+
+    // 3. PORTE-MONNAIE CLIENTS (NOUVEAU)
+    {
+      name: 'PORTE-MONNAIE CLIENTS',
+      icon: Wallet,
+      items: [
+        { id: 'wallets', text: 'Gestion des Porte-monnaie', icon: Wallet, path: '/wallets', permission: isAdmin || isGestionnaire },
+        { id: 'wallet-deposit', text: 'Dépôt Client', icon: Plus, path: '/wallets/depot', permission: isAdmin || isGestionnaire },
+        { id: 'wallet-transactions', text: 'Historique des Transactions', icon: History, path: '/wallets/transactions', permission: isAdmin || isGestionnaire },
+        { id: 'wallet-pay', text: 'Paiement avec Porte-monnaie', icon: CreditCard, path: '/wallets/paiement', permission: isAdmin || isGestionnaire }
+      ]
+    },
+
+    // 4. PRODUITS & STOCKS
     {
       name: 'PRODUITS & STOCKS',
       icon: Package,
@@ -481,8 +460,10 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
     }
   ];
 
+  // Sections pour Admin et Gestionnaire
   if (isAdmin || isGestionnaire) {
-    menuSections.splice(3, 0, {
+    // 5. ACHATS & FOURNISSEURS
+    menuSections.splice(4, 0, {
       name: 'ACHATS & FOURNISSEURS',
       icon: ShoppingBag,
       items: [
@@ -496,49 +477,34 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
       ]
     });
 
-    // ✅ FINANCES - Sans préfixe /finances
-    menuSections.splice(4, 0, {
+    // 6. FINANCES
+    menuSections.splice(5, 0, {
       name: 'FINANCES',
       icon: DollarSign,
       items: [
-        // Dashboard Finances
-        { id: 'dashboard-finances', text: 'Dashboard Finances', icon: Gauge, path: '/dashboard-finances', permission: isAdmin || isComptable },
-        
-        // Comptabilité
+        { id: 'dashboard-finances', text: 'Tableau de Bord Finances', icon: Gauge, path: '/dashboard-finances', permission: isAdmin || isComptable },
         { id: 'comptes-comptables', text: 'Plan Comptable', icon: Grid3x3, path: '/comptes-comptables', permission: isAdmin || isComptable },
         { id: 'ecritures-comptables', text: 'Écritures Comptables', icon: BookOpen, path: '/ecritures-comptables', permission: isAdmin || isComptable, badge: ecrituresBrouillon > 0 ? ecrituresBrouillon : 0 },
         { id: 'journal-comptable', text: 'Journal Comptable', icon: ScrollText, path: '/journal-comptable', permission: isAdmin || isComptable },
         { id: 'grand-livre', text: 'Grand Livre', icon: Scale, path: '/grand-livre', permission: isAdmin || isComptable },
         { id: 'balance-generale', text: 'Balance Générale', icon: TableProperties, path: '/balance-generale', permission: isAdmin || isComptable },
-        
-        // Dépenses
         { id: 'depenses', text: 'Dépenses', icon: TrendingDown, path: '/depenses', permission: isAdmin || isComptable, badge: depensesEnAttente > 0 ? depensesEnAttente : 0 },
-        
-        // Budgets
         { id: 'budgets', text: 'Budgets', icon: PiggyBank, path: '/budgets', permission: isAdmin || isComptable, badge: budgetsAlertes > 0 ? budgetsAlertes : 0 },
-        
-        // Rapports
         { id: 'rapports-financiers', text: 'Rapports Financiers', icon: FileSpreadsheet, path: '/rapports-financiers', permission: isAdmin || isComptable },
-        
-        // Configuration
         { id: 'config-financiere', text: 'Configuration Financière', icon: Cog, path: '/config-financiere', permission: isAdmin },
-        
-        // Séparateur
         { id: 'separator-finances', text: '', icon: null, path: '#', permission: true, separator: true },
-        
-        // Actions rapides
         { id: 'nouvelle-depense', text: 'Nouvelle Dépense', icon: PlusCircle, path: '/depenses/nouveau', permission: isAdmin || isComptable },
         { id: 'nouveau-budget', text: 'Nouveau Budget', icon: PlusCircle, path: '/budgets/nouveau', permission: isAdmin || isComptable },
         { id: 'nouvelle-ecriture', text: 'Nouvelle Écriture', icon: PlusCircle, path: '/ecritures-comptables/nouveau', permission: isAdmin || isComptable }
       ]
     });
 
-    // TRÉSORERIE
-    menuSections.splice(5, 0, {
+    // 7. TRÉSORERIE
+    menuSections.splice(6, 0, {
       name: 'TRÉSORERIE',
       icon: Wallet,
       items: [
-        { id: 'dashboard-tresorerie', text: 'Tableau de Bord', icon: Gauge, path: '/dashboard-tresorerie', permission: isAdmin || isComptable, badge: tresorerieAlerte > 0 ? tresorerieAlerte : 0 },
+        { id: 'dashboard-tresorerie', text: 'Tableau de Bord Trésorerie', icon: Gauge, path: '/dashboard-tresorerie', permission: isAdmin || isComptable, badge: tresorerieAlerte > 0 ? tresorerieAlerte : 0 },
         { id: 'caisses', text: 'Caisses', icon: Banknote, path: '/caisses', permission: isAdmin || isComptable },
         { id: 'comptes-bancaires', text: 'Comptes Bancaires', icon: Landmark, path: '/comptes-bancaires', permission: isAdmin || isComptable },
         { id: 'mouvements-tresorerie', text: 'Mouvements Trésorerie', icon: Coins, path: '/mouvements-tresorerie', permission: isAdmin || isComptable },
@@ -550,8 +516,8 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
       ]
     });
 
-    // LIVRAISONS
-    menuSections.splice(6, 0, {
+    // 8. LIVRAISONS
+    menuSections.splice(7, 0, {
       name: 'LIVRAISONS',
       icon: Truck,
       items: [
@@ -562,12 +528,12 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
       ]
     });
 
-    // PARAMÈTRES
-    menuSections.splice(7, 0, {
+    // 9. PARAMÈTRES
+    menuSections.splice(8, 0, {
       name: 'PARAMÈTRES',
       icon: Settings,
       items: [
-        { id: 'company-config', text: 'Configuration SODEPCI', icon: Building2, path: '/company-config', permission: isAdmin },
+        { id: 'company-config', text: 'Configuration Établissement', icon: Building2, path: '/company-config', permission: isAdmin },
         { id: 'notifications', text: 'Notifications', icon: Bell, path: '/notifications', permission: isAdmin || isGestionnaire, badge: notificationsCount > 0 ? notificationsCount : 0 },
         { id: 'system-settings', text: 'Paramètres Système', icon: Cog, path: '/system-settings', permission: isAdmin },
         { id: 'document-templates', text: 'Modèles Documents', icon: Printer, path: '/document-templates', permission: isAdmin || isGestionnaire },
@@ -579,7 +545,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
     });
   }
 
-  // Ajouter MON ESPACE à la fin (pour tous)
+  // 10. MON ESPACE (pour tous les utilisateurs)
   menuSections.push({
     name: 'MON ESPACE',
     icon: UserCircle,
@@ -635,6 +601,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
     }
 
     const ItemIcon = item.icon;
+    const isNewItem = item.id && item.id.startsWith('nouveau-');
     
     return (
       <Link
@@ -646,10 +613,14 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
             ? 'bg-primary text-primary-content shadow-md' 
             : 'text-base-content/60 hover:bg-primary/10 hover:text-primary'
           }
+          ${isNewItem && !isActive ? 'border-l-2 border-primary pl-3' : ''}
         `}
       >
         {ItemIcon && <ItemIcon className={`w-4 h-4 ${isActive ? 'text-inherit' : ''}`} />}
         <span className="flex-1">{item.text}</span>
+        {isNewItem && !isActive && (
+          <span className="badge badge-success badge-xs">Nouveau</span>
+        )}
         {item.badge && item.badge > 0 && (
           <span className={`badge badge-error badge-xs ${isActive ? 'badge-outline' : ''}`}>
             {item.badge > 99 ? '99+' : item.badge}
@@ -659,23 +630,10 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
     );
   };
 
-  // Fonction pour afficher le logo
-  const renderLogo = (className = "w-full h-full object-cover rounded-xl") => {
-    if (!loadingEtab && logoUrl) {
-      return (
-        <img
-          src={logoUrl}
-          alt={etablissement?.nom || 'Logo établissement'}
-          className={className}
-          onError={(e) => {
-            e.target.style.display = 'none';
-          }}
-        />
-      );
-    }
-    return <GraduationCap className="w-6 h-6 text-primary" />;
-  };
-
+  // ============================================================
+  // RENDU
+  // ============================================================
+  
   return (
     <div className="min-h-screen bg-base-200">
       
