@@ -1,6 +1,7 @@
 // src/pages/wallets/WalletDeposit.jsx
 // ============================================================
 // PAGE DE DÉPÔT DANS LE PORTE-MONNAIE - CORRIGÉE
+// AVEC LA MÊME LOGIQUE QUE WalletsList
 // ============================================================
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -32,6 +33,7 @@ const WalletDeposit = () => {
   const [submitting, setSubmitting] = useState(false);
   const [wallet, setWallet] = useState(null);
   const [client, setClient] = useState(null);
+  const [clientId, setClientId] = useState(null);
   const [amount, setAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('cash');
   const [notes, setNotes] = useState('');
@@ -39,7 +41,7 @@ const WalletDeposit = () => {
   const [success, setSuccess] = useState(false);
   const [depositResult, setDepositResult] = useState(null);
 
-  // Charger les informations du wallet
+  // Charger les informations du wallet - ✅ MÊME LOGIQUE QUE WalletsList
   const fetchWallet = useCallback(async () => {
     setLoading(true);
     setError('');
@@ -50,47 +52,95 @@ const WalletDeposit = () => {
         return;
       }
 
-      const headers = { Authorization: `Token ${token}` };
-
-      // ✅ Récupérer le wallet via /wallet/{id}/client_wallet/
-      const response = await axiosInstance.get(
-        `/wallet/${id}/client_wallet/`,
-        { headers }
-      );
+      // ✅ UTILISER /wallet/list/ COMME WalletsList
+      const response = await axiosInstance.get('/wallet/list/');
       
-      console.log('📋 Réponse wallet:', response.data);
+      console.log('📋 Réponse wallets list:', response.data);
 
-      if (response.data && response.data.wallet) {
-        const walletData = response.data.wallet;
-        setWallet(walletData);
-        
-        // Récupérer les infos du client
-        if (walletData.client) {
-          setClient(walletData.client);
-        } else if (walletData.client_id) {
-          try {
-            const clientResponse = await axiosInstance.get(
-              `/clients/${walletData.client_id}/`,
-              { headers }
-            );
-            setClient(clientResponse.data);
-          } catch (clientError) {
-            console.warn('Erreur chargement client:', clientError);
+      let walletData = null;
+      let results = [];
+
+      // ✅ Même logique que WalletsList pour extraire les résultats
+      if (response.data.results) {
+        results = response.data.results;
+      } else if (Array.isArray(response.data)) {
+        results = response.data;
+      }
+
+      // ✅ Chercher le wallet avec l'ID correspondant
+      const foundWallet = results.find(w => w.id === parseInt(id));
+      
+      if (foundWallet) {
+        // ✅ Construire l'objet wallet avec les mêmes infos que WalletsList
+        walletData = {
+          ...foundWallet,
+          client: {
+            id: foundWallet.client,
+            name: foundWallet.client_name || 'Client inconnu',
+            code: foundWallet.client_code || 'N/A',
+            phone: foundWallet.client_phone || 'N/A',
+            type: foundWallet.client_type || 'Particulier',
+            statut: foundWallet.client_statut || 'actif'
           }
-        }
+        };
+        
+        setWallet(walletData);
+        setClient(walletData.client);
+        setClientId(foundWallet.client);
+        console.log(`✅ Wallet trouvé: ${walletData.id} - Client: ${walletData.client.name}`);
       } else {
-        setError('Porte-monnaie non trouvé');
+        // ✅ Si non trouvé dans la liste, essayer l'endpoint direct
+        console.log('⚠️ Wallet non trouvé dans la liste, essai direct...');
+        try {
+          const directResponse = await axiosInstance.get(`/wallet/${id}/client-wallet/`);
+          console.log('📋 Réponse directe:', directResponse.data);
+          
+          if (directResponse.data) {
+            const data = directResponse.data;
+            // ✅ Construire le wallet avec les données directes
+            walletData = {
+              id: data.id,
+              balance: data.balance || 0,
+              total_deposits: data.total_deposits || 0,
+              total_used: data.total_used || 0,
+              is_active: data.is_active !== undefined ? data.is_active : true,
+              created_at: data.created_at,
+              updated_at: data.updated_at,
+              client: {
+                id: data.client_id || data.client?.id || null,
+                name: data.client_name || data.client?.name || 'Client inconnu',
+                code: data.client_code || data.client?.code || 'N/A',
+                phone: data.client_phone || data.client?.phone || 'N/A',
+                type: data.client_type || data.client?.type || 'Particulier',
+                statut: data.client_statut || data.client?.statut || 'actif'
+              }
+            };
+            
+            setWallet(walletData);
+            setClient(walletData.client);
+            setClientId(walletData.client.id);
+            console.log(`✅ Wallet trouvé directement: ${walletData.id} - Client: ${walletData.client.name}`);
+          } else {
+            setError('Porte-monnaie non trouvé');
+          }
+        } catch (directError) {
+          console.error('❌ Erreur récupération directe:', directError);
+          setError('Porte-monnaie non trouvé');
+        }
       }
 
     } catch (error) {
       console.error('❌ Erreur chargement wallet:', error);
+      
       if (error.response?.status === 404) {
-        setError('Porte-monnaie non trouvé');
+        setError('Porte-monnaie non trouvé. Vérifiez l\'ID.');
       } else if (error.response?.status === 403) {
-        setError('Accès non autorisé. Vous devez être administrateur.');
+        setError('Accès non autorisé.');
       } else if (error.response?.status === 401) {
         setError('Session expirée');
         setTimeout(() => navigate('/login'), 2000);
+      } else if (error.response?.status === 500) {
+        setError('Erreur serveur. Veuillez réessayer.');
       } else {
         setError('Erreur lors du chargement du porte-monnaie');
       }
@@ -112,6 +162,11 @@ const WalletDeposit = () => {
       return;
     }
 
+    if (!clientId) {
+      setError('Aucun client associé à ce wallet');
+      return;
+    }
+
     setSubmitting(true);
     setError('');
 
@@ -122,11 +177,9 @@ const WalletDeposit = () => {
         return;
       }
 
-      const headers = { Authorization: `Token ${token}` };
-
-      // ✅ Corps de la requête avec wallet_id
+      // ✅ CORPS DE LA REQUÊTE CORRECT
       const depositData = {
-        wallet_id: parseInt(id),  // ✅ ID du wallet depuis l'URL
+        client_id: parseInt(clientId),
         amount: parseFloat(amount),
         payment_method: paymentMethod,
         notes: notes || `Dépôt de ${parseFloat(amount).toLocaleString()} FCFA en ${paymentMethod}`
@@ -137,8 +190,7 @@ const WalletDeposit = () => {
       // ✅ Effectuer le dépôt
       const response = await axiosInstance.post(
         `/wallet/deposit/`,
-        depositData,
-        { headers }
+        depositData
       );
 
       console.log('📋 Réponse dépôt:', response.data);
@@ -148,8 +200,8 @@ const WalletDeposit = () => {
         setDepositResult({
           amount: parseFloat(amount),
           new_balance: response.data.new_balance,
-          balance_display: response.data.balance_display,
-          message: response.data.message
+          balance_display: response.data.balance_display || `${response.data.new_balance.toLocaleString()} FCFA`,
+          message: response.data.message || 'Dépôt effectué avec succès'
         });
         // Mettre à jour le wallet local
         setWallet(prev => ({
@@ -157,30 +209,37 @@ const WalletDeposit = () => {
           balance: response.data.new_balance
         }));
       } else {
-        setError(response.data.message || 'Erreur lors du dépôt');
+        setError(response.data.error || response.data.message || 'Erreur lors du dépôt');
       }
 
     } catch (error) {
       console.error('❌ Erreur dépôt:', error);
       
-      // Analyse détaillée de l'erreur
       if (error.response) {
         console.error('📄 Réponse erreur:', error.response.data);
         console.error('📄 Status:', error.response.status);
         
-        if (error.response.status === 403) {
+        if (error.response.status === 400) {
+          if (error.response.data?.error) {
+            setError(error.response.data.error);
+          } else if (error.response.data?.client_id) {
+            setError(`Erreur client: ${error.response.data.client_id.join(', ')}`);
+          } else if (error.response.data?.amount) {
+            setError(`Erreur montant: ${error.response.data.amount.join(', ')}`);
+          } else {
+            setError('Données invalides. Vérifiez le montant et le client.');
+          }
+        } else if (error.response.status === 403) {
           setError('Vous n\'avez pas les droits pour effectuer un dépôt sur ce wallet');
         } else if (error.response.status === 401) {
           setError('Session expirée');
           setTimeout(() => navigate('/login'), 2000);
         } else if (error.response.status === 404) {
-          setError('Wallet non trouvé');
+          setError('Wallet ou client non trouvé');
         } else if (error.response.data?.error) {
           setError(error.response.data.error);
         } else if (error.response.data?.detail) {
           setError(error.response.data.detail);
-        } else if (error.response.data?.message) {
-          setError(error.response.data.message);
         } else {
           setError('Erreur lors du dépôt');
         }
@@ -325,8 +384,16 @@ const WalletDeposit = () => {
               <Wallet className="w-7 h-7 text-primary" />
               Déposer de l'argent
             </h1>
-            <p className="text-base-content/60 text-sm">
-              {client?.name ? `Client: ${client.name}` : 'Chargement...'}
+            <p className="text-base-content/60 text-sm flex items-center gap-2">
+              {client?.name ? (
+                <>
+                  <span className="font-medium text-base-content">{client.name}</span>
+                  <span className="text-base-content/40">-</span>
+                  <span className="font-mono">{client.code}</span>
+                </>
+              ) : (
+                '⚠️ Aucun client associé'
+              )}
             </p>
           </div>
         </div>
@@ -341,28 +408,33 @@ const WalletDeposit = () => {
       </div>
 
       {/* Informations du wallet */}
-      {wallet && client && (
+      {wallet && (
         <div className="bg-base-100 rounded-xl shadow-sm border border-base-200 overflow-hidden">
           <div className="p-4 sm:p-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div className="flex items-center gap-4">
                 <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-lg flex-shrink-0">
-                  {client.name?.charAt(0) || '?'}
+                  {client?.name?.charAt(0) || '?'}
                 </div>
                 <div>
-                  <p className="font-semibold text-lg">{client.name}</p>
+                  <p className="font-semibold text-lg">{client?.name || 'Aucun client'}</p>
                   <div className="flex flex-wrap gap-3 text-sm text-base-content/60">
-                    <span className="font-mono bg-base-200 px-2 py-0.5 rounded">
-                      {client.code}
-                    </span>
-                    {client.phone && (
+                    {client?.code && (
+                      <span className="font-mono bg-base-200 px-2 py-0.5 rounded">
+                        {client.code}
+                      </span>
+                    )}
+                    {client?.phone && (
                       <span className="flex items-center gap-1">
                         <Phone className="w-3 h-3" />
                         {client.phone}
                       </span>
                     )}
-                    {client.type && (
+                    {client?.type && (
                       <span className="capitalize">{client.type}</span>
+                    )}
+                    {!client && (
+                      <span className="text-warning">⚠️ Aucun client associé</span>
                     )}
                   </div>
                 </div>
@@ -406,6 +478,18 @@ const WalletDeposit = () => {
             </div>
           )}
 
+          {!client && (
+            <div className="bg-warning/10 border border-warning/20 text-warning rounded-lg p-3 mb-4">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-medium">Aucun client associé</p>
+                  <p className="text-sm">Ce wallet n'a pas de client associé. Le dépôt ne peut pas être effectué.</p>
+                </div>
+              </div>
+            </div>
+          )}
+
           <form onSubmit={handleDeposit} className="space-y-4">
             {/* Montant */}
             <div>
@@ -428,6 +512,7 @@ const WalletDeposit = () => {
                   }}
                   className="input input-bordered w-full pl-16 text-lg font-semibold"
                   required
+                  disabled={!client}
                 />
               </div>
               <p className="text-xs text-base-content/40 mt-1">
@@ -449,12 +534,14 @@ const WalletDeposit = () => {
                       key={method.value}
                       type="button"
                       onClick={() => setPaymentMethod(method.value)}
+                      disabled={!client}
                       className={`
                         flex flex-col items-center justify-center gap-2 p-3 rounded-xl border-2 transition-all
                         ${isSelected 
                           ? 'border-primary bg-primary/5 text-primary' 
                           : 'border-base-200 hover:border-base-300 bg-base-100'
                         }
+                        ${!client ? 'opacity-50 cursor-not-allowed' : ''}
                       `}
                     >
                       <Icon className={`w-6 h-6 ${isSelected ? 'text-primary' : 'text-base-content/40'}`} />
@@ -480,6 +567,7 @@ const WalletDeposit = () => {
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 className="textarea textarea-bordered w-full h-20 resize-none"
+                disabled={!client}
               />
             </div>
 
@@ -517,10 +605,10 @@ const WalletDeposit = () => {
             <div className="flex flex-col sm:flex-row gap-3 pt-4 border-t border-base-200">
               <button
                 type="submit"
-                disabled={!amount || parseFloat(amount) <= 0 || submitting}
+                disabled={!client || !amount || parseFloat(amount) <= 0 || submitting}
                 className={`
                   btn w-full sm:flex-1 h-12 text-base font-medium gap-2
-                  ${!amount || parseFloat(amount) <= 0 
+                  ${!client || !amount || parseFloat(amount) <= 0 
                     ? 'btn-disabled' 
                     : 'btn-success'
                   }
@@ -548,17 +636,9 @@ const WalletDeposit = () => {
             </div>
           </form>
 
-          {/* Informations supplémentaires */}
           <div className="mt-4 text-center text-xs text-base-content/40 border-t border-base-200 pt-4">
             <p>Le dépôt sera crédité immédiatement sur le porte-monnaie du client</p>
             <p>Un mouvement de trésorerie sera automatiquement créé</p>
-          </div>
-
-          {/* Debug info (retirer en production) */}
-          <div className="mt-4 p-3 bg-base-200 rounded-lg text-xs text-base-content/40">
-            <p>🔧 Debug: wallet_id = {id}</p>
-            <p>🔧 URL: /wallet/deposit/</p>
-            <p>🔧 Data: wallet_id={id}, amount={amount || '...'}</p>
           </div>
         </div>
       </div>

@@ -1,6 +1,7 @@
 // src/pages/wallets/WalletDetail.jsx
 // ============================================================
 // PAGE DE DÉTAIL D'UN PORTE-MONNAIE - CORRIGÉE
+// AVEC LA MÊME LOGIQUE QUE WalletsList
 // ============================================================
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -70,82 +71,128 @@ const WalletDetail = () => {
         return;
       }
 
-      const headers = { Authorization: `Token ${token}` };
-
-      // ✅ Récupérer le wallet via /wallet/{id}/client_wallet/
-      const response = await axiosInstance.get(
-        `/wallet/${id}/client_wallet/`,
-        { headers }
-      );
+      // ✅ UTILISER LE MÊME ENDPOINT QUE WalletsList POUR RÉCUPÉRER LE WALLET
+      // On utilise /wallet/list/ pour récupérer tous les wallets et on filtre par ID
+      const response = await axiosInstance.get('/wallet/list/');
       
-      console.log('📋 Réponse wallet:', response.data);
+      console.log('📋 Réponse wallets list:', response.data);
 
-      if (response.data && response.data.wallet) {
-        const walletData = response.data.wallet;
-        setWallet(walletData);
-        
-        // Récupérer les infos du client
-        if (walletData.client) {
-          setClient(walletData.client);
-        } else if (walletData.client_id) {
-          try {
-            const clientResponse = await axiosInstance.get(
-              `/clients/${walletData.client_id}/`,
-              { headers }
-            );
-            setClient(clientResponse.data);
-          } catch (clientError) {
-            console.warn('Erreur chargement client:', clientError);
-          }
-        }
-      } else {
-        setError('Porte-monnaie non trouvé');
+      let walletData = null;
+      let results = [];
+
+      // ✅ Même logique que WalletsList pour extraire les résultats
+      if (response.data.results) {
+        results = response.data.results;
+      } else if (Array.isArray(response.data)) {
+        results = response.data;
       }
 
-      // ✅ Récupérer les transactions via /wallet/{id}/wallet_transactions/
-      try {
-        const transResponse = await axiosInstance.get(
-          `/wallet/${id}/wallet_transactions/`,
-          { headers }
-        );
+      // ✅ Chercher le wallet avec l'ID correspondant
+      const foundWallet = results.find(w => w.id === parseInt(id));
+      
+      if (foundWallet) {
+        // ✅ Construire l'objet wallet avec les mêmes infos que WalletsList
+        walletData = {
+          ...foundWallet,
+          client: {
+            id: foundWallet.client,
+            name: foundWallet.client_name || 'Client inconnu',
+            code: foundWallet.client_code || 'N/A',
+            phone: foundWallet.client_phone || 'N/A',
+            type: foundWallet.client_type || 'Particulier',
+            statut: foundWallet.client_statut || 'actif'
+          }
+        };
         
-        console.log('📋 Réponse transactions:', transResponse.data);
-        
-        if (transResponse.data && transResponse.data.transactions) {
-          const transactionsData = transResponse.data.transactions || [];
-          setTransactions(transactionsData);
+        setWallet(walletData);
+        setClient(walletData.client);
+        console.log(`✅ Wallet trouvé: ${walletData.id} - Client: ${walletData.client.name}`);
+      } else {
+        // ✅ Si non trouvé dans la liste, essayer l'endpoint direct
+        console.log('⚠️ Wallet non trouvé dans la liste, essai direct...');
+        try {
+          const directResponse = await axiosInstance.get(`/wallet/${id}/client-wallet/`);
+          console.log('📋 Réponse directe:', directResponse.data);
           
-          // Calculer les statistiques
-          let totalDeposits = 0;
-          let totalUsed = 0;
-          transactionsData.forEach(t => {
-            if (t.type === 'credit') {
-              totalDeposits += t.amount || 0;
-            } else if (t.type === 'debit') {
-              totalUsed += t.amount || 0;
-            }
-          });
-          
-          setStats({
-            totalDeposits,
-            totalUsed,
-            transactionCount: transactionsData.length
-          });
+          if (directResponse.data) {
+            const data = directResponse.data;
+            // ✅ Construire le wallet avec les données directes
+            walletData = {
+              id: data.id,
+              balance: data.balance,
+              total_deposits: data.total_deposits,
+              total_used: data.total_used,
+              is_active: data.is_active,
+              created_at: data.created_at,
+              updated_at: data.updated_at,
+              client: {
+                id: data.client_id || data.client?.id,
+                name: data.client_name || data.client?.name || 'Client inconnu',
+                code: data.client_code || data.client?.code || 'N/A',
+                phone: data.client_phone || data.client?.phone || 'N/A',
+                type: data.client_type || data.client?.type || 'Particulier',
+                statut: data.client_statut || data.client?.statut || 'actif'
+              }
+            };
+            
+            setWallet(walletData);
+            setClient(walletData.client);
+            console.log(`✅ Wallet trouvé directement: ${walletData.id} - Client: ${walletData.client.name}`);
+          }
+        } catch (directError) {
+          console.error('❌ Erreur récupération directe:', directError);
+          setError('Porte-monnaie non trouvé');
         }
-      } catch (transError) {
-        console.warn('Erreur chargement transactions:', transError);
-        // Ne pas bloquer l'affichage si les transactions échouent
+      }
+
+      // ✅ Récupérer les transactions via /wallet/{id}/transactions/
+      if (walletData) {
+        try {
+          const transResponse = await axiosInstance.get(
+            `/wallet/${id}/transactions/`
+          );
+          
+          console.log('📋 Réponse transactions:', transResponse.data);
+          
+          if (transResponse.data && transResponse.data.transactions) {
+            const transactionsData = transResponse.data.transactions || [];
+            setTransactions(transactionsData);
+            
+            // Calculer les statistiques
+            let totalDeposits = 0;
+            let totalUsed = 0;
+            transactionsData.forEach(t => {
+              if (t.type === 'credit') {
+                totalDeposits += t.amount || 0;
+              } else if (t.type === 'debit') {
+                totalUsed += t.amount || 0;
+              }
+            });
+            
+            setStats({
+              totalDeposits,
+              totalUsed,
+              transactionCount: transactionsData.length
+            });
+          }
+        } catch (transError) {
+          console.warn('⚠️ Erreur chargement transactions:', transError);
+          // Ne pas bloquer l'affichage si les transactions échouent
+        }
       }
 
     } catch (error) {
       console.error('❌ Erreur chargement wallet:', error);
+      
       if (error.response?.status === 404) {
-        setError('Porte-monnaie non trouvé');
+        setError('Porte-monnaie non trouvé. Vérifiez l\'ID.');
       } else if (error.response?.status === 403) {
         setError('Accès non autorisé. Vous devez être administrateur.');
       } else if (error.response?.status === 401) {
         setError('Session expirée');
         setTimeout(() => navigate('/login'), 2000);
+      } else if (error.response?.status === 500) {
+        setError('Erreur serveur. Veuillez réessayer.');
       } else {
         setError('Erreur lors du chargement du porte-monnaie');
       }
@@ -279,6 +326,30 @@ const WalletDetail = () => {
     );
   }
 
+  // Si pas de wallet mais pas d'erreur explicite
+  if (!wallet) {
+    return (
+      <div className="w-full px-4 sm:px-6 py-6">
+        <div className="bg-warning/10 border border-warning/20 text-warning rounded-lg p-6 text-center max-w-2xl mx-auto">
+          <AlertCircle className="w-16 h-16 mx-auto mb-4" />
+          <p className="text-lg font-semibold">Porte-monnaie non trouvé</p>
+          <p className="text-sm mt-2 text-base-content/60">
+            Aucun porte-monnaie trouvé avec l'ID {id}.
+          </p>
+          <div className="mt-4 flex flex-col sm:flex-row gap-3 justify-center">
+            <Link
+              to="/wallets"
+              className="btn btn-primary gap-2"
+            >
+              <ArrowLeft className="w-5 h-5" />
+              Retour à la liste
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="w-full px-4 sm:px-6 py-4 space-y-6">
       
@@ -296,8 +367,16 @@ const WalletDetail = () => {
               <Wallet className="w-7 h-7 text-primary" />
               Détails du porte-monnaie
             </h1>
-            <p className="text-base-content/60 text-sm">
-              {client?.name || 'Client'} - {client?.code || 'N/A'}
+            <p className="text-base-content/60 text-sm flex items-center gap-2">
+              {client?.name ? (
+                <>
+                  <span className="font-medium text-base-content">{client.name}</span>
+                  <span className="text-base-content/40">-</span>
+                  <span className="font-mono">{client.code}</span>
+                </>
+              ) : (
+                'Client non associé'
+              )}
             </p>
           </div>
         </div>
@@ -317,11 +396,18 @@ const WalletDetail = () => {
             <Plus className="w-4 h-4" />
             Déposer
           </Link>
+          <Link
+            to={`/wallets/${id}/pay`}
+            className="btn btn-primary btn-sm gap-2"
+          >
+            <CreditCard className="w-4 h-4" />
+            Payer
+          </Link>
         </div>
       </div>
 
       {/* Informations du wallet */}
-      {wallet && client && (
+      {wallet && (
         <>
           {/* Carte principale */}
           <div className="bg-gradient-to-r from-primary/10 via-primary/5 to-base-100 rounded-xl shadow-lg border border-primary/20 overflow-hidden">
@@ -330,41 +416,43 @@ const WalletDetail = () => {
                 {/* Client info */}
                 <div className="flex items-center gap-4">
                   <div className="w-16 h-16 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-2xl flex-shrink-0">
-                    {client.name?.charAt(0) || '?'}
+                    {client?.name?.charAt(0) || '?'}
                   </div>
                   <div>
-                    <h2 className="text-xl font-bold">{client.name}</h2>
+                    <h2 className="text-xl font-bold">{client?.name || 'Aucun client'}</h2>
                     <div className="flex flex-wrap gap-3 text-sm text-base-content/60">
-                      <span className="font-mono bg-base-200 px-2 py-0.5 rounded flex items-center gap-1">
-                        {client.code}
-                        <button
-                          onClick={() => copyToClipboard(client.code)}
-                          className="hover:text-primary transition-colors"
-                          title="Copier le code"
-                        >
-                          {copied ? (
-                            <Check className="w-3 h-3 text-success" />
-                          ) : (
-                            <Copy className="w-3 h-3" />
-                          )}
-                        </button>
-                      </span>
-                      {client.phone && (
+                      {client?.code && (
+                        <span className="font-mono bg-base-200 px-2 py-0.5 rounded flex items-center gap-1">
+                          {client.code}
+                          <button
+                            onClick={() => copyToClipboard(client.code)}
+                            className="hover:text-primary transition-colors"
+                            title="Copier le code"
+                          >
+                            {copied ? (
+                              <Check className="w-3 h-3 text-success" />
+                            ) : (
+                              <Copy className="w-3 h-3" />
+                            )}
+                          </button>
+                        </span>
+                      )}
+                      {client?.phone && (
                         <span className="flex items-center gap-1">
                           <Phone className="w-3 h-3" />
                           {client.phone}
                         </span>
                       )}
-                      {client.type && (
+                      {client?.type && (
                         <span className="flex items-center gap-1">
                           <Building2 className="w-3 h-3" />
                           {client.type}
                         </span>
                       )}
-                      {client.address && (
-                        <span className="flex items-center gap-1">
-                          <Mail className="w-3 h-3" />
-                          {client.address}
+                      {!client && (
+                        <span className="text-warning flex items-center gap-1">
+                          <AlertCircle className="w-3 h-3" />
+                          Aucun client associé
                         </span>
                       )}
                     </div>
