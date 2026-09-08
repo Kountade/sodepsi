@@ -1,7 +1,6 @@
 // src/pages/wallets/WalletsList.jsx
 // ============================================================
-// PAGE PRINCIPALE DES PORTE-MONNAIE
-// - Utilise /wallet/list/ pour récupérer tous les wallets
+// PAGE PRINCIPALE DES PORTE-MONNAIE - AVEC BOUTON PAYER
 // ============================================================
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -24,9 +23,12 @@ import {
   CheckCircle,
   XCircle,
   Users,
-  UserPlus
+  UserPlus,
+  Building2,
+  CreditCard, // ✅ Ajouté pour l'icône de paiement
+  DollarSign // ✅ Ajouté pour l'icône de paiement
 } from 'lucide-react';
-import axiosInstance from '../../components/AxiosInstance';
+import axiosInstance from '../AxiosInstance';
 
 const WalletsList = () => {
   const navigate = useNavigate();
@@ -86,15 +88,17 @@ const WalletsList = () => {
         results = response.data;
       }
 
-      // Transformer les données pour inclure les infos client
+      // ✅ Transformer les données pour inclure les infos client
       for (const wallet of results) {
         const walletData = {
           ...wallet,
-          client: wallet.client || {
-            id: wallet.client_id,
+          client: {
+            id: wallet.client,
             name: wallet.client_name || 'Client inconnu',
             code: wallet.client_code || 'N/A',
-            phone: wallet.client_phone || 'N/A'
+            phone: wallet.client_phone || 'N/A',
+            type: wallet.client_type || 'Particulier',
+            statut: wallet.client_statut || 'actif'
           }
         };
         walletsData.push(walletData);
@@ -201,6 +205,29 @@ const WalletsList = () => {
       return { label: 'Solde nul', className: 'badge-warning' };
     }
     return { label: 'Actif', className: 'badge-success' };
+  };
+
+  // ✅ Fonction pour naviguer vers la page de paiement
+  const handlePayClick = (walletId, clientId, clientName) => {
+    // Navigation vers la page de paiement avec les paramètres
+    navigate(`/wallets/${walletId}/pay`, {
+      state: {
+        walletId: walletId,
+        clientId: clientId,
+        clientName: clientName
+      }
+    });
+  };
+
+  // ✅ Fonction pour naviguer vers la page de dépôt
+  const handleDepositClick = (walletId, clientId, clientName) => {
+    navigate(`/wallets/${walletId}/deposit`, {
+      state: {
+        walletId: walletId,
+        clientId: clientId,
+        clientName: clientName
+      }
+    });
   };
 
   if (loading) {
@@ -425,6 +452,12 @@ const WalletsList = () => {
                             <Phone className="w-3 h-3" />
                             {wallet.client?.phone || 'N/A'}
                           </p>
+                          {wallet.client?.type && (
+                            <span className="text-xs text-base-content/40 flex items-center gap-1">
+                              <Building2 className="w-3 h-3" />
+                              {wallet.client.type}
+                            </span>
+                          )}
                         </div>
                       </div>
                     </td>
@@ -451,6 +484,7 @@ const WalletsList = () => {
                     </td>
                     <td className="px-4 py-3 text-center">
                       <div className="flex items-center justify-center gap-1">
+                        {/* ✅ Bouton Voir */}
                         <Link
                           to={`/wallets/${wallet.id}`}
                           className="btn btn-ghost btn-xs btn-square"
@@ -458,17 +492,39 @@ const WalletsList = () => {
                         >
                           <Eye className="w-4 h-4" />
                         </Link>
-                        <Link
-                          to={`/wallets/${wallet.id}/deposit`}
+
+                        {/* ✅ Bouton Déposer - MODIFIÉ pour utiliser handleDepositClick */}
+                        <button
+                          onClick={() => handleDepositClick(
+                            wallet.id, 
+                            wallet.client?.id, 
+                            wallet.client?.name
+                          )}
                           className="btn btn-success btn-xs btn-square"
-                          title="Déposer"
+                          title="Déposer de l'argent"
                         >
                           <Plus className="w-4 h-4" />
-                        </Link>
+                        </button>
+
+                        {/* ✅ NOUVEAU BOUTON PAYER */}
+                        <button
+                          onClick={() => handlePayClick(
+                            wallet.id, 
+                            wallet.client?.id, 
+                            wallet.client?.name
+                          )}
+                          className="btn btn-primary btn-xs btn-square"
+                          title="Payer une facture"
+                          disabled={!wallet.client || wallet.balance <= 0}
+                        >
+                          <CreditCard className="w-4 h-4" />
+                        </button>
+
+                        {/* ✅ Bouton Historique */}
                         <Link
                           to={`/wallets/${wallet.id}/transactions`}
                           className="btn btn-info btn-xs btn-square"
-                          title="Historique"
+                          title="Historique des transactions"
                         >
                           <History className="w-4 h-4" />
                         </Link>
@@ -481,6 +537,26 @@ const WalletsList = () => {
           </table>
         </div>
       )}
+
+      {/* ✅ Footer avec légende des actions */}
+      <div className="flex flex-wrap gap-4 justify-center text-xs text-base-content/40 px-4">
+        <div className="flex items-center gap-1">
+          <Eye className="w-3 h-3" />
+          <span>Voir</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <Plus className="w-3 h-3 text-success" />
+          <span>Déposer</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <CreditCard className="w-3 h-3 text-primary" />
+          <span>Payer</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <History className="w-3 h-3 text-info" />
+          <span>Historique</span>
+        </div>
+      </div>
     </div>
   );
 };

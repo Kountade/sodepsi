@@ -1,47 +1,48 @@
 // src/pages/wallets/WalletDeposit.jsx
+// ============================================================
+// PAGE DE DÉPÔT DANS LE PORTE-MONNAIE - CORRIGÉE
+// ============================================================
 
-import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate, useParams, Link } from 'react-router-dom';
 import {
   ArrowLeft,
   Wallet,
-  Banknote,
-  CreditCard,
-  Smartphone,
+  User,
+  Phone,
   Loader2,
   AlertCircle,
   CheckCircle,
-  User,
-  Calendar,
   Plus,
-  Building2,
-  Phone,
-  Mail,
-  MapPin
+  RefreshCw,
+  CreditCard,
+  X,
+  TrendingUp,
+  Users,
+  Banknote,
+  Clock
 } from 'lucide-react';
 import axiosInstance from '../../components/AxiosInstance';
 
 const WalletDeposit = () => {
-  const { id } = useParams();
   const navigate = useNavigate();
-  const [loading, setLoading] = useState(false);
-  const [walletLoading, setWalletLoading] = useState(true);
-  const [success, setSuccess] = useState(false);
-  const [error, setError] = useState('');
+  const { id } = useParams();
+  
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
   const [wallet, setWallet] = useState(null);
   const [client, setClient] = useState(null);
-  const [formData, setFormData] = useState({
-    amount: '',
-    payment_method: 'cash',
-    notes: ''
-  });
+  const [amount, setAmount] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState('cash');
+  const [notes, setNotes] = useState('');
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState(false);
+  const [depositResult, setDepositResult] = useState(null);
 
-  useEffect(() => {
-    fetchWallet();
-  }, [id]);
-
-  const fetchWallet = async () => {
-    setWalletLoading(true);
+  // Charger les informations du wallet
+  const fetchWallet = useCallback(async () => {
+    setLoading(true);
+    setError('');
     try {
       const token = localStorage.getItem('Token');
       if (!token) {
@@ -49,91 +50,147 @@ const WalletDeposit = () => {
         return;
       }
 
-      const response = await axiosInstance.get(`/clients/${id}/wallet/`, {
-        headers: { Authorization: `Token ${token}` }
-      });
+      const headers = { Authorization: `Token ${token}` };
 
-      if (response.data) {
-        setWallet(response.data);
-        setClient(response.data.client);
+      // ✅ Récupérer le wallet via /wallet/{id}/client_wallet/
+      const response = await axiosInstance.get(
+        `/wallet/${id}/client_wallet/`,
+        { headers }
+      );
+      
+      console.log('📋 Réponse wallet:', response.data);
+
+      if (response.data && response.data.wallet) {
+        const walletData = response.data.wallet;
+        setWallet(walletData);
+        
+        // Récupérer les infos du client
+        if (walletData.client) {
+          setClient(walletData.client);
+        } else if (walletData.client_id) {
+          try {
+            const clientResponse = await axiosInstance.get(
+              `/clients/${walletData.client_id}/`,
+              { headers }
+            );
+            setClient(clientResponse.data);
+          } catch (clientError) {
+            console.warn('Erreur chargement client:', clientError);
+          }
+        }
+      } else {
+        setError('Porte-monnaie non trouvé');
       }
+
     } catch (error) {
-      console.error('Erreur chargement wallet:', error);
+      console.error('❌ Erreur chargement wallet:', error);
       if (error.response?.status === 404) {
         setError('Porte-monnaie non trouvé');
+      } else if (error.response?.status === 403) {
+        setError('Accès non autorisé. Vous devez être administrateur.');
+      } else if (error.response?.status === 401) {
+        setError('Session expirée');
+        setTimeout(() => navigate('/login'), 2000);
       } else {
-        setError('Erreur lors du chargement des données');
+        setError('Erreur lors du chargement du porte-monnaie');
       }
     } finally {
-      setWalletLoading(false);
+      setLoading(false);
     }
-  };
+  }, [id, navigate]);
 
-  const paymentMethods = [
-    { value: 'cash', label: 'Espèces', icon: Banknote, color: 'success' },
-    { value: 'card', label: 'Carte bancaire', icon: CreditCard, color: 'primary' },
-    { value: 'mobile_money', label: 'Mobile Money', icon: Smartphone, color: 'info' },
-    { value: 'transfer', label: 'Virement', icon: Building2, color: 'secondary' }
-  ];
+  useEffect(() => {
+    fetchWallet();
+  }, [fetchWallet]);
 
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
-    setError('');
-  };
-
-  const handleSubmit = async (e) => {
+  // Soumettre le dépôt
+  const handleDeposit = async (e) => {
     e.preventDefault();
-    setError('');
-
-    const amount = parseFloat(formData.amount);
-    if (!amount || amount <= 0) {
+    
+    if (!amount || parseFloat(amount) <= 0) {
       setError('Veuillez saisir un montant valide');
       return;
     }
 
-    if (amount < 100) {
-      setError('Le montant minimum est de 100 FCFA');
-      return;
-    }
-
-    if (amount > 10000000) {
-      setError('Le montant maximum est de 10 000 000 FCFA');
-      return;
-    }
-
-    setLoading(true);
+    setSubmitting(true);
+    setError('');
 
     try {
       const token = localStorage.getItem('Token');
+      if (!token) {
+        navigate('/login');
+        return;
+      }
+
+      const headers = { Authorization: `Token ${token}` };
+
+      // ✅ Corps de la requête avec wallet_id
+      const depositData = {
+        wallet_id: parseInt(id),  // ✅ ID du wallet depuis l'URL
+        amount: parseFloat(amount),
+        payment_method: paymentMethod,
+        notes: notes || `Dépôt de ${parseFloat(amount).toLocaleString()} FCFA en ${paymentMethod}`
+      };
+
+      console.log('📤 Envoi du dépôt:', depositData);
+
+      // ✅ Effectuer le dépôt
       const response = await axiosInstance.post(
-        `/clients/${id}/wallet/deposit/`,
-        {
-          amount: amount,
-          payment_method: formData.payment_method,
-          notes: formData.notes || `Dépôt de ${amount} FCFA pour ${client?.name}`
-        },
-        {
-          headers: { Authorization: `Token ${token}` }
-        }
+        `/wallet/deposit/`,
+        depositData,
+        { headers }
       );
+
+      console.log('📋 Réponse dépôt:', response.data);
 
       if (response.data.status === 'success') {
         setSuccess(true);
-        setTimeout(() => {
-          navigate(`/wallets/${id}`);
-        }, 3000);
+        setDepositResult({
+          amount: parseFloat(amount),
+          new_balance: response.data.new_balance,
+          balance_display: response.data.balance_display,
+          message: response.data.message
+        });
+        // Mettre à jour le wallet local
+        setWallet(prev => ({
+          ...prev,
+          balance: response.data.new_balance
+        }));
+      } else {
+        setError(response.data.message || 'Erreur lors du dépôt');
       }
 
     } catch (error) {
-      console.error('Erreur dépôt:', error);
-      setError(
-        error.response?.data?.error ||
-        error.response?.data?.message ||
-        'Une erreur est survenue lors du dépôt'
-      );
+      console.error('❌ Erreur dépôt:', error);
+      
+      // Analyse détaillée de l'erreur
+      if (error.response) {
+        console.error('📄 Réponse erreur:', error.response.data);
+        console.error('📄 Status:', error.response.status);
+        
+        if (error.response.status === 403) {
+          setError('Vous n\'avez pas les droits pour effectuer un dépôt sur ce wallet');
+        } else if (error.response.status === 401) {
+          setError('Session expirée');
+          setTimeout(() => navigate('/login'), 2000);
+        } else if (error.response.status === 404) {
+          setError('Wallet non trouvé');
+        } else if (error.response.data?.error) {
+          setError(error.response.data.error);
+        } else if (error.response.data?.detail) {
+          setError(error.response.data.detail);
+        } else if (error.response.data?.message) {
+          setError(error.response.data.message);
+        } else {
+          setError('Erreur lors du dépôt');
+        }
+      } else if (error.request) {
+        setError('Impossible de contacter le serveur. Vérifiez votre connexion.');
+      } else {
+        setError('Erreur inattendue');
+      }
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   };
 
@@ -147,16 +204,24 @@ const WalletDeposit = () => {
     }).format(amount);
   };
 
-  const formatDate = (dateString) => {
-    if (!dateString) return 'N/A';
-    return new Date(dateString).toLocaleDateString('fr-FR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric'
-    });
+  const getStatusBadge = (walletData) => {
+    if (walletData?.is_active === false) {
+      return { label: 'Inactif', className: 'badge-error' };
+    }
+    if ((walletData?.balance || 0) <= 0) {
+      return { label: 'Solde nul', className: 'badge-warning' };
+    }
+    return { label: 'Actif', className: 'badge-success' };
   };
 
-  if (walletLoading) {
+  const paymentMethods = [
+    { value: 'cash', label: 'Espèces', icon: Banknote },
+    { value: 'card', label: 'Carte bancaire', icon: CreditCard },
+    { value: 'transfer', label: 'Virement', icon: Users },
+    { value: 'mobile_money', label: 'Mobile Money', icon: Phone },
+  ];
+
+  if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="text-center">
@@ -169,52 +234,74 @@ const WalletDeposit = () => {
 
   if (error && !wallet) {
     return (
-      <div className="max-w-md mx-auto mt-12">
-        <div className="bg-base-100 rounded-xl shadow-lg border border-base-200 p-8 text-center">
-          <AlertCircle className="w-16 h-16 text-error mx-auto" />
-          <p className="text-error font-semibold mt-4">{error}</p>
-          <Link to="/wallets" className="btn btn-primary btn-sm mt-4">
-            Retour à la liste
-          </Link>
+      <div className="w-full px-4 sm:px-6 py-6">
+        <div className="bg-error/10 border border-error/20 text-error rounded-lg p-6 text-center max-w-2xl mx-auto">
+          <AlertCircle className="w-16 h-16 mx-auto mb-4" />
+          <p className="text-lg font-semibold">{error}</p>
+          <p className="text-sm mt-2 text-base-content/60">
+            Vérifiez que le porte-monnaie existe et que vous avez les droits d'accès.
+          </p>
+          <div className="mt-4 flex flex-col sm:flex-row gap-3 justify-center">
+            <button
+              onClick={fetchWallet}
+              className="btn btn-primary gap-2"
+            >
+              <RefreshCw className="w-4 h-4" />
+              Réessayer
+            </button>
+            <Link
+              to="/wallets"
+              className="btn btn-ghost gap-2"
+            >
+              <ArrowLeft className="w-5 h-5" />
+              Retour à la liste
+            </Link>
+          </div>
         </div>
       </div>
     );
   }
 
-  if (success) {
+  if (success && depositResult) {
     return (
-      <div className="max-w-md mx-auto mt-12">
-        <div className="bg-base-100 rounded-xl shadow-lg border border-base-200 p-8 text-center">
+      <div className="w-full px-4 sm:px-6 py-6">
+        <div className="bg-base-100 rounded-xl shadow-lg border border-base-200 p-8 max-w-2xl mx-auto text-center">
           <div className="w-20 h-20 rounded-full bg-success/10 flex items-center justify-center mx-auto">
             <CheckCircle className="w-10 h-10 text-success" />
           </div>
-          <h2 className="text-xl font-bold mt-4">Dépôt effectué avec succès !</h2>
+          <h2 className="text-2xl font-bold mt-4">✅ Dépôt effectué avec succès !</h2>
           <p className="text-base-content/60 mt-2">
-            {formatAmount(parseFloat(formData.amount))} ajouté au porte-monnaie
+            {depositResult.message}
           </p>
-          <div className="bg-success/5 rounded-lg p-3 mt-3">
-            <p className="text-sm text-base-content/60">Nouveau solde</p>
-            <p className="text-2xl font-bold text-success">
-              {formatAmount((wallet?.balance || 0) + parseFloat(formData.amount))}
-            </p>
+          
+          <div className="bg-base-200 rounded-xl p-4 mt-4 text-left">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <p className="text-xs text-base-content/40">Montant déposé</p>
+                <p className="text-xl font-bold text-success">{formatAmount(depositResult.amount)}</p>
+              </div>
+              <div>
+                <p className="text-xs text-base-content/40">Nouveau solde</p>
+                <p className="text-xl font-bold text-primary">{depositResult.balance_display}</p>
+              </div>
+            </div>
           </div>
-          <div className="mt-6 flex flex-col sm:flex-row gap-2 justify-center">
-            <button
-              onClick={() => navigate(`/wallets/${id}`)}
-              className="btn btn-primary btn-sm"
+
+          <div className="mt-6 flex flex-col sm:flex-row gap-3 justify-center">
+            <Link
+              to={`/wallets/${id}`}
+              className="btn btn-primary gap-2"
             >
+              <Wallet className="w-4 h-4" />
               Voir le porte-monnaie
-            </button>
-            <button
-              onClick={() => {
-                setSuccess(false);
-                setFormData({ amount: '', payment_method: 'cash', notes: '' });
-                fetchWallet();
-              }}
-              className="btn btn-ghost btn-sm"
+            </Link>
+            <Link
+              to="/wallets"
+              className="btn btn-ghost gap-2"
             >
-              Nouveau dépôt
-            </button>
+              <ArrowLeft className="w-5 h-5" />
+              Retour à la liste
+            </Link>
           </div>
         </div>
       </div>
@@ -222,123 +309,160 @@ const WalletDeposit = () => {
   }
 
   return (
-    <div className="max-w-2xl mx-auto p-4">
-      {/* Bouton retour */}
-      <button
-        onClick={() => navigate(`/wallets/${id}`)}
-        className="flex items-center gap-2 text-base-content/60 hover:text-base-content transition-colors mb-6"
-      >
-        <ArrowLeft className="w-4 h-4" />
-        Retour au porte-monnaie
-      </button>
+    <div className="w-full px-4 sm:px-6 py-4 space-y-6">
+      
+      {/* En-tête */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <Link
+            to={`/wallets/${id}`}
+            className="p-2 rounded-lg hover:bg-base-200 transition-colors"
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </Link>
+          <div>
+            <h1 className="text-2xl font-bold flex items-center gap-2">
+              <Wallet className="w-7 h-7 text-primary" />
+              Déposer de l'argent
+            </h1>
+            <p className="text-base-content/60 text-sm">
+              {client?.name ? `Client: ${client.name}` : 'Chargement...'}
+            </p>
+          </div>
+        </div>
+        <button
+          onClick={fetchWallet}
+          className="btn btn-ghost btn-sm gap-2"
+          disabled={loading}
+        >
+          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          Actualiser
+        </button>
+      </div>
 
-      <div className="bg-base-100 rounded-xl shadow-lg border border-base-200 overflow-hidden">
-        {/* En-tête avec infos client */}
-        <div className="bg-gradient-to-r from-primary to-primary/80 p-6 text-primary-content">
-          <div className="flex items-center gap-4">
-            <div className="w-16 h-16 rounded-full bg-primary-content/20 flex items-center justify-center text-2xl font-bold">
-              {client?.name?.charAt(0) || '?'}
-            </div>
-            <div className="flex-1">
-              <h2 className="text-xl font-bold">{client?.name || 'Client inconnu'}</h2>
-              <div className="flex flex-wrap gap-3 text-primary-content/80 text-sm mt-1">
-                <span className="flex items-center gap-1">
-                  <User className="w-3 h-3" />
-                  {client?.code || 'N/A'}
-                </span>
-                <span className="flex items-center gap-1">
-                  <Phone className="w-3 h-3" />
-                  {client?.phone || 'N/A'}
-                </span>
-                {client?.email && (
-                  <span className="flex items-center gap-1">
-                    <Mail className="w-3 h-3" />
-                    {client.email}
-                  </span>
-                )}
+      {/* Informations du wallet */}
+      {wallet && client && (
+        <div className="bg-base-100 rounded-xl shadow-sm border border-base-200 overflow-hidden">
+          <div className="p-4 sm:p-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-lg flex-shrink-0">
+                  {client.name?.charAt(0) || '?'}
+                </div>
+                <div>
+                  <p className="font-semibold text-lg">{client.name}</p>
+                  <div className="flex flex-wrap gap-3 text-sm text-base-content/60">
+                    <span className="font-mono bg-base-200 px-2 py-0.5 rounded">
+                      {client.code}
+                    </span>
+                    {client.phone && (
+                      <span className="flex items-center gap-1">
+                        <Phone className="w-3 h-3" />
+                        {client.phone}
+                      </span>
+                    )}
+                    {client.type && (
+                      <span className="capitalize">{client.type}</span>
+                    )}
+                  </div>
+                </div>
               </div>
-            </div>
-            <div className="text-right">
-              <p className="text-primary-content/60 text-xs">Solde actuel</p>
-              <p className="text-2xl font-bold">{formatAmount(wallet?.balance || 0)}</p>
+              <div className="flex items-center gap-4">
+                <div className="text-right">
+                  <p className="text-xs text-base-content/40">Solde actuel</p>
+                  <p className={`text-2xl font-bold ${(wallet.balance || 0) > 0 ? 'text-success' : 'text-base-content/40'}`}>
+                    {formatAmount(wallet.balance)}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-xs text-base-content/40">Statut</p>
+                  <span className={`badge ${getStatusBadge(wallet).className} badge-sm`}>
+                    {getStatusBadge(wallet).label}
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
+      )}
 
-        {/* Formulaire */}
+      {/* Formulaire de dépôt */}
+      <div className="bg-base-100 rounded-xl shadow-lg border border-base-200 overflow-hidden">
         <div className="p-6">
+          <h3 className="text-lg font-semibold flex items-center gap-2 mb-4">
+            <TrendingUp className="w-5 h-5 text-primary" />
+            Informations du dépôt
+          </h3>
+
           {error && (
-            <div className="bg-error/10 border border-error/20 text-error rounded-lg p-3 mb-4 flex items-start gap-2">
-              <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
-              <p className="text-sm">{error}</p>
+            <div className="bg-error/10 border border-error/20 text-error rounded-lg p-3 mb-4">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-medium">Erreur</p>
+                  <p className="text-sm">{error}</p>
+                </div>
+              </div>
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-6">
+          <form onSubmit={handleDeposit} className="space-y-4">
             {/* Montant */}
             <div>
               <label className="block text-sm font-medium text-base-content/80 mb-2">
-                Montant à déposer <span className="text-error">*</span>
+                Montant <span className="text-error">*</span>
               </label>
               <div className="relative">
-                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-base-content/40 font-medium">
-                  FCFA
-                </span>
+                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-base-content/40">
+                  <span className="font-bold text-sm">FCFA</span>
+                </div>
                 <input
                   type="number"
-                  name="amount"
-                  value={formData.amount}
-                  onChange={handleChange}
-                  placeholder="0"
-                  min="100"
-                  max="10000000"
-                  step="100"
-                  className="input input-bordered w-full pl-20 text-2xl font-bold h-14"
-                  disabled={loading}
+                  step="1"
+                  min="1"
+                  placeholder="Saisir le montant"
+                  value={amount}
+                  onChange={(e) => {
+                    setAmount(e.target.value);
+                    setError('');
+                  }}
+                  className="input input-bordered w-full pl-16 text-lg font-semibold"
                   required
-                  autoFocus
                 />
               </div>
-              <div className="flex justify-between mt-1">
-                <p className="text-xs text-base-content/40">
-                  Min: 100 FCFA • Max: 10 000 000 FCFA
-                </p>
-                <p className="text-xs text-base-content/40">
-                  Nouveau solde: <span className="font-semibold text-success">
-                    {formatAmount((wallet?.balance || 0) + (parseFloat(formData.amount) || 0))}
-                  </span>
-                </p>
-              </div>
+              <p className="text-xs text-base-content/40 mt-1">
+                Montant minimum : 1 FCFA
+              </p>
             </div>
 
-            {/* Méthode de paiement */}
+            {/* Mode de paiement */}
             <div>
               <label className="block text-sm font-medium text-base-content/80 mb-2">
-                Moyen de paiement <span className="text-error">*</span>
+                Mode de paiement <span className="text-error">*</span>
               </label>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {paymentMethods.map((method) => {
                   const Icon = method.icon;
-                  const isSelected = formData.payment_method === method.value;
+                  const isSelected = paymentMethod === method.value;
                   return (
                     <button
                       key={method.value}
                       type="button"
-                      onClick={() => setFormData(prev => ({ ...prev, payment_method: method.value }))}
+                      onClick={() => setPaymentMethod(method.value)}
                       className={`
-                        flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all
+                        flex flex-col items-center justify-center gap-2 p-3 rounded-xl border-2 transition-all
                         ${isSelected 
-                          ? `border-${method.color} bg-${method.color}/5 text-${method.color}`
-                          : 'border-base-200 hover:border-base-300 text-base-content/60'
+                          ? 'border-primary bg-primary/5 text-primary' 
+                          : 'border-base-200 hover:border-base-300 bg-base-100'
                         }
-                        ${loading ? 'opacity-50 cursor-not-allowed' : ''}
                       `}
-                      disabled={loading}
                     >
-                      <Icon className={`w-6 h-6 ${isSelected ? `text-${method.color}` : ''}`} />
-                      <span className="text-xs font-medium">{method.label}</span>
+                      <Icon className={`w-6 h-6 ${isSelected ? 'text-primary' : 'text-base-content/40'}`} />
+                      <span className={`text-xs font-medium ${isSelected ? 'text-primary' : 'text-base-content/60'}`}>
+                        {method.label}
+                      </span>
                       {isSelected && (
-                        <div className="w-2 h-2 rounded-full bg-success"></div>
+                        <div className="w-2 h-2 rounded-full bg-primary"></div>
                       )}
                     </button>
                   );
@@ -349,59 +473,93 @@ const WalletDeposit = () => {
             {/* Notes */}
             <div>
               <label className="block text-sm font-medium text-base-content/80 mb-2">
-                Notes (optionnel)
+                Notes
               </label>
               <textarea
-                name="notes"
-                value={formData.notes}
-                onChange={handleChange}
-                placeholder="Ajouter une note (motif du dépôt, référence, etc.)..."
-                className="textarea textarea-bordered w-full resize-none h-20"
-                disabled={loading}
+                placeholder="Ajouter une note (optionnel)"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                className="textarea textarea-bordered w-full h-20 resize-none"
               />
             </div>
 
             {/* Résumé */}
-            <div className="bg-base-200 rounded-xl p-4 space-y-2">
-              <div className="flex justify-between text-sm">
-                <span className="text-base-content/60">Montant à déposer</span>
-                <span className="font-bold text-lg text-success">
-                  {formatAmount(parseFloat(formData.amount) || 0)}
-                </span>
+            {amount && parseFloat(amount) > 0 && wallet && (
+              <div className="bg-primary/5 border border-primary/20 rounded-xl p-4">
+                <h4 className="font-semibold text-sm flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-primary" />
+                  Résumé du dépôt
+                </h4>
+                <div className="grid grid-cols-2 gap-4 mt-3">
+                  <div>
+                    <p className="text-xs text-base-content/40">Montant</p>
+                    <p className="font-bold text-success">{formatAmount(parseFloat(amount))}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-base-content/40">Mode</p>
+                    <p className="font-medium">{paymentMethods.find(m => m.value === paymentMethod)?.label || paymentMethod}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-base-content/40">Nouveau solde</p>
+                    <p className="font-bold text-primary">
+                      {formatAmount((wallet?.balance || 0) + parseFloat(amount))}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-base-content/40">Client</p>
+                    <p className="font-medium truncate">{client?.name || 'N/A'}</p>
+                  </div>
+                </div>
               </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-base-content/60">Moyen de paiement</span>
-                <span className="font-medium">
-                  {paymentMethods.find(m => m.value === formData.payment_method)?.label || '-'}
-                </span>
-              </div>
-              <div className="flex justify-between text-sm pt-2 border-t border-base-300">
-                <span className="text-base-content/60">Nouveau solde</span>
-                <span className="font-bold text-lg text-success">
-                  {formatAmount((wallet?.balance || 0) + (parseFloat(formData.amount) || 0))}
-                </span>
-              </div>
-            </div>
+            )}
 
-            {/* Bouton submit */}
-            <button
-              type="submit"
-              className="btn btn-success w-full gap-2 h-12 text-base font-medium"
-              disabled={loading || !formData.amount || parseFloat(formData.amount) < 100}
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  Traitement en cours...
-                </>
-              ) : (
-                <>
-                  <Plus className="w-5 h-5" />
-                  Déposer {formatAmount(parseFloat(formData.amount) || 0)}
-                </>
-              )}
-            </button>
+            {/* Boutons */}
+            <div className="flex flex-col sm:flex-row gap-3 pt-4 border-t border-base-200">
+              <button
+                type="submit"
+                disabled={!amount || parseFloat(amount) <= 0 || submitting}
+                className={`
+                  btn w-full sm:flex-1 h-12 text-base font-medium gap-2
+                  ${!amount || parseFloat(amount) <= 0 
+                    ? 'btn-disabled' 
+                    : 'btn-success'
+                  }
+                `}
+              >
+                {submitting ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    Traitement...
+                  </>
+                ) : (
+                  <>
+                    <Plus className="w-5 h-5" />
+                    Effectuer le dépôt
+                  </>
+                )}
+              </button>
+              <Link
+                to={`/wallets/${id}`}
+                className="btn btn-ghost w-full sm:flex-1 h-12 text-base gap-2"
+              >
+                <X className="w-5 h-5" />
+                Annuler
+              </Link>
+            </div>
           </form>
+
+          {/* Informations supplémentaires */}
+          <div className="mt-4 text-center text-xs text-base-content/40 border-t border-base-200 pt-4">
+            <p>Le dépôt sera crédité immédiatement sur le porte-monnaie du client</p>
+            <p>Un mouvement de trésorerie sera automatiquement créé</p>
+          </div>
+
+          {/* Debug info (retirer en production) */}
+          <div className="mt-4 p-3 bg-base-200 rounded-lg text-xs text-base-content/40">
+            <p>🔧 Debug: wallet_id = {id}</p>
+            <p>🔧 URL: /wallet/deposit/</p>
+            <p>🔧 Data: wallet_id={id}, amount={amount || '...'}</p>
+          </div>
         </div>
       </div>
     </div>

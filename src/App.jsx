@@ -135,6 +135,9 @@ import PosScanSimple from './components/ventesclients/PosScanSimple';
 
 import WalletsList from './components/Wallets/WalletsList';
 import WalletForm from './components/Wallets/WalletForm';
+import WalletDeposit from './components/Wallets/WalletDeposit';
+import WalletDetail from './components/Wallets/WalletDetail';
+import WalletPay from './components/Wallets/WalletPay';
 
 
 
@@ -354,13 +357,17 @@ function App() {
 
 <Route path="/wallets" element={<WalletsList />} />
 <Route path="/wallets/nouveau" element={<WalletForm />} />
+ <Route path="/wallets/:id/deposit" element={<WalletDeposit />} />
+ <Route path="/wallets/:id" element={<WalletDetail />} />
+ <Route path="/wallets/:walletId/pay" element={<WalletPay />} />
+  
 {/* Porte-monnaie clients 
   
-  <Route path="/wallets/:id" element={<WalletDetail />} />
-  <Route path="/wallets/:id/deposit" element={<WalletDeposit />} />
+  
+ 
   <Route path="/wallets/:id/transactions" element={<WalletTransactions />} />
-  <Route path="/wallets/:id/pay" element={<WalletPay />} />  */}
-
+ 
+ */}
 
 
 

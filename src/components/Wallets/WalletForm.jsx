@@ -25,7 +25,7 @@ import {
   Users,
   XCircle
 } from 'lucide-react';
-import axiosInstance from '../../components/AxiosInstance';
+import axiosInstance from '../AxiosInstance';
 
 const WalletForm = () => {
   const navigate = useNavigate();
