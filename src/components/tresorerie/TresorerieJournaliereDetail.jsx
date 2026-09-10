@@ -4,7 +4,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import AxiosInstance from '../AxiosInstance';
 import {
   ArrowLeft, Calendar, DollarSign, TrendingUp, TrendingDown,
-  RefreshCw, FileText, AlertCircle, CheckCircle, X
+  RefreshCw, FileText, AlertCircle, CheckCircle, X,
+  Receipt, Wallet, Landmark, User, Tag, CreditCard
 } from 'lucide-react';
 import { downloadTresorerieJournalPdf } from './TresorerieJournalPdf';
 
@@ -35,7 +36,6 @@ const TresorerieJournaliereDetail = () => {
       });
       setData(response.data);
 
-      // Récupérer le nom de l'entrepôt
       try {
         const whResponse = await AxiosInstance.get(`/warehouses/${response.data.warehouse}/`, {
           headers: { 'Authorization': `Token ${token}` }
@@ -54,9 +54,7 @@ const TresorerieJournaliereDetail = () => {
   };
 
   useEffect(() => {
-    if (id) {
-      fetchDetail();
-    }
+    if (id) fetchDetail();
   }, [id]);
 
   const handleExportPdf = async () => {
@@ -64,7 +62,6 @@ const TresorerieJournaliereDetail = () => {
       showNotification('Aucune donnée à exporter', 'error');
       return;
     }
-    
     setPdfLoading(true);
     try {
       await downloadTresorerieJournalPdf(
@@ -117,6 +114,10 @@ const TresorerieJournaliereDetail = () => {
       </div>
     );
   }
+
+  const fraisDetails = data.frais_details || [];
+  const entreesDetails = data.entrees_details || [];
+  const sortiesDetails = data.sorties_details || [];
 
   return (
     <div className="space-y-4 sm:space-y-6 p-4 sm:p-6 bg-gray-50 min-h-screen">
@@ -217,7 +218,7 @@ const TresorerieJournaliereDetail = () => {
         </div>
       </div>
 
-      {/* Détail des flux */}
+      {/* Détail des flux - résumé */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white shadow-md rounded-xl p-5">
           <h2 className="text-lg font-bold text-success mb-4 flex items-center gap-2">
@@ -270,6 +271,191 @@ const TresorerieJournaliereDetail = () => {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* ==================== DÉTAIL DES FRAIS ==================== */}
+      <div className="bg-white shadow-md rounded-xl overflow-hidden">
+        <div className="bg-error/5 px-5 py-3 border-b border-error/20">
+          <h2 className="text-lg font-bold text-error flex items-center gap-2">
+            <Receipt className="w-5 h-5" /> Détail des frais ({fraisDetails.length})
+          </h2>
+        </div>
+        {fraisDetails.length === 0 ? (
+          <div className="p-6 text-center text-gray-400">
+            <Receipt className="w-12 h-12 mx-auto mb-2 opacity-30" />
+            <p>Aucun frais enregistré ce jour</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="table table-zebra w-full text-sm">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th>Réf. Frais</th>
+                  <th>Mouvement</th>
+                  <th>Titre / Libellé</th>
+                  <th>Catégorie</th>
+                  <th>Bénéficiaire</th>
+                  <th>Mode</th>
+                  <th className="text-right">Montant</th>
+                  <th>Pièce</th>
+                </tr>
+              </thead>
+              <tbody>
+                {fraisDetails.map((f, idx) => (
+                  <tr key={idx} className="hover">
+                    <td className="font-mono text-xs">{f.source_reference}</td>
+                    <td className="font-mono text-xs">{f.mouvement_reference}</td>
+                    <td className="font-medium">{f.titre || f.libelle}</td>
+                    <td>
+                      {f.categorie ? (
+                        <span className="badge badge-ghost badge-sm gap-1">
+                          <Tag className="w-3 h-3" /> {f.categorie}
+                        </span>
+                      ) : '-'}
+                    </td>
+                    <td>
+                      {f.beneficiaire ? (
+                        <span className="flex items-center gap-1 text-xs">
+                          <User className="w-3 h-3" /> {f.beneficiaire}
+                        </span>
+                      ) : '-'}
+                    </td>
+                    <td className="text-xs">
+                      <span className="badge badge-outline badge-sm gap-1">
+                        <CreditCard className="w-3 h-3" /> {f.mode_paiement}
+                      </span>
+                    </td>
+                    <td className="text-right font-bold text-error">
+                      {formatNumber(f.montant)}
+                    </td>
+                    <td className="text-xs text-gray-500">{f.piece_justificative || '-'}</td>
+                  </tr>
+                ))}
+                <tr className="bg-error/10 font-bold">
+                  <td colSpan="6" className="text-right">TOTAL FRAIS</td>
+                  <td className="text-right text-error">{formatNumber(data.sorties_frais)}</td>
+                  <td></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* ==================== DÉTAIL DES ENTRÉES ==================== */}
+      <div className="bg-white shadow-md rounded-xl overflow-hidden">
+        <div className="bg-success/5 px-5 py-3 border-b border-success/20">
+          <h2 className="text-lg font-bold text-success flex items-center gap-2">
+            <TrendingUp className="w-5 h-5" /> Détail des entrées ({entreesDetails.length})
+          </h2>
+        </div>
+        {entreesDetails.length === 0 ? (
+          <div className="p-6 text-center text-gray-400">
+            <TrendingUp className="w-12 h-12 mx-auto mb-2 opacity-30" />
+            <p>Aucune entrée enregistrée ce jour</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="table table-zebra w-full text-sm">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th>Référence</th>
+                  <th>Libellé</th>
+                  <th>Source</th>
+                  <th>Mode</th>
+                  <th>Destination</th>
+                  <th>Heure</th>
+                  <th className="text-right">Montant</th>
+                </tr>
+              </thead>
+              <tbody>
+                {entreesDetails.map((e, idx) => (
+                  <tr key={idx} className="hover">
+                    <td className="font-mono text-xs">{e.mouvement_reference}</td>
+                    <td className="font-medium">{e.libelle}</td>
+                    <td className="text-xs">{e.source_reference}</td>
+                    <td className="text-xs">
+                      <span className="badge badge-outline badge-sm">{e.mode_paiement}</span>
+                    </td>
+                    <td className="text-xs">
+                      {e.caisse && e.caisse !== '-' ? (
+                        <span className="flex items-center gap-1"><Wallet className="w-3 h-3" />{e.caisse}</span>
+                      ) : e.compte_bancaire && e.compte_bancaire !== '-' ? (
+                        <span className="flex items-center gap-1"><Landmark className="w-3 h-3" />{e.compte_bancaire}</span>
+                      ) : '-'}
+                    </td>
+                    <td className="text-xs text-gray-500">{e.date_mouvement?.split(' ')[1] || '-'}</td>
+                    <td className="text-right font-bold text-success">{formatNumber(e.montant)}</td>
+                  </tr>
+                ))}
+                <tr className="bg-success/10 font-bold">
+                  <td colSpan="6" className="text-right">TOTAL ENTRÉES</td>
+                  <td className="text-right text-success">{formatNumber(data.total_entrees)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* ==================== DÉTAIL DES SORTIES (hors frais) ==================== */}
+      <div className="bg-white shadow-md rounded-xl overflow-hidden">
+        <div className="bg-warning/5 px-5 py-3 border-b border-warning/20">
+          <h2 className="text-lg font-bold text-warning flex items-center gap-2">
+            <TrendingDown className="w-5 h-5" /> Détail des autres sorties ({sortiesDetails.length})
+          </h2>
+        </div>
+        {sortiesDetails.length === 0 ? (
+          <div className="p-6 text-center text-gray-400">
+            <TrendingDown className="w-12 h-12 mx-auto mb-2 opacity-30" />
+            <p>Aucune autre sortie ce jour</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="table table-zebra w-full text-sm">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th>Référence</th>
+                  <th>Libellé</th>
+                  <th>Type source</th>
+                  <th>Mode</th>
+                  <th>Source</th>
+                  <th>Heure</th>
+                  <th className="text-right">Montant</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sortiesDetails.map((s, idx) => (
+                  <tr key={idx} className="hover">
+                    <td className="font-mono text-xs">{s.mouvement_reference}</td>
+                    <td className="font-medium">{s.libelle}</td>
+                    <td className="text-xs">
+                      <span className="badge badge-ghost badge-sm">{s.source_type}</span>
+                    </td>
+                    <td className="text-xs">
+                      <span className="badge badge-outline badge-sm">{s.mode_paiement}</span>
+                    </td>
+                    <td className="text-xs">
+                      {s.caisse && s.caisse !== '-' ? (
+                        <span className="flex items-center gap-1"><Wallet className="w-3 h-3" />{s.caisse}</span>
+                      ) : s.compte_bancaire && s.compte_bancaire !== '-' ? (
+                        <span className="flex items-center gap-1"><Landmark className="w-3 h-3" />{s.compte_bancaire}</span>
+                      ) : '-'}
+                    </td>
+                    <td className="text-xs text-gray-500">{s.date_mouvement?.split(' ')[1] || '-'}</td>
+                    <td className="text-right font-bold text-error">{formatNumber(s.montant)}</td>
+                  </tr>
+                ))}
+                <tr className="bg-warning/10 font-bold">
+                  <td colSpan="6" className="text-right">TOTAL AUTRES SORTIES</td>
+                  <td className="text-right text-error">
+                    {formatNumber(sortiesDetails.reduce((acc, s) => acc + parseFloat(s.montant || 0), 0))}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* Métadonnées */}
