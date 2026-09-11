@@ -5,6 +5,8 @@
 // - Gestion robuste des erreurs
 // - Performance optimisée
 // - UI/UX améliorée
+// - Recherche client fonctionnelle dans le modal
+// - Lien vers /clients/nouveau pour créer un client
 // ============================================================
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
@@ -47,13 +49,16 @@ const PosForm = () => {
   const [itemsPerPage, setItemsPerPage] = useState(12);
   const [sortField, setSortField] = useState('name');
   const [sortDirection, setSortDirection] = useState('asc');
-  const [newCustomer, setNewCustomer] = useState({ first_name: '', last_name: '', phone: '', email: '' });
   const [priceType, setPriceType] = useState('detail');
   const [barcodeValue, setBarcodeValue] = useState('');
   const [isBarcodeFocused, setIsBarcodeFocused] = useState(false);
   const [editingQuantity, setEditingQuantity] = useState(null);
   const [quantityInput, setQuantityInput] = useState('');
   const [isInitialized, setIsInitialized] = useState(false);
+
+  // États pour la recherche client
+  const [customerSearchTerm, setCustomerSearchTerm] = useState('');
+  const [filteredCustomers, setFilteredCustomers] = useState([]);
 
   const getToken = () => localStorage.getItem('Token');
 
@@ -107,7 +112,11 @@ const PosForm = () => {
 
       setProducts(productsWithData);
       setCategories(categoriesRes.data || []);
-      setCustomers(customersRes.data || []);
+      
+      const customersData = customersRes.data || [];
+      setCustomers(customersData);
+      setFilteredCustomers(customersData);
+      
       setWarehouses(warehousesRes.data || []);
       
       if (warehousesRes.data && warehousesRes.data.length > 0) {
@@ -147,6 +156,22 @@ const PosForm = () => {
       }))
     );
   }, [priceType, isInitialized]);
+
+  // Filtrer les clients selon la recherche
+  useEffect(() => {
+    if (!customerSearchTerm.trim()) {
+      setFilteredCustomers(customers);
+    } else {
+      const term = customerSearchTerm.toLowerCase();
+      const filtered = customers.filter(c => 
+        c.name?.toLowerCase().includes(term) || 
+        c.phone?.includes(term) ||
+        c.email?.toLowerCase().includes(term) ||
+        c.code?.toLowerCase().includes(term)
+      );
+      setFilteredCustomers(filtered);
+    }
+  }, [customerSearchTerm, customers]);
 
   // ============================================================
   // 2. GESTION DU CODE-BARRES - SCAN MULTIPLE AUTORISE
@@ -534,44 +559,7 @@ const PosForm = () => {
   }, [cart, selectedWarehouse, selectedCustomer, navigate]);
 
   // ============================================================
-  // 7. GESTION DES CLIENTS
-  // ============================================================
-  const handleCreateCustomer = useCallback(async () => {
-    if (!newCustomer.first_name || !newCustomer.last_name) {
-      showNotification('Nom et prénom requis', 'error');
-      return;
-    }
-
-    try {
-      const token = getToken();
-      const response = await AxiosInstance.post('/clients/', {
-        code: `CL-${Date.now().toString().slice(-6)}`,
-        name: `${newCustomer.first_name} ${newCustomer.last_name}`,
-        first_name: newCustomer.first_name,
-        last_name: newCustomer.last_name,
-        phone: newCustomer.phone || '',
-        email: newCustomer.email || '',
-        address: '',
-        city: '',
-        type: 'particulier',
-        statut: 'actif'
-      }, {
-        headers: { 'Authorization': `Token ${token}` }
-      });
-
-      setCustomers(prev => [...prev, response.data]);
-      setSelectedCustomer(response.data);
-      setShowCustomerModal(false);
-      setNewCustomer({ first_name: '', last_name: '', phone: '', email: '' });
-      showNotification('Client créé avec succès', 'success');
-    } catch (error) {
-      console.error('Erreur création client:', error);
-      showNotification('Erreur lors de la création du client', 'error');
-    }
-  }, [newCustomer]);
-
-  // ============================================================
-  // 8. NOTIFICATION
+  // 7. NOTIFICATION
   // ============================================================
   const showNotification = useCallback((message, type = 'success') => {
     setNotification({ show: true, message, type });
@@ -582,7 +570,7 @@ const PosForm = () => {
   }, []);
 
   // ============================================================
-  // 9. FORMATAGE
+  // 8. FORMATAGE
   // ============================================================
   const formatPrice = useCallback((price) => {
     if (!price && price !== 0) return '0 FCFA';
@@ -619,7 +607,7 @@ const PosForm = () => {
   }, []);
 
   // ============================================================
-  // 10. RENDU
+  // 9. RENDU
   // ============================================================
   if (loading && !isInitialized) {
     return (
@@ -656,83 +644,126 @@ const PosForm = () => {
       {showCustomerModal && (
         <div className="modal modal-open">
           <div className="modal-box max-w-md">
-            <h3 className="font-bold text-lg mb-4">Sélectionner un client</h3>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-lg">Sélectionner un client</h3>
+              <button 
+                className="btn btn-ghost btn-sm btn-circle"
+                onClick={() => {
+                  setShowCustomerModal(false);
+                  setCustomerSearchTerm('');
+                }}
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
             
             <div className="form-control mb-3">
-              <label className="label label-text">Rechercher un client</label>
-              <input
-                type="text"
-                className="input input-bordered"
-                placeholder="Nom, téléphone..."
-                onChange={(e) => {
-                  const term = e.target.value.toLowerCase();
-                  const filtered = customers.filter(c => 
-                    c.name?.toLowerCase().includes(term) || 
-                    c.phone?.includes(term)
-                  );
-                  // On filtre visuellement via le DOM ou on peut mettre à jour un état
-                }}
-              />
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-base-content/40" />
+                <input
+                  type="text"
+                  className="input input-bordered w-full pl-10"
+                  placeholder="Rechercher par nom, téléphone, email..."
+                  value={customerSearchTerm}
+                  onChange={(e) => setCustomerSearchTerm(e.target.value)}
+                  autoFocus
+                />
+                {customerSearchTerm && (
+                  <button
+                    className="absolute right-3 top-1/2 -translate-y-1/2 btn btn-ghost btn-xs btn-circle"
+                    onClick={() => setCustomerSearchTerm('')}
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+              {customerSearchTerm && (
+                <label className="label">
+                  <span className="label-text-alt text-base-content/50">
+                    {filteredCustomers.length} résultat(s) trouvé(s)
+                  </span>
+                </label>
+              )}
             </div>
 
-            <div className="max-h-60 overflow-y-auto space-y-2 mb-4">
-              {customers.map(customer => (
-                <button
-                  key={customer.id}
-                  className="w-full text-left p-3 rounded-lg hover:bg-base-200 flex items-center gap-3 transition-colors"
-                  onClick={() => {
-                    setSelectedCustomer(customer);
-                    setShowCustomerModal(false);
-                    showNotification(`Client ${customer.name} sélectionné`, 'success');
-                  }}
-                >
-                  <User className="w-5 h-5 text-primary" />
-                  <div>
-                    <div className="font-medium">{customer.name}</div>
-                    <div className="text-xs text-base-content/60">{customer.phone}</div>
-                  </div>
-                </button>
-              ))}
+            <div className="max-h-72 overflow-y-auto space-y-2 mb-4">
+              {filteredCustomers.length === 0 ? (
+                <div className="text-center py-8 text-base-content/50">
+                  <User className="w-12 h-12 mx-auto mb-2 opacity-30" />
+                  <p className="text-sm">Aucun client trouvé</p>
+                  {customerSearchTerm && (
+                    <p className="text-xs mt-1">pour "{customerSearchTerm}"</p>
+                  )}
+                </div>
+              ) : (
+                filteredCustomers.map(customer => (
+                  <button
+                    key={customer.id}
+                    className={`w-full text-left p-3 rounded-lg hover:bg-base-200 flex items-center gap-3 transition-colors ${
+                      selectedCustomer?.id === customer.id ? 'bg-primary/10 border border-primary/30' : ''
+                    }`}
+                    onClick={() => {
+                      setSelectedCustomer(customer);
+                      setShowCustomerModal(false);
+                      setCustomerSearchTerm('');
+                      showNotification(`Client ${customer.name} sélectionné`, 'success');
+                    }}
+                  >
+                    <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                      <User className="w-5 h-5 text-primary" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium truncate">{customer.name}</div>
+                      <div className="text-xs text-base-content/60 truncate">
+                        {customer.phone || customer.email || 'Aucun contact'}
+                      </div>
+                    </div>
+                    {selectedCustomer?.id === customer.id && (
+                      <Check className="w-5 h-5 text-primary flex-shrink-0" />
+                    )}
+                  </button>
+                ))
+              )}
             </div>
 
-            <div className="divider">Créer un nouveau client</div>
-            
-            <div className="grid grid-cols-2 gap-2">
-              <input
-                type="text"
-                className="input input-bordered"
-                placeholder="Prénom"
-                value={newCustomer.first_name}
-                onChange={(e) => setNewCustomer({...newCustomer, first_name: e.target.value})}
-              />
-              <input
-                type="text"
-                className="input input-bordered"
-                placeholder="Nom"
-                value={newCustomer.last_name}
-                onChange={(e) => setNewCustomer({...newCustomer, last_name: e.target.value})}
-              />
-              <input
-                type="text"
-                className="input input-bordered col-span-2"
-                placeholder="Téléphone"
-                value={newCustomer.phone}
-                onChange={(e) => setNewCustomer({...newCustomer, phone: e.target.value})}
-              />
-              <input
-                type="email"
-                className="input input-bordered col-span-2"
-                placeholder="Email"
-                value={newCustomer.email}
-                onChange={(e) => setNewCustomer({...newCustomer, email: e.target.value})}
-              />
-            </div>
+            <div className="divider text-xs text-base-content/50">OU</div>
+
+            <button
+              className="btn btn-outline btn-primary w-full gap-2"
+              onClick={() => {
+                setShowCustomerModal(false);
+                setCustomerSearchTerm('');
+                navigate('/clients/nouveau');
+              }}
+            >
+              <Plus className="w-4 h-4" />
+              Créer un nouveau client
+            </button>
 
             <div className="modal-action">
-              <button className="btn btn-ghost" onClick={() => setShowCustomerModal(false)}>Fermer</button>
-              <button className="btn btn-primary" onClick={handleCreateCustomer}>
-                <User className="w-4 h-4" /> Créer le client
+              <button 
+                className="btn btn-ghost" 
+                onClick={() => {
+                  setShowCustomerModal(false);
+                  setCustomerSearchTerm('');
+                }}
+              >
+                Fermer
               </button>
+              {selectedCustomer && (
+                <button 
+                  className="btn btn-error btn-outline gap-2"
+                  onClick={() => {
+                    setSelectedCustomer(null);
+                    setShowCustomerModal(false);
+                    setCustomerSearchTerm('');
+                    showNotification('Client retiré', 'success');
+                  }}
+                >
+                  <X className="w-4 h-4" />
+                  Retirer le client
+                </button>
+              )}
             </div>
           </div>
         </div>
