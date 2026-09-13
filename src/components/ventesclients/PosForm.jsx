@@ -6,7 +6,7 @@
 // - Performance optimisée
 // - UI/UX améliorée
 // - Recherche client fonctionnelle dans le modal
-// - Lien vers /clients/nouveau pour créer un client
+// - Création rapide de client directement dans le modal
 // ============================================================
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
@@ -59,6 +59,10 @@ const PosForm = () => {
   // États pour la recherche client
   const [customerSearchTerm, setCustomerSearchTerm] = useState('');
   const [filteredCustomers, setFilteredCustomers] = useState([]);
+
+  // États pour la création rapide de client
+  const [newCustomer, setNewCustomer] = useState({ first_name: '', last_name: '', phone: '', email: '' });
+  const [creatingCustomer, setCreatingCustomer] = useState(false);
 
   const getToken = () => localStorage.getItem('Token');
 
@@ -434,132 +438,188 @@ const PosForm = () => {
   // ============================================================
   // 6. VALIDATION DE LA VENTE - ROBUSTE
   // ============================================================
-  const validateSale = useCallback(async () => {
-    // Blur tous les champs pour éviter les conflits
-    if (barcodeInputRef.current) {
-      barcodeInputRef.current.blur();
-    }
-    if (searchInputRef.current) {
-      searchInputRef.current.blur();
-    }
+const validateSale = useCallback(async () => {
+  // Blur tous les champs pour éviter les conflits
+  if (barcodeInputRef.current) {
+    barcodeInputRef.current.blur();
+  }
+  if (searchInputRef.current) {
+    searchInputRef.current.blur();
+  }
 
-    // Vérifications
-    if (cart.length === 0) {
-      showNotification('Ajoutez au moins un produit au panier', 'error');
+  // Vérifications
+  if (cart.length === 0) {
+    showNotification('Ajoutez au moins un produit au panier', 'error');
+    return;
+  }
+
+  if (!selectedWarehouse) {
+    showNotification('Sélectionnez un entrepôt', 'error');
+    return;
+  }
+
+  // Vérifier les stocks avant validation
+  const stockErrors = cart.filter(item => item.quantity > item.product.stock_quantity);
+  if (stockErrors.length > 0) {
+    const errorMsg = stockErrors.map(item => `${item.product.name}: ${item.quantity} demandé, ${item.product.stock_quantity} disponible`).join(', ');
+    showNotification(`Stock insuffisant: ${errorMsg}`, 'error');
+    return;
+  }
+
+  setSubmitting(true);
+
+  try {
+    const token = getToken();
+    if (!token) {
+      showNotification('Session expirée', 'error');
+      setTimeout(() => navigate('/login'), 2000);
       return;
     }
 
-    if (!selectedWarehouse) {
-      showNotification('Sélectionnez un entrepôt', 'error');
+    const today = new Date();
+    const dueDate = new Date(today);
+    dueDate.setDate(dueDate.getDate() + 30);
+    const paymentDueDate = dueDate.toISOString().split('T')[0];
+
+    const dataToSend = {
+      client: selectedCustomer?.id || null,
+      warehouse: selectedWarehouse.id,
+      delivery_date: null,
+      payment_due_date: paymentDueDate,
+      discount_type: 'percentage',
+      discount_value: 0,
+      tax_rate: 0,
+      shipping_fee: 0,
+      payment_method: 'credit',
+      delivery_method: 'retrait',
+      delivery_address: '',
+      notes: 'Vente POS',
+      internal_notes: '',
+      lines: cart.map(item => ({
+        product: item.product.id,
+        lot: null,
+        quantity: item.quantity,
+        unit_price: item.unit_price,
+        discount: 0,
+        tax_rate: 0,
+        price_type: item.price_type || 'detail'
+      }))
+    };
+
+    const response = await AxiosInstance.post('/sales/', dataToSend, {
+      headers: { 'Authorization': `Token ${token}` }
+    });
+
+    showNotification(`Vente ${response.data.invoice_number || ''} enregistrée avec succès !`, 'success');
+
+    // Réinitialiser le panier
+    setCart([]);
+    setSelectedCustomer(null);
+
+    // Remettre le focus sur le champ de scan pour la vente suivante
+    setTimeout(() => {
+      if (barcodeInputRef.current) {
+        barcodeInputRef.current.focus();
+      }
+    }, 500);
+
+  } catch (error) {
+    console.error('Erreur validation:', error);
+    
+    let errorMessage = 'Erreur lors de l\'enregistrement de la vente';
+    
+    if (error.response?.data) {
+      const data = error.response.data;
+      
+      if (typeof data === 'string') {
+        errorMessage = data;
+      } else if (data.lines && Array.isArray(data.lines)) {
+        errorMessage = data.lines[0] || 'Erreur de validation des produits';
+      } else if (data.detail) {
+        errorMessage = data.detail;
+      } else if (data.message) {
+        errorMessage = data.message;
+      } else if (typeof data === 'object') {
+        const errors = [];
+        Object.entries(data).forEach(([key, value]) => {
+          if (Array.isArray(value)) {
+            errors.push(`${key}: ${value.join(', ')}`);
+          } else if (typeof value === 'string') {
+            errors.push(`${key}: ${value}`);
+          }
+        });
+        if (errors.length > 0) {
+          errorMessage = errors.join('; ');
+        }
+      }
+    }
+    
+    showNotification(errorMessage, 'error');
+  } finally {
+    setSubmitting(false);
+  }
+}, [cart, selectedWarehouse, selectedCustomer, navigate]);
+
+
+  // ============================================================
+  // 7. GESTION DES CLIENTS - CREATION RAPIDE
+  // ============================================================
+  const handleCreateCustomer = useCallback(async () => {
+    if (!newCustomer.first_name || !newCustomer.last_name) {
+      showNotification('Nom et prénom requis', 'error');
       return;
     }
 
-    // Vérifier les stocks avant validation
-    const stockErrors = cart.filter(item => item.quantity > item.product.stock_quantity);
-    if (stockErrors.length > 0) {
-      const errorMsg = stockErrors.map(item => `${item.product.name}: ${item.quantity} demandé, ${item.product.stock_quantity} disponible`).join(', ');
-      showNotification(`Stock insuffisant: ${errorMsg}`, 'error');
-      return;
-    }
-
-    setSubmitting(true);
-
+    setCreatingCustomer(true);
     try {
       const token = getToken();
-      if (!token) {
-        showNotification('Session expirée', 'error');
-        setTimeout(() => navigate('/login'), 2000);
-        return;
-      }
-
-      const today = new Date();
-      const dueDate = new Date(today);
-      dueDate.setDate(dueDate.getDate() + 30);
-      const paymentDueDate = dueDate.toISOString().split('T')[0];
-
-      const dataToSend = {
-        client: selectedCustomer?.id || null,
-        warehouse: selectedWarehouse.id,
-        delivery_date: null,
-        payment_due_date: paymentDueDate,
-        discount_type: 'percentage',
-        discount_value: 0,
-        tax_rate: 0,
-        shipping_fee: 0,
-        payment_method: 'credit',
-        delivery_method: 'retrait',
-        delivery_address: '',
-        notes: 'Vente POS',
-        internal_notes: '',
-        lines: cart.map(item => ({
-          product: item.product.id,
-          lot: null,
-          quantity: item.quantity,
-          unit_price: item.unit_price,
-          discount: 0,
-          tax_rate: 0,
-          price_type: item.price_type || 'detail'
-        }))
-      };
-
-      const response = await AxiosInstance.post('/sales/', dataToSend, {
+      const response = await AxiosInstance.post('/clients/', {
+        code: `CL-${Date.now().toString().slice(-6)}`,
+        name: `${newCustomer.first_name} ${newCustomer.last_name}`,
+        first_name: newCustomer.first_name,
+        last_name: newCustomer.last_name,
+        phone: newCustomer.phone || '',
+        email: newCustomer.email || '',
+        address: '',
+        city: '',
+        type: 'particulier',
+        statut: 'actif'
+      }, {
         headers: { 'Authorization': `Token ${token}` }
       });
 
-      showNotification(`Vente ${response.data.invoice_number || ''} enregistrée avec succès !`, 'success');
-      
-      // Réinitialiser le panier
-      setCart([]);
-      setSelectedCustomer(null);
-
-      // Naviguer vers la page de la vente
-      setTimeout(() => {
-        if (response.data.id) {
-          navigate(`/ventes/${response.data.id}`);
-        } else {
-          navigate('/ventes');
-        }
-      }, 2000);
-
+      const createdCustomer = response.data;
+      setCustomers(prev => [...prev, createdCustomer]);
+      setFilteredCustomers(prev => [...prev, createdCustomer]);
+      setSelectedCustomer(createdCustomer);
+      setShowCustomerModal(false);
+      setNewCustomer({ first_name: '', last_name: '', phone: '', email: '' });
+      setCustomerSearchTerm('');
+      showNotification(`Client ${createdCustomer.name} créé et sélectionné`, 'success');
     } catch (error) {
-      console.error('Erreur validation:', error);
-      
-      let errorMessage = 'Erreur lors de l\'enregistrement de la vente';
-      
+      console.error('Erreur création client:', error);
+      let errorMsg = 'Erreur lors de la création du client';
       if (error.response?.data) {
         const data = error.response.data;
-        
-        if (typeof data === 'string') {
-          errorMessage = data;
-        } else if (data.lines && Array.isArray(data.lines)) {
-          errorMessage = data.lines[0] || 'Erreur de validation des produits';
-        } else if (data.detail) {
-          errorMessage = data.detail;
-        } else if (data.message) {
-          errorMessage = data.message;
-        } else if (typeof data === 'object') {
+        if (typeof data === 'string') errorMsg = data;
+        else if (data.detail) errorMsg = data.detail;
+        else if (typeof data === 'object') {
           const errors = [];
           Object.entries(data).forEach(([key, value]) => {
-            if (Array.isArray(value)) {
-              errors.push(`${key}: ${value.join(', ')}`);
-            } else if (typeof value === 'string') {
-              errors.push(`${key}: ${value}`);
-            }
+            if (Array.isArray(value)) errors.push(`${key}: ${value.join(', ')}`);
+            else if (typeof value === 'string') errors.push(`${key}: ${value}`);
           });
-          if (errors.length > 0) {
-            errorMessage = errors.join('; ');
-          }
+          if (errors.length > 0) errorMsg = errors.join('; ');
         }
       }
-      
-      showNotification(errorMessage, 'error');
+      showNotification(errorMsg, 'error');
     } finally {
-      setSubmitting(false);
+      setCreatingCustomer(false);
     }
-  }, [cart, selectedWarehouse, selectedCustomer, navigate]);
+  }, [newCustomer]);
 
   // ============================================================
-  // 7. NOTIFICATION
+  // 8. NOTIFICATION
   // ============================================================
   const showNotification = useCallback((message, type = 'success') => {
     setNotification({ show: true, message, type });
@@ -570,7 +630,7 @@ const PosForm = () => {
   }, []);
 
   // ============================================================
-  // 8. FORMATAGE
+  // 9. FORMATAGE
   // ============================================================
   const formatPrice = useCallback((price) => {
     if (!price && price !== 0) return '0 FCFA';
@@ -607,7 +667,7 @@ const PosForm = () => {
   }, []);
 
   // ============================================================
-  // 9. RENDU
+  // 10. RENDU
   // ============================================================
   if (loading && !isInitialized) {
     return (
@@ -686,7 +746,7 @@ const PosForm = () => {
               )}
             </div>
 
-            <div className="max-h-72 overflow-y-auto space-y-2 mb-4">
+            <div className="max-h-60 overflow-y-auto space-y-2 mb-4">
               {filteredCustomers.length === 0 ? (
                 <div className="text-center py-8 text-base-content/50">
                   <User className="w-12 h-12 mx-auto mb-2 opacity-30" />
@@ -726,19 +786,39 @@ const PosForm = () => {
               )}
             </div>
 
-            <div className="divider text-xs text-base-content/50">OU</div>
-
-            <button
-              className="btn btn-outline btn-primary w-full gap-2"
-              onClick={() => {
-                setShowCustomerModal(false);
-                setCustomerSearchTerm('');
-                navigate('/clients/nouveau');
-              }}
-            >
-              <Plus className="w-4 h-4" />
-              Créer un nouveau client
-            </button>
+            <div className="divider text-xs text-base-content/50">Créer un nouveau client</div>
+            
+            {/* Formulaire de création rapide */}
+            <div className="grid grid-cols-2 gap-2 mb-3">
+              <input
+                type="text"
+                className="input input-bordered input-sm"
+                placeholder="Prénom *"
+                value={newCustomer.first_name}
+                onChange={(e) => setNewCustomer({...newCustomer, first_name: e.target.value})}
+              />
+              <input
+                type="text"
+                className="input input-bordered input-sm"
+                placeholder="Nom *"
+                value={newCustomer.last_name}
+                onChange={(e) => setNewCustomer({...newCustomer, last_name: e.target.value})}
+              />
+              <input
+                type="text"
+                className="input input-bordered input-sm col-span-2"
+                placeholder="Téléphone"
+                value={newCustomer.phone}
+                onChange={(e) => setNewCustomer({...newCustomer, phone: e.target.value})}
+              />
+              <input
+                type="email"
+                className="input input-bordered input-sm col-span-2"
+                placeholder="Email"
+                value={newCustomer.email}
+                onChange={(e) => setNewCustomer({...newCustomer, email: e.target.value})}
+              />
+            </div>
 
             <div className="modal-action">
               <button 
@@ -761,9 +841,21 @@ const PosForm = () => {
                   }}
                 >
                   <X className="w-4 h-4" />
-                  Retirer le client
+                  Retirer
                 </button>
               )}
+              <button 
+                className="btn btn-primary gap-2" 
+                onClick={handleCreateCustomer}
+                disabled={creatingCustomer || !newCustomer.first_name || !newCustomer.last_name}
+              >
+                {creatingCustomer ? (
+                  <Loader className="w-4 h-4 animate-spin" />
+                ) : (
+                  <User className="w-4 h-4" />
+                )}
+                {creatingCustomer ? 'Création...' : 'Créer le client'}
+              </button>
             </div>
           </div>
         </div>
