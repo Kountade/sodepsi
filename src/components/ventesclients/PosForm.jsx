@@ -7,6 +7,7 @@
 // - UI/UX améliorée
 // - Recherche client fonctionnelle dans le modal
 // - Création rapide de client directement dans le modal
+// - ✅ Gestion intelligente du prix de gros (masqué si indisponible)
 // ============================================================
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
@@ -67,6 +68,17 @@ const PosForm = () => {
   const getToken = () => localStorage.getItem('Token');
 
   // ============================================================
+  // ✅ CALCUL : Y A-T-IL DES PRODUITS AVEC PRIX DE GROS ?
+  // ============================================================
+  const hasWholesaleProducts = useMemo(() => {
+    return products.some(p => (parseFloat(p.wholesale_price) || 0) > 0);
+  }, [products]);
+
+  const wholesaleProductsCount = useMemo(() => {
+    return products.filter(p => (parseFloat(p.wholesale_price) || 0) > 0).length;
+  }, [products]);
+
+  // ============================================================
   // 1. CHARGEMENT DES DONNEES
   // ============================================================
   const getImageUrl = useCallback((imagePath) => {
@@ -109,20 +121,20 @@ const PosForm = () => {
         selling_price: parseFloat(product.selling_price) || 0,
         wholesale_price: parseFloat(product.wholesale_price) || 0,
         barcode: product.barcode || '',
-        display_price: priceType === 'gros' 
+        display_price: priceType === 'gros'
           ? (parseFloat(product.wholesale_price) || parseFloat(product.selling_price) || 0)
           : (parseFloat(product.selling_price) || 0)
       }));
 
       setProducts(productsWithData);
       setCategories(categoriesRes.data || []);
-      
+
       const customersData = customersRes.data || [];
       setCustomers(customersData);
       setFilteredCustomers(customersData);
-      
+
       setWarehouses(warehousesRes.data || []);
-      
+
       if (warehousesRes.data && warehousesRes.data.length > 0) {
         setSelectedWarehouse(warehousesRes.data[0]);
       }
@@ -139,7 +151,6 @@ const PosForm = () => {
 
   useEffect(() => {
     fetchData();
-    // Focus sur le champ de scan après chargement
     const timer = setTimeout(() => {
       if (barcodeInputRef.current) {
         barcodeInputRef.current.focus();
@@ -148,10 +159,10 @@ const PosForm = () => {
     return () => clearTimeout(timer);
   }, [fetchData]);
 
-  // Mise à jour des prix affichés
+  // Mise à jour des prix affichés selon le mode
   useEffect(() => {
     if (!isInitialized) return;
-    setProducts(prevProducts => 
+    setProducts(prevProducts =>
       prevProducts.map(product => ({
         ...product,
         display_price: priceType === 'gros'
@@ -161,14 +172,35 @@ const PosForm = () => {
     );
   }, [priceType, isInitialized]);
 
+  // ============================================================
+  // ✅ SÉCURITÉ : FORCER LE MODE DÉTAIL SI AUCUN PRIX DE GROS
+  // ============================================================
+  useEffect(() => {
+    if (!isInitialized) return;
+    if (!hasWholesaleProducts && priceType === 'gros') {
+      setPriceType('detail');
+      setCart(prevCart => {
+        const hasGrosItems = prevCart.some(item => item.price_type === 'gros');
+        if (hasGrosItems) {
+          showNotification(
+            'Mode Gros désactivé : aucun produit n\'a de prix de gros défini',
+            'error'
+          );
+          return prevCart.filter(item => item.price_type !== 'gros');
+        }
+        return prevCart;
+      });
+    }
+  }, [hasWholesaleProducts, priceType, isInitialized]);
+
   // Filtrer les clients selon la recherche
   useEffect(() => {
     if (!customerSearchTerm.trim()) {
       setFilteredCustomers(customers);
     } else {
       const term = customerSearchTerm.toLowerCase();
-      const filtered = customers.filter(c => 
-        c.name?.toLowerCase().includes(term) || 
+      const filtered = customers.filter(c =>
+        c.name?.toLowerCase().includes(term) ||
         c.phone?.includes(term) ||
         c.email?.toLowerCase().includes(term) ||
         c.code?.toLowerCase().includes(term)
@@ -185,15 +217,17 @@ const PosForm = () => {
     setBarcodeValue(value);
 
     if (value.length >= 8) {
-      // RECHERCHE DU PRODUIT - SANS BLOCAGE DE DOUBLON
       const product = products.find(p => p.barcode === value);
-      
+
       if (product) {
         addToCart(product);
         setBarcodeValue('');
         e.target.value = '';
-        showNotification(`${product.name} ajouté au panier (${priceType === 'gros' ? 'Gros' : 'Détail'})`, 'success');
-        
+        showNotification(
+          `${product.name} ajouté au panier (${priceType === 'gros' ? 'Gros' : 'Détail'})`,
+          'success'
+        );
+
         if (navigator.vibrate) {
           navigator.vibrate(100);
         }
@@ -227,7 +261,7 @@ const PosForm = () => {
   }, [handleBarcodeScan]);
 
   // ============================================================
-  // 3. FILTRAGE ET TRI DES PRODUITS - OPTIMISÉ
+  // 3. FILTRAGE ET TRI DES PRODUITS
   // ============================================================
   const filteredProducts = useMemo(() => {
     let filtered = products;
@@ -250,7 +284,7 @@ const PosForm = () => {
     sorted.sort((a, b) => {
       let aVal = a[sortField] ?? '';
       let bVal = b[sortField] ?? '';
-      
+
       if (['stock_quantity', 'selling_price', 'wholesale_price'].includes(sortField)) {
         aVal = parseFloat(aVal) || 0;
         bVal = parseFloat(bVal) || 0;
@@ -258,7 +292,7 @@ const PosForm = () => {
         aVal = aVal.toLowerCase();
         bVal = bVal.toLowerCase();
       }
-      
+
       if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1;
       if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1;
       return 0;
@@ -266,10 +300,11 @@ const PosForm = () => {
     return sorted;
   }, [filteredProducts, sortField, sortDirection]);
 
-  // Calcul de la pagination
-  const totalPages = useMemo(() => Math.max(1, Math.ceil(sortedProducts.length / itemsPerPage)), [sortedProducts.length, itemsPerPage]);
-  
-  // Réinitialiser la page si elle est invalide
+  const totalPages = useMemo(
+    () => Math.max(1, Math.ceil(sortedProducts.length / itemsPerPage)),
+    [sortedProducts.length, itemsPerPage]
+  );
+
   useEffect(() => {
     if (currentPage > totalPages) {
       setCurrentPage(totalPages);
@@ -283,7 +318,7 @@ const PosForm = () => {
   }, [sortedProducts, currentPage, itemsPerPage]);
 
   // ============================================================
-  // 4. GESTION DU PANIER - AVEC SCAN MULTIPLE
+  // 4. GESTION DU PANIER - AVEC PROTECTION PRIX DE GROS
   // ============================================================
   const addToCart = useCallback((product, quantity = 1) => {
     if (product.stock_quantity <= 0) {
@@ -291,9 +326,59 @@ const PosForm = () => {
       return;
     }
 
+    const wholesalePrice = parseFloat(product.wholesale_price) || 0;
+    const sellingPrice = parseFloat(product.selling_price) || 0;
+
+    // ✅ Si mode Gros demandé mais produit sans prix de gros → forcer en détail
+    if (priceType === 'gros' && wholesalePrice <= 0) {
+      showNotification(
+        `${product.name} n'a pas de prix de gros. Ajouté au prix de détail.`,
+        'error'
+      );
+
+      if (sellingPrice <= 0) {
+        showNotification(`Prix non défini pour ${product.name}`, 'error');
+        return;
+      }
+
+      setCart(prevCart => {
+        const existingIndex = prevCart.findIndex(item => item.product.id === product.id);
+        const currentQty = existingIndex !== -1 ? prevCart[existingIndex].quantity : 0;
+        const totalQty = currentQty + quantity;
+
+        if (totalQty > product.stock_quantity) {
+          showNotification(`Stock insuffisant pour ${product.name}`, 'error');
+          return prevCart;
+        }
+
+        if (existingIndex !== -1) {
+          const newCart = [...prevCart];
+          newCart[existingIndex] = {
+            ...newCart[existingIndex],
+            quantity: totalQty,
+            unit_price: sellingPrice,
+            price_type: 'detail',
+            total: totalQty * sellingPrice
+          };
+          return newCart;
+        } else {
+          return [...prevCart, {
+            id: Date.now() + Math.random(),
+            product: product,
+            quantity: quantity,
+            unit_price: sellingPrice,
+            price_type: 'detail',
+            total: sellingPrice * quantity
+          }];
+        }
+      });
+      return;
+    }
+
+    // --- Cas normal ---
     const unitPrice = priceType === 'gros'
-      ? (product.wholesale_price || product.selling_price || 0)
-      : (product.selling_price || 0);
+      ? (wholesalePrice || sellingPrice || 0)
+      : (sellingPrice || 0);
 
     if (unitPrice <= 0) {
       showNotification(`Prix non défini pour ${product.name}`, 'error');
@@ -304,9 +389,12 @@ const PosForm = () => {
       const existingIndex = prevCart.findIndex(item => item.product.id === product.id);
       const currentQty = existingIndex !== -1 ? prevCart[existingIndex].quantity : 0;
       const totalQty = currentQty + quantity;
-      
+
       if (totalQty > product.stock_quantity) {
-        showNotification(`Stock insuffisant pour ${product.name} (${totalQty} demandé, ${product.stock_quantity} disponible)`, 'error');
+        showNotification(
+          `Stock insuffisant pour ${product.name} (${totalQty} demandé, ${product.stock_quantity} disponible)`,
+          'error'
+        );
         return prevCart;
       }
 
@@ -335,16 +423,19 @@ const PosForm = () => {
 
   const updateCartQuantityDirect = useCallback((itemId, newQuantity) => {
     const qty = Math.max(1, parseInt(newQuantity) || 1);
-    
+
     setCart(prevCart => {
       const itemIndex = prevCart.findIndex(i => i.id === itemId);
       if (itemIndex === -1) return prevCart;
 
       const item = prevCart[itemIndex];
       const product = item.product;
-      
+
       if (qty > product.stock_quantity) {
-        showNotification(`Stock insuffisant pour ${product.name} (${qty} demandé, ${product.stock_quantity} disponible)`, 'error');
+        showNotification(
+          `Stock insuffisant pour ${product.name} (${qty} demandé, ${product.stock_quantity} disponible)`,
+          'error'
+        );
         return prevCart;
       }
 
@@ -356,7 +447,7 @@ const PosForm = () => {
       };
       return newCart;
     });
-    
+
     setEditingQuantity(null);
     setQuantityInput('');
   }, []);
@@ -368,18 +459,18 @@ const PosForm = () => {
 
       const newCart = [...prevCart];
       const newQty = newCart[itemIndex].quantity + delta;
-      
+
       if (newQty < 1) {
         newCart.splice(itemIndex, 1);
         return newCart;
       }
-      
+
       const product = newCart[itemIndex].product;
       if (newQty > product.stock_quantity) {
         showNotification(`Stock insuffisant pour ${product.name}`, 'error');
         return prevCart;
       }
-      
+
       newCart[itemIndex] = {
         ...newCart[itemIndex],
         quantity: newQty,
@@ -436,130 +527,140 @@ const PosForm = () => {
   }, [cart]);
 
   // ============================================================
-  // 6. VALIDATION DE LA VENTE - ROBUSTE
+  // 6. VALIDATION DE LA VENTE
   // ============================================================
-const validateSale = useCallback(async () => {
-  // Blur tous les champs pour éviter les conflits
-  if (barcodeInputRef.current) {
-    barcodeInputRef.current.blur();
-  }
-  if (searchInputRef.current) {
-    searchInputRef.current.blur();
-  }
+  const validateSale = useCallback(async () => {
+    if (barcodeInputRef.current) barcodeInputRef.current.blur();
+    if (searchInputRef.current) searchInputRef.current.blur();
 
-  // Vérifications
-  if (cart.length === 0) {
-    showNotification('Ajoutez au moins un produit au panier', 'error');
-    return;
-  }
-
-  if (!selectedWarehouse) {
-    showNotification('Sélectionnez un entrepôt', 'error');
-    return;
-  }
-
-  // Vérifier les stocks avant validation
-  const stockErrors = cart.filter(item => item.quantity > item.product.stock_quantity);
-  if (stockErrors.length > 0) {
-    const errorMsg = stockErrors.map(item => `${item.product.name}: ${item.quantity} demandé, ${item.product.stock_quantity} disponible`).join(', ');
-    showNotification(`Stock insuffisant: ${errorMsg}`, 'error');
-    return;
-  }
-
-  setSubmitting(true);
-
-  try {
-    const token = getToken();
-    if (!token) {
-      showNotification('Session expirée', 'error');
-      setTimeout(() => navigate('/login'), 2000);
+    if (cart.length === 0) {
+      showNotification('Ajoutez au moins un produit au panier', 'error');
       return;
     }
 
-    const today = new Date();
-    const dueDate = new Date(today);
-    dueDate.setDate(dueDate.getDate() + 30);
-    const paymentDueDate = dueDate.toISOString().split('T')[0];
+    if (!selectedWarehouse) {
+      showNotification('Sélectionnez un entrepôt', 'error');
+      return;
+    }
 
-    const dataToSend = {
-      client: selectedCustomer?.id || null,
-      warehouse: selectedWarehouse.id,
-      delivery_date: null,
-      payment_due_date: paymentDueDate,
-      discount_type: 'percentage',
-      discount_value: 0,
-      tax_rate: 0,
-      shipping_fee: 0,
-      payment_method: 'credit',
-      delivery_method: 'retrait',
-      delivery_address: '',
-      notes: 'Vente POS',
-      internal_notes: '',
-      lines: cart.map(item => ({
-        product: item.product.id,
-        lot: null,
-        quantity: item.quantity,
-        unit_price: item.unit_price,
-        discount: 0,
-        tax_rate: 0,
-        price_type: item.price_type || 'detail'
-      }))
-    };
-
-    const response = await AxiosInstance.post('/sales/', dataToSend, {
-      headers: { 'Authorization': `Token ${token}` }
-    });
-
-    showNotification(`Vente ${response.data.invoice_number || ''} enregistrée avec succès !`, 'success');
-
-    // Réinitialiser le panier
-    setCart([]);
-    setSelectedCustomer(null);
-
-    // Remettre le focus sur le champ de scan pour la vente suivante
-    setTimeout(() => {
-      if (barcodeInputRef.current) {
-        barcodeInputRef.current.focus();
-      }
-    }, 500);
-
-  } catch (error) {
-    console.error('Erreur validation:', error);
-    
-    let errorMessage = 'Erreur lors de l\'enregistrement de la vente';
-    
-    if (error.response?.data) {
-      const data = error.response.data;
-      
-      if (typeof data === 'string') {
-        errorMessage = data;
-      } else if (data.lines && Array.isArray(data.lines)) {
-        errorMessage = data.lines[0] || 'Erreur de validation des produits';
-      } else if (data.detail) {
-        errorMessage = data.detail;
-      } else if (data.message) {
-        errorMessage = data.message;
-      } else if (typeof data === 'object') {
-        const errors = [];
-        Object.entries(data).forEach(([key, value]) => {
-          if (Array.isArray(value)) {
-            errors.push(`${key}: ${value.join(', ')}`);
-          } else if (typeof value === 'string') {
-            errors.push(`${key}: ${value}`);
-          }
-        });
-        if (errors.length > 0) {
-          errorMessage = errors.join('; ');
-        }
+    // ✅ Vérifier la cohérence des prix de gros
+    if (priceType === 'gros') {
+      const invalidGrosItems = cart.filter(item => {
+        const wp = parseFloat(item.product.wholesale_price) || 0;
+        return item.price_type === 'gros' && wp <= 0;
+      });
+      if (invalidGrosItems.length > 0) {
+        showNotification(
+          `Impossible de valider : ${invalidGrosItems.length} produit(s) n'ont pas de prix de gros. Repassez en mode Détail.`,
+          'error'
+        );
+        return;
       }
     }
-    
-    showNotification(errorMessage, 'error');
-  } finally {
-    setSubmitting(false);
-  }
-}, [cart, selectedWarehouse, selectedCustomer, navigate]);
 
+    const stockErrors = cart.filter(item => item.quantity > item.product.stock_quantity);
+    if (stockErrors.length > 0) {
+      const errorMsg = stockErrors
+        .map(item => `${item.product.name}: ${item.quantity} demandé, ${item.product.stock_quantity} disponible`)
+        .join(', ');
+      showNotification(`Stock insuffisant: ${errorMsg}`, 'error');
+      return;
+    }
+
+    setSubmitting(true);
+
+    try {
+      const token = getToken();
+      if (!token) {
+        showNotification('Session expirée', 'error');
+        setTimeout(() => navigate('/login'), 2000);
+        return;
+      }
+
+      const today = new Date();
+      const dueDate = new Date(today);
+      dueDate.setDate(dueDate.getDate() + 30);
+      const paymentDueDate = dueDate.toISOString().split('T')[0];
+
+      const dataToSend = {
+        client: selectedCustomer?.id || null,
+        warehouse: selectedWarehouse.id,
+        delivery_date: null,
+        payment_due_date: paymentDueDate,
+        discount_type: 'percentage',
+        discount_value: 0,
+        tax_rate: 0,
+        shipping_fee: 0,
+        payment_method: 'credit',
+        delivery_method: 'retrait',
+        delivery_address: '',
+        notes: 'Vente POS',
+        internal_notes: '',
+        lines: cart.map(item => ({
+          product: item.product.id,
+          lot: null,
+          quantity: item.quantity,
+          unit_price: item.unit_price,
+          discount: 0,
+          tax_rate: 0,
+          price_type: item.price_type || 'detail'
+        }))
+      };
+
+      const response = await AxiosInstance.post('/sales/', dataToSend, {
+        headers: { 'Authorization': `Token ${token}` }
+      });
+
+      showNotification(
+        `Vente ${response.data.invoice_number || ''} enregistrée avec succès !`,
+        'success'
+      );
+
+      setCart([]);
+      setSelectedCustomer(null);
+
+      setTimeout(() => {
+        if (barcodeInputRef.current) {
+          barcodeInputRef.current.focus();
+        }
+      }, 500);
+
+    } catch (error) {
+      console.error('Erreur validation:', error);
+
+      let errorMessage = 'Erreur lors de l\'enregistrement de la vente';
+
+      if (error.response?.data) {
+        const data = error.response.data;
+
+        if (typeof data === 'string') {
+          errorMessage = data;
+        } else if (data.lines && Array.isArray(data.lines)) {
+          errorMessage = data.lines[0] || 'Erreur de validation des produits';
+        } else if (data.detail) {
+          errorMessage = data.detail;
+        } else if (data.message) {
+          errorMessage = data.message;
+        } else if (typeof data === 'object') {
+          const errors = [];
+          Object.entries(data).forEach(([key, value]) => {
+            if (Array.isArray(value)) {
+              errors.push(`${key}: ${value.join(', ')}`);
+            } else if (typeof value === 'string') {
+              errors.push(`${key}: ${value}`);
+            }
+          });
+          if (errors.length > 0) {
+            errorMessage = errors.join('; ');
+          }
+        }
+      }
+
+      showNotification(errorMessage, 'error');
+    } finally {
+      setSubmitting(false);
+    }
+  }, [cart, selectedWarehouse, selectedCustomer, navigate, priceType]);
 
   // ============================================================
   // 7. GESTION DES CLIENTS - CREATION RAPIDE
@@ -639,7 +740,7 @@ const validateSale = useCallback(async () => {
 
   const getStatusBadge = useCallback((product) => {
     const stock = parseFloat(product.stock_quantity) || 0;
-    
+
     if (stock <= 0) {
       return (
         <div className="badge badge-error gap-1 text-xs">
@@ -648,7 +749,7 @@ const validateSale = useCallback(async () => {
         </div>
       );
     }
-    
+
     if (product.min_stock > 0 && stock <= product.min_stock) {
       return (
         <div className="badge badge-warning gap-1 text-xs">
@@ -657,7 +758,7 @@ const validateSale = useCallback(async () => {
         </div>
       );
     }
-    
+
     return (
       <div className="badge badge-success gap-1 text-xs">
         <CheckCircle className="w-3 h-3" />
@@ -690,8 +791,8 @@ const validateSale = useCallback(async () => {
           <div className={`alert ${notification.type === 'success' ? 'alert-success' : 'alert-error'} shadow-lg`}>
             {notification.type === 'success' ? <CheckCircle className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
             <span>{notification.message}</span>
-            <button 
-              className="btn btn-ghost btn-xs btn-circle" 
+            <button
+              className="btn btn-ghost btn-xs btn-circle"
               onClick={() => setNotification({ show: false, message: '', type: 'success' })}
             >
               <X className="w-4 h-4" />
@@ -706,7 +807,7 @@ const validateSale = useCallback(async () => {
           <div className="modal-box max-w-md">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-bold text-lg">Sélectionner un client</h3>
-              <button 
+              <button
                 className="btn btn-ghost btn-sm btn-circle"
                 onClick={() => {
                   setShowCustomerModal(false);
@@ -716,7 +817,7 @@ const validateSale = useCallback(async () => {
                 <X className="w-4 h-4" />
               </button>
             </div>
-            
+
             <div className="form-control mb-3">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-base-content/40" />
@@ -787,42 +888,41 @@ const validateSale = useCallback(async () => {
             </div>
 
             <div className="divider text-xs text-base-content/50">Créer un nouveau client</div>
-            
-            {/* Formulaire de création rapide */}
+
             <div className="grid grid-cols-2 gap-2 mb-3">
               <input
                 type="text"
                 className="input input-bordered input-sm"
                 placeholder="Prénom *"
                 value={newCustomer.first_name}
-                onChange={(e) => setNewCustomer({...newCustomer, first_name: e.target.value})}
+                onChange={(e) => setNewCustomer({ ...newCustomer, first_name: e.target.value })}
               />
               <input
                 type="text"
                 className="input input-bordered input-sm"
                 placeholder="Nom *"
                 value={newCustomer.last_name}
-                onChange={(e) => setNewCustomer({...newCustomer, last_name: e.target.value})}
+                onChange={(e) => setNewCustomer({ ...newCustomer, last_name: e.target.value })}
               />
               <input
                 type="text"
                 className="input input-bordered input-sm col-span-2"
                 placeholder="Téléphone"
                 value={newCustomer.phone}
-                onChange={(e) => setNewCustomer({...newCustomer, phone: e.target.value})}
+                onChange={(e) => setNewCustomer({ ...newCustomer, phone: e.target.value })}
               />
               <input
                 type="email"
                 className="input input-bordered input-sm col-span-2"
                 placeholder="Email"
                 value={newCustomer.email}
-                onChange={(e) => setNewCustomer({...newCustomer, email: e.target.value})}
+                onChange={(e) => setNewCustomer({ ...newCustomer, email: e.target.value })}
               />
             </div>
 
             <div className="modal-action">
-              <button 
-                className="btn btn-ghost" 
+              <button
+                className="btn btn-ghost"
                 onClick={() => {
                   setShowCustomerModal(false);
                   setCustomerSearchTerm('');
@@ -831,7 +931,7 @@ const validateSale = useCallback(async () => {
                 Fermer
               </button>
               {selectedCustomer && (
-                <button 
+                <button
                   className="btn btn-error btn-outline gap-2"
                   onClick={() => {
                     setSelectedCustomer(null);
@@ -844,8 +944,8 @@ const validateSale = useCallback(async () => {
                   Retirer
                 </button>
               )}
-              <button 
-                className="btn btn-primary gap-2" 
+              <button
+                className="btn btn-primary gap-2"
                 onClick={handleCreateCustomer}
                 disabled={creatingCustomer || !newCustomer.first_name || !newCustomer.last_name}
               >
@@ -869,7 +969,7 @@ const validateSale = useCallback(async () => {
           </h1>
           <p className="text-sm text-base-content/60">Vente rapide - Scannez les produits</p>
         </div>
-        
+
         <div className="flex flex-wrap gap-3">
           <button onClick={fetchData} className="btn btn-outline gap-2" disabled={loading}>
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -881,7 +981,7 @@ const validateSale = useCallback(async () => {
         </div>
       </div>
 
-      {/* SCANNER DE CODE-BARRES */}
+      {/* SCANNER DE CODE-BARRES + SÉLECTEUR PRIX */}
       <div className="bg-base-100 rounded-xl shadow-md border border-base-300 p-4 lg:p-6">
         <div className="flex flex-col lg:flex-row gap-4">
           <div className="flex-1">
@@ -927,7 +1027,7 @@ const validateSale = useCallback(async () => {
               <span className="badge badge-primary">Scan multiple autorisé</span>
             </div>
           </div>
-          
+
           <div className="flex items-center gap-2">
             <div className="flex rounded-lg border border-gray-200 overflow-hidden">
               <button
@@ -942,18 +1042,37 @@ const validateSale = useCallback(async () => {
                 <Tag className="w-4 h-4" />
                 Détail
               </button>
-              <button
-                type="button"
-                className={`px-4 py-2 text-sm font-medium transition-colors flex items-center gap-1 ${
-                  priceType === 'gros'
-                    ? 'bg-primary text-white'
-                    : 'bg-white text-gray-600 hover:bg-gray-100'
-                }`}
-                onClick={() => setPriceType('gros')}
-              >
-                <Layers className="w-4 h-4" />
-                Gros
-              </button>
+
+              {/* ✅ BOUTON GROS - AFFICHÉ UNIQUEMENT SI AU MOINS UN PRODUIT A UN PRIX DE GROS */}
+              {hasWholesaleProducts ? (
+                <button
+                  type="button"
+                  className={`px-4 py-2 text-sm font-medium transition-colors flex items-center gap-1 ${
+                    priceType === 'gros'
+                      ? 'bg-primary text-white'
+                      : 'bg-white text-gray-600 hover:bg-gray-100'
+                  }`}
+                  onClick={() => setPriceType('gros')}
+                  title={`${wholesaleProductsCount} produit(s) avec prix de gros`}
+                >
+                  <Layers className="w-4 h-4" />
+                  Gros
+                  <span className="badge badge-xs badge-primary ml-1">
+                    {wholesaleProductsCount}
+                  </span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  disabled
+                  className="px-4 py-2 text-sm font-medium bg-gray-100 text-gray-400 cursor-not-allowed flex items-center gap-1"
+                  title="Aucun produit n'a de prix de gros défini"
+                >
+                  <Layers className="w-4 h-4" />
+                  Gros
+                  <span className="text-[10px] ml-1">(indispo)</span>
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -984,7 +1103,7 @@ const validateSale = useCallback(async () => {
               <span className="text-xs text-error">Entrepôt requis</span>
             )}
           </div>
-          
+
           <div className="flex-1 flex items-center gap-3">
             <User className="w-5 h-5 text-primary flex-shrink-0" />
             <button
@@ -1029,9 +1148,9 @@ const validateSale = useCallback(async () => {
               />
             </div>
           </div>
-          
+
           <div className="flex flex-wrap gap-3">
-            <select 
+            <select
               className="select select-bordered min-w-[150px]"
               value={selectedCategory}
               onChange={(e) => {
@@ -1044,27 +1163,29 @@ const validateSale = useCallback(async () => {
                 <option key={cat.id} value={cat.id}>{cat.name}</option>
               ))}
             </select>
-            
-            <select 
+
+            <select
               className="select select-bordered min-w-[130px]"
               value={sortField}
               onChange={(e) => setSortField(e.target.value)}
             >
               <option value="name">Trier par nom</option>
               <option value="selling_price">Trier par prix détail</option>
-              <option value="wholesale_price">Trier par prix gros</option>
+              {hasWholesaleProducts && (
+                <option value="wholesale_price">Trier par prix gros</option>
+              )}
               <option value="stock_quantity">Trier par stock</option>
             </select>
-            
-            <button 
+
+            <button
               className="btn btn-ghost"
               onClick={() => setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')}
               title={`Tri ${sortDirection === 'asc' ? 'croissant' : 'décroissant'}`}
             >
               <ArrowUpDown className="w-4 h-4" />
             </button>
-            
-            <button 
+
+            <button
               className="btn btn-outline"
               onClick={() => {
                 setSelectedCategory('');
@@ -1075,15 +1196,15 @@ const validateSale = useCallback(async () => {
               <Filter className="w-4 h-4" />
               Réinitialiser
             </button>
-            
+
             <div className="join">
-              <button 
+              <button
                 className={`join-item btn ${viewMode === 'grid' ? 'btn-primary' : 'btn-ghost'}`}
                 onClick={() => setViewMode('grid')}
               >
                 <LayoutGrid className="w-4 h-4" />
               </button>
-              <button 
+              <button
                 className={`join-item btn ${viewMode === 'list' ? 'btn-primary' : 'btn-ghost'}`}
                 onClick={() => setViewMode('list')}
               >
@@ -1116,7 +1237,7 @@ const validateSale = useCallback(async () => {
             <div className="p-12 text-center">
               <Package className="w-20 h-20 mx-auto mb-4 text-base-content/20" />
               <p className="text-base-content/60 text-lg">Aucun produit trouvé</p>
-              <button 
+              <button
                 className="btn btn-primary mt-4"
                 onClick={() => {
                   setSearchTerm('');
@@ -1140,9 +1261,9 @@ const validateSale = useCallback(async () => {
                   <div className="card-body p-3 text-center">
                     <div className="w-full h-24 bg-base-300 rounded-lg flex items-center justify-center mb-2 overflow-hidden relative">
                       {product.image_url ? (
-                        <img 
-                          src={product.image_url} 
-                          alt={product.name} 
+                        <img
+                          src={product.image_url}
+                          alt={product.name}
                           className="h-full w-full object-contain"
                           loading="lazy"
                           onError={(e) => {
@@ -1160,23 +1281,41 @@ const validateSale = useCallback(async () => {
                     </div>
                     <div className="font-medium text-sm truncate" title={product.name}>{product.name}</div>
                     <div className="text-xs text-base-content/40 truncate">{product.code}</div>
-                    
-                    <div className="text-xs text-base-content/50">
-                      <span className="line-through">{formatPrice(product.selling_price)}</span>
+
+                    {/* Prix détail + prix gros */}
+                    <div className="text-xs text-base-content/50 flex flex-wrap justify-center gap-1">
+                      <span className={priceType === 'detail' ? 'font-bold text-primary' : ''}>
+                        Détail: {formatPrice(product.selling_price)}
+                      </span>
                       {product.wholesale_price > 0 && (
-                        <span className="ml-2 text-primary font-medium">{formatPrice(product.wholesale_price)}</span>
+                        <span className={priceType === 'gros' ? 'font-bold text-primary' : ''}>
+                          Gros: {formatPrice(product.wholesale_price)}
+                        </span>
                       )}
                     </div>
-                    
+
                     <div className="text-lg font-bold text-primary">
                       {formatPrice(product.display_price)}
                     </div>
-                    
+
+                    {/* Badge prix gros dispo */}
+                    <div className="flex justify-center mt-1">
+                      {product.wholesale_price > 0 ? (
+                        <span className="badge badge-xs badge-primary gap-1">
+                          <Layers className="w-2 h-2" /> Gros dispo
+                        </span>
+                      ) : (
+                        <span className="badge badge-xs badge-ghost gap-1 text-base-content/40">
+                          Détail uniquement
+                        </span>
+                      )}
+                    </div>
+
                     <div className="flex items-center justify-center gap-2 mt-1 flex-wrap">
                       {getStatusBadge(product)}
                       <span className="text-xs text-base-content/40">{product.stock_quantity} unités</span>
                     </div>
-                    <button 
+                    <button
                       className="btn btn-primary btn-sm w-full mt-2 gap-1"
                       onClick={(e) => {
                         e.stopPropagation();
@@ -1212,9 +1351,9 @@ const validateSale = useCallback(async () => {
                         <div className="flex items-center gap-3">
                           <div className="w-10 h-10 bg-base-300 rounded-lg flex items-center justify-center overflow-hidden flex-shrink-0">
                             {product.image_url ? (
-                              <img 
-                                src={product.image_url} 
-                                alt={product.name} 
+                              <img
+                                src={product.image_url}
+                                alt={product.name}
                                 className="h-full w-full object-contain"
                                 loading="lazy"
                                 onError={(e) => {
@@ -1240,12 +1379,16 @@ const validateSale = useCallback(async () => {
                       </td>
                       <td className="font-semibold">{formatPrice(product.selling_price)}</td>
                       <td className="font-semibold text-primary">
-                        {product.wholesale_price > 0 ? formatPrice(product.wholesale_price) : '-'}
+                        {product.wholesale_price > 0 ? (
+                          formatPrice(product.wholesale_price)
+                        ) : (
+                          <span className="text-base-content/30 text-xs">Non défini</span>
+                        )}
                       </td>
                       <td>{product.stock_quantity}</td>
                       <td>{getStatusBadge(product)}</td>
                       <td>
-                        <button 
+                        <button
                           className="btn btn-primary btn-sm gap-1"
                           onClick={() => addToCart(product)}
                           disabled={product.stock_quantity <= 0}
@@ -1267,7 +1410,7 @@ const validateSale = useCallback(async () => {
                 Affichage de {((currentPage - 1) * itemsPerPage) + 1} à {Math.min(currentPage * itemsPerPage, sortedProducts.length)} sur {sortedProducts.length}
               </div>
               <div className="join">
-                <button 
+                <button
                   className="join-item btn btn-sm"
                   onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                   disabled={currentPage === 1}
@@ -1277,7 +1420,7 @@ const validateSale = useCallback(async () => {
                 <span className="join-item btn btn-sm btn-disabled">
                   {currentPage} / {totalPages}
                 </span>
-                <button 
+                <button
                   className="join-item btn btn-sm"
                   onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                   disabled={currentPage === totalPages}
@@ -1286,7 +1429,7 @@ const validateSale = useCallback(async () => {
                 </button>
               </div>
               <div>
-                <select 
+                <select
                   className="select select-bordered select-sm"
                   value={itemsPerPage}
                   onChange={(e) => {
@@ -1304,7 +1447,7 @@ const validateSale = useCallback(async () => {
           )}
         </div>
 
-        {/* Panier avec quantité modifiable */}
+        {/* Panier */}
         <div className="lg:col-span-1">
           <div className="bg-base-100 rounded-xl shadow-xl border border-base-300 p-4 flex flex-col h-[700px] lg:h-[calc(100vh-280px)] sticky top-24">
             <div className="flex items-center justify-between mb-4 flex-shrink-0">
@@ -1313,7 +1456,7 @@ const validateSale = useCallback(async () => {
                 Panier
                 <span className="badge badge-primary badge-sm">{cart.length}</span>
               </h2>
-              <button 
+              <button
                 className="btn btn-ghost btn-sm text-error"
                 onClick={clearCart}
                 disabled={cart.length === 0}
@@ -1322,7 +1465,6 @@ const validateSale = useCallback(async () => {
               </button>
             </div>
 
-            {/* Liste du panier avec scroll */}
             <div className="flex-1 overflow-y-auto space-y-2 pr-1">
               {cart.length === 0 ? (
                 <div className="text-center py-12">
@@ -1352,17 +1494,16 @@ const validateSale = useCallback(async () => {
                             {formatPrice(item.unit_price)}/u
                           </span>
                         </div>
-                        
-                        {/* Contrôle de quantité */}
+
                         <div className="flex items-center gap-2 mt-2">
-                          <button 
+                          <button
                             className="btn btn-ghost btn-xs btn-circle"
                             onClick={() => updateCartQuantity(item.id, -1)}
                             disabled={item.quantity <= 1}
                           >
                             <Minus className="w-3 h-3" />
                           </button>
-                          
+
                           {editingQuantity === item.id ? (
                             <input
                               id={`qty-input-${item.id}`}
@@ -1383,7 +1524,7 @@ const validateSale = useCallback(async () => {
                               }}
                             />
                           ) : (
-                            <span 
+                            <span
                               className="font-bold w-10 text-center text-sm cursor-pointer hover:text-primary transition-colors"
                               onClick={() => startQuantityEdit(item.id, item.quantity)}
                               title="Cliquer pour modifier"
@@ -1391,8 +1532,8 @@ const validateSale = useCallback(async () => {
                               {item.quantity}
                             </span>
                           )}
-                          
-                          <button 
+
+                          <button
                             className="btn btn-ghost btn-xs btn-circle"
                             onClick={() => updateCartQuantity(item.id, 1)}
                             disabled={item.quantity >= item.product.stock_quantity}
@@ -1403,7 +1544,7 @@ const validateSale = useCallback(async () => {
                       </div>
                       <div className="text-right ml-2 flex-shrink-0">
                         <div className="font-bold text-primary text-sm">{formatPrice(item.total)}</div>
-                        <button 
+                        <button
                           className="btn btn-ghost btn-xs text-error"
                           onClick={() => removeCartItem(item.id)}
                         >
@@ -1416,7 +1557,6 @@ const validateSale = useCallback(async () => {
               )}
             </div>
 
-            {/* Totaux et validation - fixé en bas */}
             <div className="border-t border-base-300 pt-4 mt-4 flex-shrink-0">
               <div className="space-y-2">
                 <div className="flex justify-between text-sm">
@@ -1433,7 +1573,7 @@ const validateSale = useCallback(async () => {
                 </div>
               </div>
 
-              <button 
+              <button
                 ref={validateButtonRef}
                 type="button"
                 className="btn btn-primary w-full mt-4 h-14 text-lg gap-2"
@@ -1452,7 +1592,7 @@ const validateSale = useCallback(async () => {
                 {submitting ? 'Enregistrement...' : `Valider ${formatPrice(totals.total)}`}
               </button>
 
-              <button 
+              <button
                 type="button"
                 className="btn btn-ghost w-full mt-2 h-10 text-sm gap-2"
                 onClick={() => setShowCustomerModal(true)}
