@@ -163,9 +163,14 @@ const TresorerieJournalPdf = async (data, warehouseName, options = {}) => {
     const sortiesSalaires = parseFloat(d.sorties_salaires) || 0;
     const sortiesAutres = parseFloat(d.sorties_autres) || 0;
 
+    // ✅ On récupère les compteurs des détails (sans afficher les lignes)
     const fraisDetails = d.frais_details || [];
     const entreesDetails = d.entrees_details || [];
     const sortiesDetails = d.sorties_details || [];
+
+    const nbFrais = fraisDetails.length;
+    const nbEntreesDetails = entreesDetails.length;
+    const nbSortiesDetails = sortiesDetails.length;
 
     const variationEnLettres = nombreEnLettres(Math.abs(variation));
     const isPositive = variation >= 0;
@@ -282,7 +287,7 @@ const TresorerieJournalPdf = async (data, warehouseName, options = {}) => {
     y = gridY + 20;
 
     // ================================================================
-    // RÉCAPITULATIF
+    // RÉCAPITULATIF DES FLUX (totaux)
     // ================================================================
     doc.setFontSize(10.5);
     doc.setFont('helvetica', 'bold');
@@ -344,7 +349,7 @@ const TresorerieJournalPdf = async (data, warehouseName, options = {}) => {
     doc.text('Total sorties', leftLabelX, leftY + 1);
     doc.text(formatCurrency(totalSorties), leftValueX, leftY + 1, { align: 'right' });
 
-    // Colonne droite - Détails
+    // Colonne droite - Détails (totaux par rubrique)
     let rightY = detailY + 6;
     const rightLabelX = margins.left + contentWidth / 2 + 6;
     const rightValueX = pageWidth - margins.right - 5;
@@ -405,11 +410,126 @@ const TresorerieJournalPdf = async (data, warehouseName, options = {}) => {
     doc.setTextColor(26, 35, 126);
     doc.text(formatCurrency(sortiesAutres), rightValueX, rightY, { align: 'right' });
 
-    y = detailY + detailBoxHeight + 6;
+    y = detailY + detailBoxHeight + 8;
+
+    // ================================================================
+    // ✅ TABLEAU SYNTHÈSE DES TOTAUX (nouveau — pas de détail)
+    // ================================================================
+    checkPageBreak(90, 'SYNTHÈSE DES TOTAUX');
+
+    doc.setFontSize(10.5);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(26, 35, 126);
+    doc.text('SYNTHÈSE DES TOTAUX', margins.left, y);
+    y += 1.5;
+    doc.setDrawColor(224, 224, 224);
+    doc.line(margins.left, y, pageWidth - margins.right, y);
+    y += 4;
+
+    // Colonnes : Rubrique | Nb | Montant | Part
+    const synthCols = [
+      { label: 'RUBRIQUE', width: 78, align: 'left' },
+      { label: 'NB', width: 18, align: 'right' },
+      { label: 'MONTANT', width: 52, align: 'right' },
+      { label: 'PART', width: 38, align: 'right' },
+    ];
+
+    // En-tête
+    doc.setFillColor(26, 35, 126);
+    doc.rect(margins.left, y, contentWidth, 7, 'F');
+    doc.setFontSize(7.5);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(255, 255, 255);
+    let scx = margins.left + 2;
+    synthCols.forEach((col) => {
+      const textX = col.align === 'right' ? scx + col.width - 2 : scx;
+      doc.text(col.label, textX, y + 4.5, { align: col.align });
+      scx += col.width;
+    });
+    y += 7;
+
+    // Données
+    const totalFlux = (totalEntrees + totalSorties) || 1;
+    const lignes = [
+      { label: 'ENTRÉES', type: 'section', color: [34, 197, 94] },
+      { label: 'Ventes', nb: '-', montant: entreesVentes, color: [34, 197, 94] },
+      { label: 'Règlements', nb: '-', montant: entreesReglements, color: [34, 197, 94] },
+      { label: 'Autres entrées', nb: '-', montant: entreesAutres, color: [34, 197, 94] },
+      { label: 'Sous-total ENTRÉES', nb: nbEntrees, montant: totalEntrees, color: [34, 197, 94], bold: true, highlight: [220, 252, 231] },
+      { label: 'SORTIES', type: 'section', color: [239, 68, 68] },
+      { label: 'Achats', nb: '-', montant: sortiesAchats, color: [239, 68, 68] },
+      { label: 'Frais', nb: nbFrais > 0 ? nbFrais : '-', montant: sortiesFrais, color: [239, 68, 68] },
+      { label: 'Salaires', nb: '-', montant: sortiesSalaires, color: [239, 68, 68] },
+      { label: 'Autres sorties', nb: nbSortiesDetails > 0 ? nbSortiesDetails : '-', montant: sortiesAutres, color: [239, 68, 68] },
+      { label: 'Sous-total SORTIES', nb: nbSorties, montant: totalSorties, color: [239, 68, 68], bold: true, highlight: [254, 226, 226] },
+    ];
+
+    let rowIdx = 0;
+    lignes.forEach((l) => {
+      if (l.type === 'section') {
+        // Bandeau de section
+        checkPageBreak(10);
+        doc.setFillColor(245, 245, 250);
+        doc.rect(margins.left, y, contentWidth, 7, 'F');
+        doc.setFontSize(8.5);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(l.color[0], l.color[1], l.color[2]);
+        doc.text(l.label, margins.left + 2, y + 5);
+        y += 7;
+        rowIdx = 0;
+        return;
+      }
+
+      checkPageBreak(8);
+      const rowHeight = 6.5;
+
+      // Fond
+      if (l.highlight) {
+        doc.setFillColor(l.highlight[0], l.highlight[1], l.highlight[2]);
+        doc.rect(margins.left, y, contentWidth, rowHeight, 'F');
+      } else if (rowIdx % 2 === 0) {
+        doc.setFillColor(252, 252, 252);
+        doc.rect(margins.left, y, contentWidth, rowHeight, 'F');
+      }
+
+      // Bordure basse
+      doc.setDrawColor(240, 240, 240);
+      doc.setLineWidth(0.1);
+      doc.line(margins.left, y + rowHeight, pageWidth - margins.right, y + rowHeight);
+
+      // Texte
+      const fontStyle = l.bold ? 'bold' : 'normal';
+      doc.setFont('helvetica', fontStyle);
+
+      // Rubrique
+      doc.setFontSize(8);
+      doc.setTextColor(33, 33, 33);
+      doc.text(String(l.label).substring(0, 40), margins.left + 2, y + 4.5);
+
+      // Nb
+      doc.setTextColor(84, 110, 122);
+      doc.text(String(l.nb ?? '-'), margins.left + synthCols[0].width + synthCols[1].width - 2, y + 4.5, { align: 'right' });
+
+      // Montant
+      doc.setTextColor(l.color[0], l.color[1], l.color[2]);
+      doc.text(formatNumber(l.montant), margins.left + synthCols[0].width + synthCols[1].width + synthCols[2].width - 2, y + 4.5, { align: 'right' });
+
+      // Part (%)
+      const pct = ((l.montant / totalFlux) * 100).toFixed(1) + '%';
+      doc.setTextColor(120, 144, 156);
+      doc.text(pct, pageWidth - margins.right - 2, y + 4.5, { align: 'right' });
+
+      y += rowHeight;
+      rowIdx++;
+    });
+
+    y += 4;
 
     // ================================================================
     // VARIATION NETTE
     // ================================================================
+    checkPageBreak(30);
+
     const amountBoxHeight = 14;
     doc.setFillColor(232, 234, 246);
     doc.roundedRect(margins.left, y, contentWidth, amountBoxHeight, 2, 2, 'F');
@@ -458,297 +578,80 @@ const TresorerieJournalPdf = async (data, warehouseName, options = {}) => {
     }
 
     // ================================================================
-    // ✅ TABLEAU DÉTAIL DES FRAIS
+    // ✅ RÉCAPITULATIF DES MOUVEMENTS (compteurs uniquement)
     // ================================================================
-    if (fraisDetails.length > 0) {
-      checkPageBreak(25, 'DÉTAIL DES FRAIS');
-      
-      doc.setFontSize(10.5);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(239, 68, 68);
-      doc.text(`DÉTAIL DES FRAIS (${fraisDetails.length})`, margins.left, y);
-      y += 1.5;
-      doc.setDrawColor(239, 68, 68);
-      doc.setLineWidth(0.3);
-      doc.line(margins.left, y, pageWidth - margins.right, y);
-      y += 4;
+    checkPageBreak(35);
 
-      // Colonnes (total = contentWidth = 186mm)
-      const fraisCols = [
-        { label: 'Réf. Frais', width: 22 },
-        { label: 'Mouvement', width: 22 },
-        { label: 'Titre / Libellé', width: 48 },
-        { label: 'Catégorie', width: 22 },
-        { label: 'Bénéficiaire', width: 28 },
-        { label: 'Mode', width: 22 },
-        { label: 'Montant', width: 22 },
-      ];
-      // Total = 186
+    doc.setFontSize(10.5);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(26, 35, 126);
+    doc.text('RÉCAPITULATIF DES MOUVEMENTS', margins.left, y);
+    y += 1.5;
+    doc.setDrawColor(224, 224, 224);
+    doc.line(margins.left, y, pageWidth - margins.right, y);
+    y += 4;
 
-      // En-tête tableau
-      doc.setFillColor(239, 68, 68);
-      doc.rect(margins.left, y, contentWidth, 6, 'F');
-      doc.setFontSize(6.5);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(255, 255, 255);
-      let cx = margins.left + 1.5;
-      fraisCols.forEach((col, i) => {
-        const align = i === fraisCols.length - 1 ? 'right' : 'left';
-        const textX = align === 'right' ? cx + col.width - 1.5 : cx;
-        doc.text(col.label, textX, y + 4, { align });
-        cx += col.width;
-      });
-      y += 6;
+    const recapCols = [
+      { label: 'TYPE', width: 90, align: 'left' },
+      { label: 'NOMBRE', width: 48, align: 'right' },
+      { label: 'MONTANT TOTAL', width: 48, align: 'right' },
+    ];
 
-      // Lignes
-      doc.setFontSize(6.5);
-      doc.setFont('helvetica', 'normal');
-      let rowIdx = 0;
-      fraisDetails.forEach((f) => {
-        checkPageBreak(8, 'DÉTAIL DES FRAIS (suite)');
-        
-        const rowHeight = 6;
-        if (rowIdx % 2 === 0) {
-          doc.setFillColor(252, 252, 252);
-          doc.rect(margins.left, y, contentWidth, rowHeight, 'F');
-        }
-        doc.setDrawColor(240, 240, 240);
-        doc.setLineWidth(0.1);
-        doc.line(margins.left, y + rowHeight, pageWidth - margins.right, y + rowHeight);
+    doc.setFillColor(26, 35, 126);
+    doc.rect(margins.left, y, contentWidth, 7, 'F');
+    doc.setFontSize(7.5);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(255, 255, 255);
+    let rcx = margins.left + 2;
+    recapCols.forEach((col) => {
+      const textX = col.align === 'right' ? rcx + col.width - 2 : rcx;
+      doc.text(col.label, textX, y + 4.5, { align: col.align });
+      rcx += col.width;
+    });
+    y += 7;
 
-        const rowData = [
-          String(f.source_reference || '-').substring(0, 12),
-          String(f.mouvement_reference || '-').substring(0, 12),
-          String(f.titre || f.libelle || '-').substring(0, 32),
-          String(f.categorie || '-').substring(0, 14),
-          String(f.beneficiaire || '-').substring(0, 18),
-          String(f.mode_paiement || '-').substring(0, 14),
-          formatNumber(f.montant),
-        ];
+    const recapRows = [
+      { label: 'Entrées (toutes sources)', nb: nbEntrees, montant: totalEntrees, color: [34, 197, 94] },
+      { label: 'Sorties (toutes sources)', nb: nbSorties, montant: totalSorties, color: [239, 68, 68] },
+      { label: 'Total opérations', nb: nbOperations, montant: totalEntrees + totalSorties, color: [26, 35, 126], bold: true, highlight: [232, 234, 246] },
+    ];
 
-        cx = margins.left + 1.5;
-        rowData.forEach((val, i) => {
-          const col = fraisCols[i];
-          const isLast = i === fraisCols.length - 1;
-          const align = isLast ? 'right' : 'left';
-          const textX = align === 'right' ? cx + col.width - 1.5 : cx;
-          
-          if (isLast) doc.setTextColor(239, 68, 68);
-          else doc.setTextColor(33, 33, 33);
-          
-          doc.text(val, textX, y + 4, { align });
-          cx += col.width;
-        });
-        y += rowHeight;
-        rowIdx++;
-      });
+    let rrowIdx = 0;
+    recapRows.forEach((r) => {
+      checkPageBreak(8);
+      const rowHeight = 7;
+      if (r.highlight) {
+        doc.setFillColor(r.highlight[0], r.highlight[1], r.highlight[2]);
+        doc.rect(margins.left, y, contentWidth, rowHeight, 'F');
+      } else if (rrowIdx % 2 === 0) {
+        doc.setFillColor(252, 252, 252);
+        doc.rect(margins.left, y, contentWidth, rowHeight, 'F');
+      }
+      doc.setDrawColor(240, 240, 240);
+      doc.line(margins.left, y + rowHeight, pageWidth - margins.right, y + rowHeight);
 
-      // Ligne total
-      doc.setFillColor(254, 226, 226);
-      doc.rect(margins.left, y, contentWidth, 6.5, 'F');
-      doc.setFontSize(7.5);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(239, 68, 68);
-      doc.text('TOTAL FRAIS', margins.left + 1.5, y + 4.5);
-      doc.text(formatCurrency(sortiesFrais), pageWidth - margins.right - 1.5, y + 4.5, { align: 'right' });
-      y += 6.5 + 6;
-    }
+      doc.setFont('helvetica', r.bold ? 'bold' : 'normal');
+      doc.setFontSize(8.5);
+      doc.setTextColor(33, 33, 33);
+      doc.text(r.label, margins.left + 2, y + 5);
 
-    // ================================================================
-    // ✅ TABLEAU DÉTAIL DES ENTRÉES
-    // ================================================================
-    if (entreesDetails.length > 0) {
-      checkPageBreak(25, 'DÉTAIL DES ENTRÉES');
-      
-      doc.setFontSize(10.5);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(34, 197, 94);
-      doc.text(`DÉTAIL DES ENTRÉES (${entreesDetails.length})`, margins.left, y);
-      y += 1.5;
-      doc.setDrawColor(34, 197, 94);
-      doc.setLineWidth(0.3);
-      doc.line(margins.left, y, pageWidth - margins.right, y);
-      y += 4;
+      doc.setTextColor(84, 110, 122);
+      doc.text(String(r.nb), margins.left + recapCols[0].width + recapCols[1].width - 2, y + 5, { align: 'right' });
 
-      const entCols = [
-        { label: 'Référence', width: 26 },
-        { label: 'Libellé', width: 55 },
-        { label: 'Source', width: 25 },
-        { label: 'Mode', width: 24 },
-        { label: 'Destination', width: 30 },
-        { label: 'Heure', width: 14 },
-        { label: 'Montant', width: 12 },
-      ];
-      // Total = 186
+      doc.setTextColor(r.color[0], r.color[1], r.color[2]);
+      doc.text(formatCurrency(r.montant), pageWidth - margins.right - 2, y + 5, { align: 'right' });
 
-      doc.setFillColor(34, 197, 94);
-      doc.rect(margins.left, y, contentWidth, 6, 'F');
-      doc.setFontSize(6.5);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(255, 255, 255);
-      let cx = margins.left + 1.5;
-      entCols.forEach((col, i) => {
-        const align = i === entCols.length - 1 ? 'right' : 'left';
-        const textX = align === 'right' ? cx + col.width - 1.5 : cx;
-        doc.text(col.label, textX, y + 4, { align });
-        cx += col.width;
-      });
-      y += 6;
+      y += rowHeight;
+      rrowIdx++;
+    });
 
-      doc.setFontSize(6.5);
-      doc.setFont('helvetica', 'normal');
-      let rowIdx = 0;
-      entreesDetails.forEach((e) => {
-        checkPageBreak(8, 'DÉTAIL DES ENTRÉES (suite)');
-        
-        const rowHeight = 6;
-        if (rowIdx % 2 === 0) {
-          doc.setFillColor(252, 252, 252);
-          doc.rect(margins.left, y, contentWidth, rowHeight, 'F');
-        }
-        doc.setDrawColor(240, 240, 240);
-        doc.line(margins.left, y + rowHeight, pageWidth - margins.right, y + rowHeight);
-
-        const dest = e.caisse && e.caisse !== '-' ? e.caisse : (e.compte_bancaire && e.compte_bancaire !== '-' ? e.compte_bancaire : '-');
-        const heure = e.date_mouvement ? String(e.date_mouvement).split(' ')[1] || '-' : '-';
-
-        const rowData = [
-          String(e.mouvement_reference || '-').substring(0, 14),
-          String(e.libelle || '-').substring(0, 38),
-          String(e.source_reference || '-').substring(0, 14),
-          String(e.mode_paiement || '-').substring(0, 16),
-          String(dest).substring(0, 20),
-          heure.substring(0, 5),
-          formatNumber(e.montant),
-        ];
-
-        cx = margins.left + 1.5;
-        rowData.forEach((val, i) => {
-          const col = entCols[i];
-          const isLast = i === entCols.length - 1;
-          const align = isLast ? 'right' : 'left';
-          const textX = align === 'right' ? cx + col.width - 1.5 : cx;
-          
-          if (isLast) doc.setTextColor(34, 197, 94);
-          else doc.setTextColor(33, 33, 33);
-          
-          doc.text(val, textX, y + 4, { align });
-          cx += col.width;
-        });
-        y += rowHeight;
-        rowIdx++;
-      });
-
-      doc.setFillColor(220, 252, 231);
-      doc.rect(margins.left, y, contentWidth, 6.5, 'F');
-      doc.setFontSize(7.5);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(34, 197, 94);
-      doc.text('TOTAL ENTRÉES', margins.left + 1.5, y + 4.5);
-      doc.text(formatCurrency(totalEntrees), pageWidth - margins.right - 1.5, y + 4.5, { align: 'right' });
-      y += 6.5 + 6;
-    }
-
-    // ================================================================
-    // ✅ TABLEAU DÉTAIL DES AUTRES SORTIES
-    // ================================================================
-    if (sortiesDetails.length > 0) {
-      checkPageBreak(25, 'DÉTAIL DES AUTRES SORTIES');
-      
-      doc.setFontSize(10.5);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(239, 68, 68);
-      doc.text(`DÉTAIL DES AUTRES SORTIES (${sortiesDetails.length})`, margins.left, y);
-      y += 1.5;
-      doc.setDrawColor(239, 68, 68);
-      doc.line(margins.left, y, pageWidth - margins.right, y);
-      y += 4;
-
-      const sortCols = [
-        { label: 'Référence', width: 26 },
-        { label: 'Libellé', width: 52 },
-        { label: 'Type source', width: 26 },
-        { label: 'Mode', width: 24 },
-        { label: 'Source', width: 30 },
-        { label: 'Heure', width: 14 },
-        { label: 'Montant', width: 14 },
-      ];
-
-      doc.setFillColor(239, 68, 68);
-      doc.rect(margins.left, y, contentWidth, 6, 'F');
-      doc.setFontSize(6.5);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(255, 255, 255);
-      let cx = margins.left + 1.5;
-      sortCols.forEach((col, i) => {
-        const align = i === sortCols.length - 1 ? 'right' : 'left';
-        const textX = align === 'right' ? cx + col.width - 1.5 : cx;
-        doc.text(col.label, textX, y + 4, { align });
-        cx += col.width;
-      });
-      y += 6;
-
-      doc.setFontSize(6.5);
-      doc.setFont('helvetica', 'normal');
-      let rowIdx = 0;
-      let totalAutresSorties = 0;
-      sortiesDetails.forEach((s) => {
-        checkPageBreak(8, 'DÉTAIL DES AUTRES SORTIES (suite)');
-        totalAutresSorties += parseFloat(s.montant || 0);
-
-        const rowHeight = 6;
-        if (rowIdx % 2 === 0) {
-          doc.setFillColor(252, 252, 252);
-          doc.rect(margins.left, y, contentWidth, rowHeight, 'F');
-        }
-        doc.setDrawColor(240, 240, 240);
-        doc.line(margins.left, y + rowHeight, pageWidth - margins.right, y + rowHeight);
-
-        const dest = s.caisse && s.caisse !== '-' ? s.caisse : (s.compte_bancaire && s.compte_bancaire !== '-' ? s.compte_bancaire : '-');
-        const heure = s.date_mouvement ? String(s.date_mouvement).split(' ')[1] || '-' : '-';
-
-        const rowData = [
-          String(s.mouvement_reference || '-').substring(0, 14),
-          String(s.libelle || '-').substring(0, 35),
-          String(s.source_type || '-').substring(0, 16),
-          String(s.mode_paiement || '-').substring(0, 16),
-          String(dest).substring(0, 20),
-          heure.substring(0, 5),
-          formatNumber(s.montant),
-        ];
-
-        cx = margins.left + 1.5;
-        rowData.forEach((val, i) => {
-          const col = sortCols[i];
-          const isLast = i === sortCols.length - 1;
-          const align = isLast ? 'right' : 'left';
-          const textX = align === 'right' ? cx + col.width - 1.5 : cx;
-          
-          if (isLast) doc.setTextColor(239, 68, 68);
-          else doc.setTextColor(33, 33, 33);
-          
-          doc.text(val, textX, y + 4, { align });
-          cx += col.width;
-        });
-        y += rowHeight;
-        rowIdx++;
-      });
-
-      doc.setFillColor(254, 226, 226);
-      doc.rect(margins.left, y, contentWidth, 6.5, 'F');
-      doc.setFontSize(7.5);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(239, 68, 68);
-      doc.text('TOTAL AUTRES SORTIES', margins.left + 1.5, y + 4.5);
-      doc.text(formatCurrency(totalAutresSorties), pageWidth - margins.right - 1.5, y + 4.5, { align: 'right' });
-      y += 6.5 + 6;
-    }
+    y += 6;
 
     // ================================================================
     // SIGNATURES
     // ================================================================
-    checkPageBreak(25);
-    
+    checkPageBreak(30);
+
     const signatureY = y + 6;
     const signatureWidth = 75;
 
@@ -782,22 +685,22 @@ const TresorerieJournalPdf = async (data, warehouseName, options = {}) => {
     const pageCount = doc.internal.getNumberOfPages();
     for (let i = 1; i <= pageCount; i++) {
       doc.setPage(i);
-      
+
       // Filigrane
       addWatermark(doc, watermarkText, watermarkOptions);
-      
+
       // Pied de page
       const footerY = pageHeight - margins.bottom;
       doc.setDrawColor(224, 224, 224);
       doc.setLineWidth(0.5);
       doc.line(margins.left, footerY - 4, pageWidth - margins.right, footerY - 4);
-      
+
       doc.setFontSize(7);
       doc.setFont('helvetica', 'normal');
       doc.setTextColor(120, 144, 156);
       doc.text(company.name, pageWidth / 2, footerY, { align: 'center' });
       doc.text(`Tél: ${company.phone} - RC: ${company.rccm} - NIF: ${company.nif}`, pageWidth / 2, footerY + 4, { align: 'center' });
-      
+
       // Pagination
       doc.setFontSize(7);
       doc.setTextColor(160, 160, 170);
