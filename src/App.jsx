@@ -166,6 +166,12 @@ import DashboardFinancier from './components/finances/DashboardFinancier';
 import ComptesList from './components/finances/ComptesList';
 import CompteForm from './components/finances/CompteForm';
 
+import RetoursClientsList from './components/ventesclients/RetoursClientsList';
+import RetourClientForm from './components/ventesclients/RetourClientForm';
+import RetourClientDetail from './components/ventesclients/RetourClientDetail';
+import RetourClientPdf from './components/ventesclients/RetourClientPdf';
+
+
 
 import EtablissementSettings from './components/settings/EtablissementSettings';
 
@@ -218,6 +224,14 @@ function App() {
 <Route path="/factures-fournisseurs/:id" element={<FactureFournisseurDetail />} />
 <Route path="/factures-fournisseurs/:id/modifier" element={<FactureFournisseurForm />} />
 <Route path="/factures-fournisseurs/:id/paiement" element={<FactureFournisseurDetail />} />
+
+
+<Route path="/retours-clients" element={<RetoursClientsList />} />
+<Route path="/retours-clients/nouveau" element={<RetourClientForm />} />
+<Route path="/retours-clients/:id" element={<RetourClientDetail />} />
+<Route path="/retours-clients/:id/modifier" element={<RetourClientForm />} />
+<Route path="/retours-clients/:id/pdf" element={<RetourClientPdf />} />
+
 
 
 <Route path="/paiements-fournisseurs" element={<PaiementsFournisseursList />} />
