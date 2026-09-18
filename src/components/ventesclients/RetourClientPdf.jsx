@@ -1,4 +1,8 @@
 // src/components/retours-clients/RetourClientPdf.jsx
+// ============================================================
+// PDF AVOIR CLIENT AVEC DÉTAIL DES PRODUITS RETOURNÉS
+// ============================================================
+
 import jsPDF from 'jspdf';
 import axiosInstance from '../AxiosInstance';
 
@@ -94,6 +98,11 @@ const formatNumber = (n) => {
 };
 
 const formatCurrency = (amt) => `${formatNumber(amt)} FCFA`;
+
+const formatQuantity = (n) => {
+  const num = parseFloat(n) || 0;
+  return num % 1 === 0 ? num.toString() : num.toFixed(2);
+};
 
 const formatDate = (d) => {
   if (!d) return '-';
@@ -254,9 +263,18 @@ const generateRetourPdf = async (avoir, options = {}) => {
 
     const typeInfo = getTypeInfo(avoir.type);
     const totalEnLettres = nombreEnLettres(parseFloat(avoir.amount) || 0);
+    const lignes = avoir.lignes || [];
 
     const logoData = await loadLogo(etab?.logo);
     const qrCodeData = avoir.qr_code_url ? await loadQrCode(avoir.qr_code_url) : null;
+
+    // Calculs
+    const quantiteTotale = lignes.reduce(
+      (sum, l) => sum + (parseFloat(l.quantity) || 0), 0
+    );
+    const montantLignes = lignes.reduce(
+      (sum, l) => sum + (parseFloat(l.total) || 0), 0
+    );
 
     // ================================================================
     // EN-TÊTE
@@ -331,19 +349,20 @@ const generateRetourPdf = async (avoir, options = {}) => {
     // ================================================================
     const gridY = y;
     doc.setFillColor(248, 249, 250);
-    doc.roundedRect(margins.left, gridY, contentWidth, 26, 2, 2, 'F');
+    doc.roundedRect(margins.left, gridY, contentWidth, 28, 2, 2, 'F');
     doc.setDrawColor(224, 224, 224);
     doc.setLineWidth(0.5);
-    doc.roundedRect(margins.left, gridY, contentWidth, 26, 2, 2, 'S');
+    doc.roundedRect(margins.left, gridY, contentWidth, 28, 2, 2, 'S');
 
     const colWidth = contentWidth / 2;
     const gridX1 = margins.left;
     const gridX2 = margins.left + colWidth;
 
+    // Colonne gauche : CLIENT
     doc.setFontSize(7);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(120, 144, 156);
-    doc.text('CLIENT', gridX1 + 4, gridY + 4.5);
+    doc.text('CLIENT', gridX1 + 4, gridY + 5);
 
     doc.setFontSize(10);
     doc.setFont('helvetica', 'bold');
@@ -360,68 +379,244 @@ const generateRetourPdf = async (avoir, options = {}) => {
     doc.setFontSize(7);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(120, 144, 156);
-    doc.text('VENTE ASSOCIÉE', gridX2 + 4, gridY + 4.5);
+    doc.text('VENTE ASSOCIÉE', gridX1 + 4, gridY + 24);
 
     doc.setFontSize(9);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(26, 35, 126);
-    doc.text(avoir.sale_number || avoir.sale || 'Aucune', gridX2 + 4, gridY + 12);
+    doc.text(avoir.sale_number || 'Aucune', gridX1 + 30, gridY + 24);
+
+    // Colonne droite : STATUT STOCK + MONTANT
+    doc.setFontSize(7);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(120, 144, 156);
+    doc.text('RESTAURATION STOCK', gridX2 + 4, gridY + 5);
+
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'bold');
+    if (avoir.restore_stock) {
+      doc.setTextColor(76, 175, 80);
+      doc.text('✓ Restauré', gridX2 + 4, gridY + 12);
+    } else {
+      doc.setTextColor(158, 158, 158);
+      doc.text('Non restauré', gridX2 + 4, gridY + 12);
+    }
 
     doc.setFontSize(7);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(120, 144, 156);
-    doc.text('MONTANT', gridX2 + 4, gridY + 20);
+    doc.text('MONTANT TOTAL', gridX2 + 4, gridY + 19);
 
-    doc.setFontSize(11);
+    doc.setFontSize(12);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(typeInfo.color[0], typeInfo.color[1], typeInfo.color[2]);
     doc.text(formatCurrency(avoir.amount), gridX2 + 4, gridY + 26);
 
-    y = gridY + 30;
+    y = gridY + 32;
 
     // ================================================================
-    // RAISON
+    // TABLEAU DES PRODUITS RETOURNÉS
     // ================================================================
     doc.setFontSize(11);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(26, 35, 126);
-    doc.text('RAISON DU RETOUR', margins.left, y);
+    doc.text('DÉTAIL DES PRODUITS RETOURNÉS', margins.left, y);
     y += 2;
     doc.setDrawColor(224, 224, 224);
     doc.setLineWidth(0.5);
     doc.line(margins.left, y, pageWidth - margins.right, y);
     y += 6;
 
-    doc.setFillColor(255, 248, 230);
-    doc.roundedRect(margins.left, y, contentWidth, 22, 2, 2, 'F');
-    doc.setDrawColor(255, 204, 128);
-    doc.setLineWidth(0.4);
-    doc.roundedRect(margins.left, y, contentWidth, 22, 2, 2, 'S');
+    // Colonnes
+    const colDescX = margins.left;
+    const colQtyX = margins.left + 95;
+    const colPriceX = margins.left + 120;
+    const colRemiseX = margins.left + 150;
+    const colTotalX = pageWidth - margins.right - 2;
 
-    doc.setFontSize(9);
+    // En-tête du tableau
+    const headerY = y;
+    doc.setFillColor(26, 35, 126);
+    doc.roundedRect(colDescX, headerY, contentWidth, 7, 2, 2, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(7.5);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Désignation', colDescX + 3, headerY + 4.5);
+    doc.text('Qté', colQtyX + 3, headerY + 4.5);
+    doc.text('Prix unit.', colPriceX + 3, headerY + 4.5);
+    doc.text('Remise', colRemiseX + 3, headerY + 4.5);
+    doc.text('Total', colTotalX - 3, headerY + 4.5, { align: 'right' });
+
+    y = headerY + 7;
+    let currentY = y;
+    let rowIndex = 0;
+
+    if (lignes.length === 0) {
+      doc.setTextColor(150, 150, 150);
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'italic');
+      doc.text('Aucun produit retourné (avoir global)', colDescX + 3, currentY + 5);
+      currentY += 10;
+    } else {
+      for (let idx = 0; idx < lignes.length; idx++) {
+        const ligne = lignes[idx];
+        const productName = ligne.product_name || ligne.product?.name || 'Produit';
+        const productCode = ligne.product_code || ligne.product?.code || '';
+        const qty = parseFloat(ligne.quantity) || 0;
+        const price = parseFloat(ligne.unit_price) || 0;
+        const remise = parseFloat(ligne.discount) || 0;
+        const lineTotal = parseFloat(ligne.total) || (qty * price - remise);
+
+        // Saut de page si nécessaire
+        if (currentY > pageHeight - 80) {
+          doc.addPage();
+          addWatermark(doc, 'AVOIR', {
+            fontSize: 40,
+            color: [200, 200, 200],
+            opacity: 0.10,
+            angle: -45,
+            repeat: true,
+            spacing: 100
+          });
+
+          currentY = margins.top;
+          doc.setFillColor(26, 35, 126);
+          doc.roundedRect(colDescX, currentY, contentWidth, 7, 2, 2, 'F');
+          doc.setTextColor(255, 255, 255);
+          doc.setFontSize(7.5);
+          doc.setFont('helvetica', 'bold');
+          doc.text('Désignation', colDescX + 3, currentY + 4.5);
+          doc.text('Qté', colQtyX + 3, currentY + 4.5);
+          doc.text('Prix unit.', colPriceX + 3, currentY + 4.5);
+          doc.text('Remise', colRemiseX + 3, currentY + 4.5);
+          doc.text('Total', colTotalX - 3, currentY + 4.5, { align: 'right' });
+          currentY += 7;
+          rowIndex = 0;
+        }
+
+        // Ligne alternée
+        if (rowIndex % 2 === 0) {
+          doc.setFillColor(255, 248, 230);
+          doc.rect(colDescX, currentY - 0.5, contentWidth, 7, 'F');
+        }
+
+        // Séparateurs
+        doc.setDrawColor(224, 224, 224);
+        doc.setLineWidth(0.1);
+        doc.line(colDescX, currentY, colDescX, currentY + 7);
+        doc.line(colQtyX, currentY, colQtyX, currentY + 7);
+        doc.line(colPriceX, currentY, colPriceX, currentY + 7);
+        doc.line(colRemiseX, currentY, colRemiseX, currentY + 7);
+        doc.line(colTotalX, currentY, colTotalX, currentY + 7);
+
+        // Contenu
+        doc.setTextColor(33, 33, 33);
+        doc.setFontSize(8);
+        doc.setFont('helvetica', 'bold');
+        doc.text(productName, colDescX + 3, currentY + 4.5);
+
+        if (productCode) {
+          doc.setFontSize(6);
+          doc.setFont('helvetica', 'normal');
+          doc.setTextColor(150, 150, 150);
+          doc.text(productCode, colDescX + 3, currentY + 7);
+        }
+
+        doc.setTextColor(33, 33, 33);
+        doc.setFontSize(8);
+        doc.setFont('helvetica', 'bold');
+        doc.text(formatQuantity(qty), colQtyX + 3, currentY + 4.5);
+
+        doc.setFont('helvetica', 'normal');
+        doc.text(formatCurrency(price), colPriceX + 3, currentY + 4.5);
+        doc.text(remise > 0 ? formatCurrency(remise) : '-', colRemiseX + 3, currentY + 4.5);
+
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(255, 152, 0);
+        doc.text(formatCurrency(lineTotal), colTotalX - 3, currentY + 4.5, { align: 'right' });
+
+        currentY += 7;
+        rowIndex++;
+      }
+    }
+
+    // Ligne de séparation
+    doc.setDrawColor(180, 180, 190);
+    doc.setLineWidth(0.3);
+    doc.line(colDescX, currentY, pageWidth - margins.right, currentY);
+    y = currentY + 5;
+
+    // ================================================================
+    // TOTAUX
+    // ================================================================
+    let ay = y;
+
+    // Récapitulatif gauche
+    doc.setFillColor(248, 249, 250);
+    doc.roundedRect(margins.left, ay, contentWidth * 0.55, 26, 2, 2, 'F');
+    doc.setDrawColor(224, 224, 224);
+    doc.setLineWidth(0.5);
+    doc.roundedRect(margins.left, ay, contentWidth * 0.55, 26, 2, 2, 'S');
+
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(84, 110, 122);
+    doc.text('RÉCAPITULATIF', margins.left + 5, ay + 6);
+
+    doc.setDrawColor(224, 224, 224);
+    doc.setLineWidth(0.3);
+    doc.line(margins.left + 5, ay + 8, margins.left + contentWidth * 0.55 - 5, ay + 8);
+
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(66, 66, 66);
+    doc.setFontSize(8);
+    doc.text('Nombre de produits :', margins.left + 5, ay + 14);
+    doc.setFont('helvetica', 'bold');
+    doc.text(`${lignes.length}`, margins.left + contentWidth * 0.55 - 5, ay + 14, { align: 'right' });
 
-    const raisonText = avoir.reason || 'Aucune raison spécifiée';
-    const splitRaison = doc.splitTextToSize(raisonText, contentWidth - 10);
-    doc.text(splitRaison.slice(0, 5), margins.left + 5, y + 6);
+    doc.setFont('helvetica', 'normal');
+    doc.text('Quantité totale :', margins.left + 5, ay + 20);
+    doc.setFont('helvetica', 'bold');
+    doc.text(`${formatQuantity(quantiteTotale)}`, margins.left + contentWidth * 0.55 - 5, ay + 20, { align: 'right' });
 
-    y += 26;
+    // Bloc TOTAL (droite)
+    const amountBoxWidth = contentWidth * 0.42;
+    const amountBoxX = pageWidth - margins.right - amountBoxWidth;
+    const amountBoxHeight = 26;
+
+    doc.setFillColor(typeInfo.color[0], typeInfo.color[1], typeInfo.color[2]);
+    doc.roundedRect(amountBoxX, ay, amountBoxWidth, amountBoxHeight, 2, 2, 'F');
+
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(255, 255, 255);
+    doc.text('MONTANT TOTAL', amountBoxX + 4, ay + 7);
+
+    doc.setDrawColor(255, 255, 255);
+    doc.setLineWidth(0.3);
+    doc.line(amountBoxX + 4, ay + 9, amountBoxX + amountBoxWidth - 4, ay + 9);
+
+    const totalFormatted = formatCurrency(avoir.amount);
+    doc.setFontSize(14);
+    doc.setTextColor(255, 255, 255);
+    doc.text(totalFormatted, amountBoxX + amountBoxWidth - 4, ay + 20, { align: 'right' });
+
+    ay += amountBoxHeight + 4;
 
     // ================================================================
     // MONTANT EN LETTRES
     // ================================================================
     const lettresBoxHeight = 14;
     doc.setFillColor(248, 249, 250);
-    doc.roundedRect(margins.left, y, contentWidth, lettresBoxHeight, 2, 2, 'F');
+    doc.roundedRect(margins.left, ay, contentWidth, lettresBoxHeight, 2, 2, 'F');
     doc.setDrawColor(224, 224, 224);
     doc.setLineWidth(0.5);
-    doc.roundedRect(margins.left, y, contentWidth, lettresBoxHeight, 2, 2, 'S');
+    doc.roundedRect(margins.left, ay, contentWidth, lettresBoxHeight, 2, 2, 'S');
 
     doc.setFontSize(8);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(84, 110, 122);
-    doc.text('Montant en toutes lettres :', margins.left + 6, y + 9);
+    doc.text('Montant en toutes lettres :', margins.left + 6, ay + 9);
 
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(33, 33, 33);
@@ -441,19 +636,20 @@ const generateRetourPdf = async (avoir, options = {}) => {
 
     if (lettresWidth > lettresAvailableWidth) {
       const splitLettres = doc.splitTextToSize(totalEnLettres, lettresAvailableWidth);
-      doc.text(splitLettres, lettresStartX, y + 5);
+      doc.text(splitLettres, lettresStartX, ay + 5);
     } else {
-      doc.text(totalEnLettres, lettresStartX, y + 9);
+      doc.text(totalEnLettres, lettresStartX, ay + 9);
     }
 
-    y += lettresBoxHeight + 8;
+    ay += lettresBoxHeight + 6;
 
     // ================================================================
-    // NOTES + SIGNATURES
+    // RAISON + NOTES
     // ================================================================
     const notesText = (avoir.notes && typeof avoir.notes === 'string' && avoir.notes.trim())
       ? avoir.notes.trim()
       : '';
+    const raisonText = avoir.reason || 'Aucune raison spécifiée';
 
     const blockGap = 6;
     const leftColWidth = (contentWidth - blockGap) * 0.55;
@@ -462,45 +658,32 @@ const generateRetourPdf = async (avoir, options = {}) => {
     const rightColX = margins.left + leftColWidth + blockGap;
 
     const blockHeight = 42;
-    const blockY = y;
+    const blockY = ay;
 
-    // Notes
-    if (notesText) {
-      doc.setFillColor(255, 248, 230);
-      doc.roundedRect(leftColX, blockY, leftColWidth, blockHeight, 2, 2, 'F');
-      doc.setDrawColor(255, 204, 128);
-      doc.setLineWidth(0.4);
-      doc.roundedRect(leftColX, blockY, leftColWidth, blockHeight, 2, 2, 'S');
+    // Raison (gauche)
+    doc.setFillColor(255, 248, 230);
+    doc.roundedRect(leftColX, blockY, leftColWidth, blockHeight, 2, 2, 'F');
+    doc.setDrawColor(255, 204, 128);
+    doc.setLineWidth(0.4);
+    doc.roundedRect(leftColX, blockY, leftColWidth, blockHeight, 2, 2, 'S');
 
-      doc.setFontSize(8);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(230, 81, 0);
-      doc.text('NOTES', leftColX + 5, blockY + 6);
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(230, 81, 0);
+    doc.text('RAISON DU RETOUR', leftColX + 5, blockY + 6);
 
-      doc.setDrawColor(255, 204, 128);
-      doc.setLineWidth(0.3);
-      doc.line(leftColX + 5, blockY + 8, leftColX + leftColWidth - 5, blockY + 8);
+    doc.setDrawColor(255, 204, 128);
+    doc.setLineWidth(0.3);
+    doc.line(leftColX + 5, blockY + 8, leftColX + leftColWidth - 5, blockY + 8);
 
-      doc.setFont('helvetica', 'normal');
-      doc.setTextColor(66, 66, 66);
-      doc.setFontSize(7.5);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(66, 66, 66);
+    doc.setFontSize(7.5);
 
-      const splitNotes = doc.splitTextToSize(notesText, leftColWidth - 10);
-      doc.text(splitNotes.slice(0, 8), leftColX + 5, blockY + 14);
-    } else {
-      doc.setFillColor(250, 250, 250);
-      doc.roundedRect(leftColX, blockY, leftColWidth, blockHeight, 2, 2, 'F');
-      doc.setDrawColor(230, 230, 230);
-      doc.setLineWidth(0.3);
-      doc.roundedRect(leftColX, blockY, leftColWidth, blockHeight, 2, 2, 'S');
+    const splitRaison = doc.splitTextToSize(raisonText, leftColWidth - 10);
+    doc.text(splitRaison.slice(0, 6), leftColX + 5, blockY + 14);
 
-      doc.setFontSize(7.5);
-      doc.setFont('helvetica', 'italic');
-      doc.setTextColor(180, 180, 180);
-      doc.text('Aucune note', leftColX + leftColWidth / 2, blockY + blockHeight / 2, { align: 'center' });
-    }
-
-    // Signatures
+    // Notes (droite)
     doc.setFillColor(248, 249, 250);
     doc.roundedRect(rightColX, blockY, rightColWidth, blockHeight, 2, 2, 'F');
     doc.setDrawColor(224, 224, 224);
@@ -510,74 +693,113 @@ const generateRetourPdf = async (avoir, options = {}) => {
     doc.setFontSize(8);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(26, 35, 126);
-    doc.text('SIGNATURES', rightColX + 5, blockY + 6);
+    doc.text('NOTES', rightColX + 5, blockY + 6);
 
     doc.setDrawColor(224, 224, 224);
     doc.setLineWidth(0.3);
     doc.line(rightColX + 5, blockY + 8, rightColX + rightColWidth - 5, blockY + 8);
 
-    const sigGap = 4;
-    const sigInnerPadding = 4;
-    const sigColWidth = (rightColWidth - (sigInnerPadding * 2) - sigGap) / 2;
-    const sig1X = rightColX + sigInnerPadding;
-    const sig2X = sig1X + sigColWidth + sigGap;
-    const sigLineY = blockY + blockHeight - 12;
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(66, 66, 66);
+    doc.setFontSize(7.5);
 
+    if (notesText) {
+      const splitNotes = doc.splitTextToSize(notesText, rightColWidth - 10);
+      doc.text(splitNotes.slice(0, 8), rightColX + 5, blockY + 14);
+    } else {
+      doc.setFont('helvetica', 'italic');
+      doc.setTextColor(180, 180, 180);
+      doc.text('Aucune note', rightColX + rightColWidth / 2, blockY + blockHeight / 2, { align: 'center' });
+    }
+
+    y = blockY + blockHeight + 6;
+
+    // ================================================================
+    // SIGNATURES
+    // ================================================================
+    const sigBlockHeight = 30;
+    const sigBlockY = y;
+
+    doc.setFillColor(248, 249, 250);
+    doc.roundedRect(margins.left, sigBlockY, contentWidth, sigBlockHeight, 2, 2, 'F');
+    doc.setDrawColor(224, 224, 224);
+    doc.setLineWidth(0.4);
+    doc.roundedRect(margins.left, sigBlockY, contentWidth, sigBlockHeight, 2, 2, 'S');
+
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(26, 35, 126);
+    doc.text('SIGNATURES', margins.left + 5, sigBlockY + 6);
+
+    doc.setDrawColor(224, 224, 224);
+    doc.setLineWidth(0.3);
+    doc.line(margins.left + 5, sigBlockY + 8, pageWidth - margins.right - 5, sigBlockY + 8);
+
+    const sigGap = 8;
+    const sigColWidth = (contentWidth - 20 - sigGap) / 2;
+    const sig1X = margins.left + 10;
+    const sig2X = sig1X + sigColWidth + sigGap;
+    const sigLineY = sigBlockY + sigBlockHeight - 10;
+
+    // Signature Client
     doc.setDrawColor(66, 66, 66);
     doc.setLineWidth(0.4);
     doc.line(sig1X, sigLineY, sig1X + sigColWidth, sigLineY);
 
-    doc.setFontSize(7);
+    doc.setFontSize(8);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(84, 110, 122);
-    doc.text('Client', sig1X + sigColWidth / 2, sigLineY + 4, { align: 'center' });
+    doc.text('Client', sig1X + sigColWidth / 2, sigLineY + 5, { align: 'center' });
 
-    doc.setFontSize(6);
+    doc.setFontSize(7);
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(120, 144, 156);
-    const clientNomDisplay = (avoir.client_name || 'Client').length > 20
-      ? (avoir.client_name || 'Client').substring(0, 18) + '...'
+    const clientNomDisplay = (avoir.client_name || 'Client').length > 25
+      ? (avoir.client_name || 'Client').substring(0, 23) + '...'
       : (avoir.client_name || 'Client');
-    doc.text(clientNomDisplay, sig1X + sigColWidth / 2, sigLineY + 8, { align: 'center' });
+    doc.text(clientNomDisplay, sig1X + sigColWidth / 2, sigLineY + 10, { align: 'center' });
 
+    // Signature Entreprise
     doc.setDrawColor(66, 66, 66);
     doc.setLineWidth(0.4);
     doc.line(sig2X, sigLineY, sig2X + sigColWidth, sigLineY);
 
-    doc.setFontSize(7);
+    doc.setFontSize(8);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(84, 110, 122);
-    doc.text('Entreprise', sig2X + sigColWidth / 2, sigLineY + 4, { align: 'center' });
+    doc.text('Entreprise', sig2X + sigColWidth / 2, sigLineY + 5, { align: 'center' });
 
-    doc.setFontSize(6);
+    doc.setFontSize(7);
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(120, 144, 156);
-    doc.text(`Gérant: ${company.gérant}`, sig2X + sigColWidth / 2, sigLineY + 8, { align: 'center' });
+    doc.text(`Gérant: ${company.gérant}`, sig2X + sigColWidth / 2, sigLineY + 10, { align: 'center' });
 
     // ================================================================
-    // QR CODE
+    // QR CODE (en bas à droite, si présent)
     // ================================================================
     if (qrCodeData) {
-      const qrSize = 24;
+      const qrSize = 22;
       const qrX = pageWidth - margins.right - qrSize;
-      const qrY = blockY + blockHeight + 5;
+      const qrY = sigBlockY + sigBlockHeight + 4;
 
-      doc.setFillColor(255, 255, 255);
-      doc.roundedRect(qrX - 2, qrY - 2, qrSize + 4, qrSize + 9, 2, 2, 'F');
-      doc.setDrawColor(224, 224, 224);
-      doc.setLineWidth(0.3);
-      doc.roundedRect(qrX - 2, qrY - 2, qrSize + 4, qrSize + 9, 2, 2, 'S');
+      if (qrY + qrSize + 10 < pageHeight - margins.bottom) {
+        doc.setFillColor(255, 255, 255);
+        doc.roundedRect(qrX - 2, qrY - 2, qrSize + 4, qrSize + 9, 2, 2, 'F');
+        doc.setDrawColor(224, 224, 224);
+        doc.setLineWidth(0.3);
+        doc.roundedRect(qrX - 2, qrY - 2, qrSize + 4, qrSize + 9, 2, 2, 'S');
 
-      doc.addImage(qrCodeData, 'PNG', qrX, qrY, qrSize, qrSize);
+        doc.addImage(qrCodeData, 'PNG', qrX, qrY, qrSize, qrSize);
 
-      doc.setFontSize(5.5);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(84, 110, 122);
-      doc.text('Vérification', qrX + qrSize / 2, qrY + qrSize + 3.5, { align: 'center' });
-      doc.setFontSize(5);
-      doc.setFont('helvetica', 'normal');
-      doc.setTextColor(120, 144, 156);
-      doc.text(`N° ${avoir.avoir_number || '-'}`, qrX + qrSize / 2, qrY + qrSize + 7, { align: 'center' });
+        doc.setFontSize(5.5);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(84, 110, 122);
+        doc.text('Vérification', qrX + qrSize / 2, qrY + qrSize + 3.5, { align: 'center' });
+        doc.setFontSize(5);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(120, 144, 156);
+        doc.text(`N° ${avoir.avoir_number || '-'}`, qrX + qrSize / 2, qrY + qrSize + 7, { align: 'center' });
+      }
     }
 
     // ================================================================
