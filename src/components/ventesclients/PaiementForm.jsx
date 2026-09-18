@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import AxiosInstance from '../AxiosInstance';
+import FactureSearchSelect from './FactureSearchSelect';
 import { 
   ArrowLeft, 
   Save, 
@@ -26,7 +27,6 @@ const PaiementForm = () => {
 
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [factures, setFactures] = useState([]);
   const [notification, setNotification] = useState(null);
   const [selectedFacture, setSelectedFacture] = useState(null);
   const [formData, setFormData] = useState({
@@ -45,67 +45,9 @@ const PaiementForm = () => {
     setTimeout(() => setNotification(null), 4000);
   };
 
-  // Charger les factures
-  const fetchFactures = async () => {
-    try {
-      const token = getToken();
-      if (!token) {
-        setFactures(getMockFactures());
-        return;
-      }
-
-      const response = await AxiosInstance.get('/factures/', {
-        headers: { 'Authorization': `Token ${token}` },
-        params: { status: 'sent,overdue,partial' }
-      });
-      
-      if (response.data && response.data.length > 0) {
-        setFactures(response.data);
-      } else {
-        setFactures(getMockFactures());
-      }
-    } catch (error) {
-      console.error('Erreur chargement factures:', error);
-      setFactures(getMockFactures());
-      showNotification('Erreur de chargement des factures', 'error');
-    }
-  };
-
-  // Données de test
-  const getMockFactures = () => [
-    {
-      id: 1,
-      invoice_number: 'FAC-2024-001',
-      client_name: 'Client Test 1',
-      total: 150000,
-      amount_paid: 0,
-      remaining_amount: 150000,
-      due_date: '2024-12-31',
-      status: 'sent'
-    },
-    {
-      id: 2,
-      invoice_number: 'FAC-2024-002',
-      client_name: 'Client Test 2',
-      total: 250000,
-      amount_paid: 50000,
-      remaining_amount: 200000,
-      due_date: '2024-11-30',
-      status: 'overdue'
-    },
-    {
-      id: 3,
-      invoice_number: 'FAC-2024-003',
-      client_name: 'Client Test 3',
-      total: 75000,
-      amount_paid: 0,
-      remaining_amount: 75000,
-      due_date: '2025-01-15',
-      status: 'sent'
-    }
-  ];
-
-  // Charger le paiement si édition
+  // ============================================================
+  // CHARGEMENT DU PAIEMENT (ÉDITION UNIQUEMENT)
+  // ============================================================
   const fetchPaiement = async () => {
     if (!isEdit) return;
     
@@ -124,7 +66,7 @@ const PaiementForm = () => {
       
       const data = response.data;
       setFormData({
-        facture: data.sale || '',
+        facture: data.facture || '',
         amount: data.amount || '',
         method: data.method || 'cash',
         reference: data.reference || '',
@@ -139,26 +81,33 @@ const PaiementForm = () => {
   };
 
   useEffect(() => {
-    fetchFactures();
     if (isEdit) fetchPaiement();
   }, []);
 
-  // Mettre à jour les infos de la facture sélectionnée
-  useEffect(() => {
-    if (formData.facture) {
-      const facture = factures.find(f => f.id === parseInt(formData.facture));
-      setSelectedFacture(facture);
-    } else {
-      setSelectedFacture(null);
-    }
-  }, [formData.facture, factures]);
-
+  // ============================================================
+  // GESTION DES CHAMPS
+  // ============================================================
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  // Validation du montant
+  // ============================================================
+  // SÉLECTION DE FACTURE (via FactureSearchSelect)
+  // ============================================================
+  const handleFactureSelect = (factureId, facture) => {
+    setFormData(prev => ({
+      ...prev,
+      facture: factureId,
+      amount: ''  // Réinitialiser le montant
+    }));
+    setSelectedFacture(facture);
+    setErrors(prev => ({ ...prev, amount: '' }));
+  };
+
+  // ============================================================
+  // VALIDATION DU MONTANT
+  // ============================================================
   const validateAmount = (value) => {
     const amount = parseFloat(value);
     
@@ -169,13 +118,19 @@ const PaiementForm = () => {
     if (selectedFacture) {
       const remaining = selectedFacture.remaining_amount || selectedFacture.total;
       if (amount > remaining) {
-        return { valid: false, message: `Montant maximum: ${remaining.toLocaleString('fr-FR')} FCFA` };
+        return { 
+          valid: false, 
+          message: `Montant maximum: ${remaining.toLocaleString('fr-FR')} FCFA` 
+        };
       }
     }
     
     return { valid: true, message: '' };
   };
 
+  // ============================================================
+  // SOUMISSION
+  // ============================================================
   const handleSubmit = async (e) => {
     e.preventDefault();
     
@@ -208,14 +163,18 @@ const PaiementForm = () => {
       };
       
       if (isEdit) {
+        // Modification d'un paiement existant
         await AxiosInstance.put(`/payments/${id}/`, dataToSend, {
           headers: { 'Authorization': `Token ${token}` }
         });
         showNotification('Paiement modifié avec succès', 'success');
       } else {
-        await AxiosInstance.post(`/factures/${formData.facture}/register_payment/`, dataToSend, {
-          headers: { 'Authorization': `Token ${token}` }
-        });
+        // Création : on passe par la facture
+        await AxiosInstance.post(
+          `/factures/${formData.facture}/register_payment/`, 
+          dataToSend, 
+          { headers: { 'Authorization': `Token ${token}` } }
+        );
         showNotification('Paiement enregistré avec succès', 'success');
       }
 
@@ -223,16 +182,22 @@ const PaiementForm = () => {
 
     } catch (error) {
       console.error('Erreur:', error);
-      const errorMsg = error.response?.data?.error || error.response?.data?.message || 'Erreur lors de l\'enregistrement';
+      const errorMsg = 
+        error.response?.data?.error || 
+        error.response?.data?.message || 
+        'Erreur lors de l\'enregistrement';
       showNotification(errorMsg, 'error');
     } finally {
       setSubmitting(false);
     }
   };
 
+  // ============================================================
+  // UTILITAIRES
+  // ============================================================
   const formatCurrency = (amount) => {
-    if (!amount) return '0 FCFA';
-    return `${amount.toLocaleString('fr-FR')} FCFA`;
+    if (!amount && amount !== 0) return '0 FCFA';
+    return `${Number(amount).toLocaleString('fr-FR')} FCFA`;
   };
 
   const getStatusBadge = (status) => {
@@ -241,13 +206,16 @@ const PaiementForm = () => {
       overdue: { label: 'En retard', className: 'badge-error' },
       draft: { label: 'Brouillon', className: 'badge-ghost' },
       paid: { label: 'Payée', className: 'badge-success' },
-      partial: { label: 'Partielle', className: 'badge-warning' }
+      partial: { label: 'Partielle', className: 'badge-warning' },
+      cancelled: { label: 'Annulée', className: 'badge-ghost' },
     };
     const config = configs[status] || { label: status, className: 'badge-ghost' };
     return <span className={`badge ${config.className}`}>{config.label}</span>;
   };
 
-  // Méthodes de paiement avec icônes
+  // ============================================================
+  // MÉTHODES DE PAIEMENT
+  // ============================================================
   const paymentMethods = [
     { value: 'cash', label: 'Espèces', icon: Banknote },
     { value: 'card', label: 'Carte bancaire', icon: CreditCard },
@@ -257,6 +225,9 @@ const PaiementForm = () => {
     { value: 'credit', label: 'Crédit', icon: Wallet }
   ];
 
+  // ============================================================
+  // ÉCRAN DE CHARGEMENT
+  // ============================================================
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-50 w-full">
@@ -268,6 +239,9 @@ const PaiementForm = () => {
     );
   }
 
+  // ============================================================
+  // RENDU
+  // ============================================================
   return (
     <div className="w-full min-h-screen bg-gray-50">
       {/* Notification */}
@@ -325,14 +299,15 @@ const PaiementForm = () => {
         </div>
       </div>
 
-      {/* Formulaire - Full Width avec 2 colonnes */}
+      {/* Formulaire */}
       <div className="w-full px-6 sm:px-8 py-6">
         <form onSubmit={handleSubmit} className="w-full">
           
-          {/* Grille 2 colonnes */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 w-full">
             
-            {/* Colonne 1 - Informations facture */}
+            {/* ============================================ */}
+            {/* COLONNE 1 - Informations facture              */}
+            {/* ============================================ */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
               <div className="bg-gray-50/80 px-5 py-3.5 border-b border-gray-200 flex items-center justify-between">
                 <h3 className="font-semibold flex items-center gap-2.5 text-gray-700">
@@ -348,35 +323,17 @@ const PaiementForm = () => {
                   <label className="label text-sm font-medium text-gray-700 pb-1">
                     Sélectionner une facture <span className="text-red-500">*</span>
                   </label>
-                  <select
-                    name="facture"
+                  
+                  <FactureSearchSelect
                     value={formData.facture}
-                    onChange={handleChange}
-                    className="select select-bordered w-full h-12 text-base"
-                  >
-                    <option value="">Choisir une facture</option>
-                    {factures.length === 0 ? (
-                      <option value="" disabled>Aucune facture disponible</option>
-                    ) : (
-                      factures.map(facture => (
-                        <option key={facture.id} value={facture.id}>
-                          {facture.invoice_number} - {facture.client_name} 
-                          (Reste: {formatCurrency(facture.remaining_amount || facture.total)})
-                        </option>
-                      ))
-                    )}
-                  </select>
-                  {factures.length === 0 && (
+                    onChange={handleFactureSelect}
+                    placeholder="Rechercher par client, n° facture, téléphone..."
+                  />
+
+                  {!formData.facture && (
                     <p className="text-warning text-sm mt-2 flex items-center gap-1.5">
                       <AlertCircle className="w-4 h-4" />
-                      Aucune facture trouvée. 
-                      <button 
-                        type="button" 
-                        className="text-primary hover:underline ml-1 font-medium"
-                        onClick={() => navigate('/factures/nouvelle')}
-                      >
-                        Créer une facture
-                      </button>
+                      Recherchez et sélectionnez une facture pour continuer
                     </p>
                   )}
                 </div>
@@ -389,22 +346,30 @@ const PaiementForm = () => {
                     </div>
                     <div>
                       <p className="text-xs text-gray-500 font-medium">Client</p>
-                      <p className="font-semibold text-base truncate">{selectedFacture.client_name}</p>
+                      <p className="font-semibold text-base truncate">
+                        {selectedFacture.client_name}
+                      </p>
                     </div>
                     <div>
                       <p className="text-xs text-gray-500 font-medium">Total</p>
-                      <p className="font-semibold text-base text-primary">{formatCurrency(selectedFacture.total)}</p>
+                      <p className="font-semibold text-base text-primary">
+                        {formatCurrency(selectedFacture.total)}
+                      </p>
                     </div>
                     <div>
                       <p className="text-xs text-gray-500 font-medium">Reste à payer</p>
-                      <p className="font-semibold text-base text-success">{formatCurrency(selectedFacture.remaining_amount || selectedFacture.total)}</p>
+                      <p className="font-semibold text-base text-success">
+                        {formatCurrency(selectedFacture.remaining_amount || selectedFacture.total)}
+                      </p>
                     </div>
                   </div>
                 )}
               </div>
             </div>
 
-            {/* Colonne 2 - Montant et méthode */}
+            {/* ============================================ */}
+            {/* COLONNE 2 - Montant et méthode               */}
+            {/* ============================================ */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
               <div className="bg-gray-50/80 px-5 py-3.5 border-b border-gray-200">
                 <h3 className="font-semibold flex items-center gap-2.5 text-gray-700">
@@ -431,6 +396,7 @@ const PaiementForm = () => {
                       className={`input input-bordered w-full pl-10 h-12 text-base ${errors.amount ? 'input-error' : ''}`}
                       min="1"
                       step="1"
+                      disabled={!selectedFacture}
                       onBlur={(e) => {
                         const value = e.target.value;
                         const validation = validateAmount(value);
@@ -448,6 +414,21 @@ const PaiementForm = () => {
                       FCFA
                     </span>
                   </div>
+                  
+                  {/* Quick fill : reste à payer */}
+                  {selectedFacture && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const remaining = selectedFacture.remaining_amount || selectedFacture.total;
+                        setFormData(prev => ({ ...prev, amount: remaining }));
+                        setErrors(prev => ({ ...prev, amount: '' }));
+                      }}
+                      className="text-xs text-primary hover:underline mt-1.5 font-medium"
+                    >
+                      → Remplir avec le solde restant ({formatCurrency(selectedFacture.remaining_amount || selectedFacture.total)})
+                    </button>
+                  )}
                   
                   {errors.amount && (
                     <p className="text-red-500 text-sm mt-1.5 flex items-center gap-1.5">
@@ -507,7 +488,9 @@ const PaiementForm = () => {
               </div>
             </div>
 
-            {/* Colonne 1 - Référence (2ème ligne) */}
+            {/* ============================================ */}
+            {/* COLONNE 1 - Référence (2ème ligne)           */}
+            {/* ============================================ */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
               <div className="bg-gray-50/80 px-5 py-3.5 border-b border-gray-200">
                 <h3 className="font-semibold flex items-center gap-2.5 text-gray-700">
@@ -530,7 +513,9 @@ const PaiementForm = () => {
               </div>
             </div>
 
-            {/* Colonne 2 - Notes (2ème ligne) */}
+            {/* ============================================ */}
+            {/* COLONNE 2 - Notes (2ème ligne)               */}
+            {/* ============================================ */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
               <div className="bg-gray-50/80 px-5 py-3.5 border-b border-gray-200">
                 <h3 className="font-semibold flex items-center gap-2.5 text-gray-700">
@@ -551,13 +536,17 @@ const PaiementForm = () => {
 
           </div>
 
-          {/* Boutons d'action - Full Width en bas */}
+          {/* ============================================ */}
+          {/* BOUTONS D'ACTION                              */}
+          {/* ============================================ */}
           <div className="mt-6 bg-white rounded-xl shadow-sm border border-gray-200 p-4 w-full">
             <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
               <div className="text-base text-gray-600">
                 {selectedFacture ? (
                   <span>
-                    Solde restant: <strong className="text-primary text-lg">{formatCurrency(selectedFacture.remaining_amount || selectedFacture.total)}</strong>
+                    Solde restant: <strong className="text-primary text-lg">
+                      {formatCurrency(selectedFacture.remaining_amount || selectedFacture.total)}
+                    </strong>
                   </span>
                 ) : (
                   <span className="text-gray-400">Aucune facture sélectionnée</span>
@@ -575,7 +564,12 @@ const PaiementForm = () => {
                 <button
                   type="submit"
                   className="btn btn-primary gap-2 flex-1 sm:flex-none h-12 px-8 text-base min-w-[180px]"
-                  disabled={submitting || !!errors.amount || !formData.amount || !formData.facture}
+                  disabled={
+                    submitting || 
+                    !!errors.amount || 
+                    !formData.amount || 
+                    !formData.facture
+                  }
                 >
                   {submitting ? (
                     <>
