@@ -53,10 +53,8 @@ import PurchaseReturnForm from './components/achatsfournisseurs/PurchaseReturnFo
 import PurchaseReturnDetails from './components/achatsfournisseurs/PurchaseReturnDetails';
 import PurchaseReturnPdf from './components/achatsfournisseurs/PurchaseReturnPdf';
 import PurchaseAlerts from './components/achatsfournisseurs/PurchaseAlerts';
-import InventaireList from './components/inventaire/InventaireList';
-import InventaireForm from './components/inventaire/InventaireForm';
+
 import AlertsDashboard from './pages/AlertsDashboard';
-import InventaireDetails from './components/inventaire/InventaireDetails';
 
 import ClientsList from './components/ventesclients/ClientsList';
 import ClientForm from './components/ventesclients/ClientForm';
@@ -139,9 +137,9 @@ import WalletDeposit from './components/Wallets/WalletDeposit';
 import WalletDetail from './components/Wallets/WalletDetail';
 import WalletPay from './components/Wallets/WalletPay';
 
-
-
-
+import Inventaires from './components/inventaire/Inventaires';
+import InventaireForm from './components/inventaire/InventaireForm';
+import InventaireDetail from './components/inventaire/InventaireDetail';
 
 
 
@@ -307,9 +305,24 @@ function App() {
               
                 <Route path="/lots/:id" element={<LotDetails />} />
                 <Route path="/mouvements-stock" element={<MovementsList />} />*/}
-                <Route path="/inventaire" element={<InventaireList />} />
-                <Route path="/inventaire/nouveau" element={<InventaireForm />} />
-                <Route path="/inventaire/:id" element={<InventaireDetails />} />
+                
+
+
+
+
+
+<Route path="/inventaires" element={<Inventaires />} />
+<Route path="/inventaires/nouveau" element={<InventaireForm />} />
+<Route path="/inventaires/:id/modifier" element={<InventaireForm />} />
+<Route path="/inventaires/:id" element={<InventaireDetail />} />
+
+
+
+
+
+
+
+
 
 
 <Route path="/add-stock-manual" element={<AddStockManual />} />
@@ -318,6 +331,18 @@ function App() {
 <Route path="/entrepots/nouveau" element={<EntrepotForm />} />
 <Route path="/entrepots/:id/modifier" element={<EntrepotForm />} />
 <Route path="/entrepots/:id" element={<EntrepotDetails />} />
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 <Route path="/transferts" element={<Transferts />} />
