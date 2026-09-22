@@ -80,13 +80,9 @@ const CommandeDetails = () => {
     }
   };
 
+  // ========== CORRECTION : Navigation vers la route React qui génère le PDF côté client ==========
   const handleDownloadPdf = () => {
-    // Créer un lien de téléchargement pour le PDF
-    const token = getToken();
-    const url = `/purchase-orders/${id}/pdf/`;
-    
-    // Ouvrir dans un nouvel onglet ou télécharger
-    window.open(`http://127.0.0.1:8000${url}?token=${token}`, '_blank');
+    navigate(`/commandes-fournisseurs/${id}/pdf`);
   };
 
   const approveOrder = async () => {
@@ -266,6 +262,7 @@ const CommandeDetails = () => {
                 QR Code
               </button>
               
+              {/* ✅ CORRECTION : Bouton PDF qui navigue vers la route React */}
               <button 
                 onClick={handleDownloadPdf} 
                 className="btn btn-primary btn-sm gap-2"

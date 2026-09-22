@@ -1,6 +1,42 @@
 // src/components/clients/ClientFacturesPDF.jsx
 import jsPDF from 'jspdf';
-import logoSvg from '../../assets/logo.svg';
+import AxiosInstance from '../AxiosInstance';
+
+// ========== RÉCUPÉRATION DES DONNÉES DE L'ÉTABLISSEMENT ==========
+let etablissementCache = null;
+let etablissementPromise = null;
+
+const getEtablissement = async () => {
+  if (etablissementCache) {
+    return etablissementCache;
+  }
+
+  if (etablissementPromise) {
+    return await etablissementPromise;
+  }
+
+  etablissementPromise = (async () => {
+    try {
+      const token = localStorage.getItem('Token');
+      const response = await AxiosInstance.get('/etablissements/unique/', {
+        headers: token ? { Authorization: `Token ${token}` } : {}
+      });
+
+      if (response.data && response.data.id) {
+        etablissementCache = response.data;
+        return etablissementCache;
+      }
+      return null;
+    } catch (error) {
+      console.error('Erreur chargement établissement:', error);
+      return null;
+    } finally {
+      etablissementPromise = null;
+    }
+  })();
+
+  return await etablissementPromise;
+};
 
 // ========== FONCTION POUR ÉCRIRE LES NOMBRES EN LETTRES ==========
 const nombreEnLettres = (montant) => {
@@ -63,9 +99,9 @@ const formatNumber = (n) => {
   return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
 };
 
-const formatCurrency = (amt) => {
+const formatCurrency = (amt, devise = 'FCFA') => {
   const num = parseFloat(amt) || 0;
-  return `${formatNumber(num)} FCFA`;
+  return `${formatNumber(num)} ${devise}`;
 };
 
 const formatDate = (d) => {
@@ -105,6 +141,19 @@ const formatDateTime = (d) => {
   }
 };
 
+// ========== GESTION DES STATUTS ==========
+const getStatusInfo = (status) => {
+  const map = {
+    draft: { label: 'Brouillon', color: [158, 158, 158] },
+    sent: { label: 'Envoyée', color: [33, 150, 243] },
+    partial: { label: 'Partielle', color: [255, 152, 0] },
+    paid: { label: 'Payée', color: [76, 175, 80] },
+    overdue: { label: 'En retard', color: [244, 67, 54] },
+    cancelled: { label: 'Annulée', color: [244, 67, 54] }
+  };
+  return map[status] || { label: status || 'Inconnu', color: [158, 158, 158] };
+};
+
 // ========== FONCTION POUR AJOUTER UN FILIGRANE OBLIQUE ==========
 const addWatermark = (doc, text, options = {}) => {
   const {
@@ -118,29 +167,29 @@ const addWatermark = (doc, text, options = {}) => {
 
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
-  
+
   const currentFontSize = doc.internal.getFontSize();
   const currentTextColor = doc.internal.getTextColor();
-  
+
   doc.setFontSize(fontSize);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(color[0], color[1], color[2]);
-  
+
   doc.setGState(new doc.GState({ opacity: opacity }));
-  
+
   const diagonal = Math.sqrt(pageWidth * pageWidth + pageHeight * pageHeight);
   const textWidth = doc.getTextWidth(text);
-  
+
   const numX = Math.ceil((diagonal + textWidth) / (textWidth + spacing));
   const numY = Math.ceil(diagonal / spacing);
-  
+
   const offsetX = (pageWidth - numX * (textWidth + spacing)) / 2;
   const offsetY = (pageHeight - numY * spacing) / 2;
-  
+
   if (!repeat) {
     const centerX = pageWidth / 2;
     const centerY = pageHeight / 2;
-    doc.text(text, centerX, centerY, { 
+    doc.text(text, centerX, centerY, {
       align: 'center',
       angle: angle,
       baseline: 'middle'
@@ -157,7 +206,7 @@ const addWatermark = (doc, text, options = {}) => {
       }
     }
   }
-  
+
   doc.setFontSize(currentFontSize);
   doc.setTextColor(currentTextColor[0], currentTextColor[1], currentTextColor[2]);
   doc.setGState(new doc.GState({ opacity: 1 }));
@@ -173,23 +222,29 @@ const ClientFacturesPDF = async (client, factures, options = {}) => {
   }
 
   try {
+    // Récupération des informations de l'établissement
+    const etab = await getEtablissement();
+
+    const company = {
+      name: etab?.nom || 'BOUTIQUE STATION SODEPCI',
+      sigle: etab?.sigle || '',
+      address: etab?.adresse || 'PARA EN FACE DU GRAND HOPITAL DE PARA',
+      phone: etab?.telephone || '070 84 29 609 / 074 75 57 169',
+      email: etab?.email || '',
+      site_web: etab?.site_web || '',
+      devise: etab?.devise || 'FCFA',
+      rccm: etab?.rccm || '',
+      nif: etab?.nif || '',
+      capital: etab?.capital || '',
+      gérant: 'ZAKARIA'
+    };
+
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
     const pageWidth = 210;
     const pageHeight = 297;
     const margins = { left: 15, right: 15, top: 18, bottom: 18 };
     const contentWidth = pageWidth - margins.left - margins.right;
     let y = margins.top;
-
-    // ========== INFORMATIONS DE L'ENTREPRISE ==========
-    const company = {
-      name: 'SODEPCI PARA',
-      address: 'Dakar, Sénégal',
-      phone: '+221 33 800 00 00',
-      email: 'contactsodepci@gmail.com',
-      rccm: '2025/G/001',
-      nif: '123456789',
-      capital: '50 000 000 FCFA'
-    };
 
     // ========== DONNÉES DU CLIENT ET FACTURES ==========
     const clientName = client.name || 'Client';
@@ -226,21 +281,35 @@ const ClientFacturesPDF = async (client, factures, options = {}) => {
     const montantEnLettres = nombreEnLettres(totalGeneral);
 
     // ========== CHARGEMENT DU LOGO ==========
-    const loadLogo = (src) => new Promise((resolve) => {
-      const img = new Image();
-      img.crossOrigin = 'Anonymous';
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        canvas.width = img.width;
-        canvas.height = img.height;
-        canvas.getContext('2d').drawImage(img, 0, 0);
-        resolve(canvas.toDataURL('image/png'));
-      };
-      img.onerror = () => resolve(null);
-      img.src = src;
-    });
-    let logoData = null;
-    try { logoData = await loadLogo(logoSvg); } catch { /* ignore */ }
+    const loadLogo = async () => {
+      if (!etab?.logo) return null;
+
+      try {
+        let logoUrl = etab.logo;
+        if (!logoUrl.startsWith('http://') && !logoUrl.startsWith('https://')) {
+          const baseURL = AxiosInstance.defaults.baseURL || '';
+          logoUrl = `${baseURL}${logoUrl.startsWith('/') ? '' : '/'}${logoUrl}`;
+        }
+
+        return new Promise((resolve) => {
+          const img = new Image();
+          img.crossOrigin = 'Anonymous';
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = img.width;
+            canvas.height = img.height;
+            canvas.getContext('2d').drawImage(img, 0, 0);
+            resolve(canvas.toDataURL('image/png'));
+          };
+          img.onerror = () => resolve(null);
+          img.src = logoUrl;
+        });
+      } catch {
+        return null;
+      }
+    };
+
+    let logoData = await loadLogo();
 
     // Filigrane
     const watermarkText = options.watermark || 'RELEVÉ DE FACTURES';
@@ -258,36 +327,51 @@ const ClientFacturesPDF = async (client, factures, options = {}) => {
     // ================================================================
     const logoWidth = 26;
     const logoHeight = 26;
-    
+
     if (logoData) {
       doc.addImage(logoData, 'PNG', margins.left, y, logoWidth, logoHeight);
     }
 
     const textStartX = margins.left + logoWidth + 7;
-    doc.setFontSize(16);
+
     doc.setFont('helvetica', 'bold');
+    doc.setFontSize(14);
     doc.setTextColor(26, 35, 126);
     doc.text(company.name, textStartX, y + 6);
-    
-    doc.setFontSize(8);
+
+    if (company.sigle) {
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(84, 110, 122);
+      doc.text(company.sigle, textStartX, y + 11);
+      y += 5;
+    }
+
+    doc.setFontSize(7.5);
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(84, 110, 122);
-    doc.text(`S.A.R.L au capital de ${company.capital}`, textStartX, y + 12);
-    doc.text(`RC: ${company.rccm} - NIF: ${company.nif}`, textStartX, y + 17);
-    doc.text(company.address.toUpperCase(), textStartX, y + 22);
-    
-    doc.setFontSize(14);
+    doc.text(company.address.toUpperCase(), textStartX, y + 12);
+    doc.text(`Tél: ${company.phone}`, textStartX, y + 16.5);
+    if (company.email) {
+      doc.text(`Email: ${company.email}`, textStartX, y + 21);
+      y += 5;
+    }
+
+    const titleX = pageWidth - margins.right;
+    const titleY = y + 4;
+
     doc.setFont('helvetica', 'bold');
+    doc.setFontSize(14);
     doc.setTextColor(26, 35, 126);
-    doc.text('RELEVÉ DE FACTURES', pageWidth - margins.right, y + 6, { align: 'right' });
-    
+    doc.text('RELEVÉ DE FACTURES', titleX, titleY, { align: 'right' });
+
     doc.setFontSize(9);
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(84, 110, 122);
-    doc.text(`Client: ${clientName} (${clientCode})`, pageWidth - margins.right, y + 12, { align: 'right' });
-    doc.text(`Émis le ${formatDateTime(new Date().toISOString())}`, pageWidth - margins.right, y + 17, { align: 'right' });
+    doc.text(`Client: ${clientName} (${clientCode})`, titleX, titleY + 8, { align: 'right' });
+    doc.text(`Émis le ${formatDateTime(new Date().toISOString())}`, titleX, titleY + 14, { align: 'right' });
 
-    y += 30;
+    y += 32;
     doc.setDrawColor(26, 35, 126);
     doc.setLineWidth(0.4);
     doc.line(margins.left, y, pageWidth - margins.right, y);
@@ -312,7 +396,7 @@ const ClientFacturesPDF = async (client, factures, options = {}) => {
     doc.setFontSize(7);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(120, 144, 156);
-    
+
     doc.text('TÉLÉPHONE', gridX1 + 4, clientInfoY + 4.5);
     doc.text('EMAIL', gridX2 + 4, clientInfoY + 4.5);
     doc.text('ADRESSE', gridX3 + 4, clientInfoY + 4.5);
@@ -329,7 +413,7 @@ const ClientFacturesPDF = async (client, factures, options = {}) => {
     y = clientInfoY + 20;
 
     // ================================================================
-    // TABLEAU DES FACTURES - COLONNES RÉÉQUILIBRÉES
+    // TABLEAU DES FACTURES
     // ================================================================
     doc.setFontSize(11);
     doc.setFont('helvetica', 'bold');
@@ -341,15 +425,15 @@ const ClientFacturesPDF = async (client, factures, options = {}) => {
     doc.line(margins.left, y, pageWidth - margins.right, y);
     y += 6;
 
-    // Définition des colonnes (largeurs rééquilibrées)
-    const colNumX = margins.left;                 // 15
-    const colNumFactureX = margins.left + 6;      // 21
-    const colDateX = colNumFactureX + 32;         // 53
-    const colEcheanceX = colDateX + 22;           // 75
-    const colTotalX = colEcheanceX + 22;          // 97
-    const colPayeX = colTotalX + 24;              // 121
-    const colResteX = colPayeX + 24;              // 145
-    const colStatutX = pageWidth - margins.right - 2; // 193
+    // Définition des colonnes
+    const colNumX = margins.left;
+    const colNumFactureX = margins.left + 6;
+    const colDateX = colNumFactureX + 32;
+    const colEcheanceX = colDateX + 22;
+    const colTotalX = colEcheanceX + 22;
+    const colPayeX = colTotalX + 24;
+    const colResteX = colPayeX + 24;
+    const colStatutX = pageWidth - margins.right - 2;
 
     // En-tête du tableau
     const headerY = y;
@@ -388,7 +472,7 @@ const ClientFacturesPDF = async (client, factures, options = {}) => {
         if (currentY > pageHeight - 70) {
           doc.addPage();
           addWatermark(doc, watermarkText, watermarkOptions);
-          
+
           currentY = margins.top;
           doc.setFillColor(232, 234, 246);
           doc.rect(colNumX, currentY, contentWidth, 7, 'F');
@@ -448,7 +532,7 @@ const ClientFacturesPDF = async (client, factures, options = {}) => {
         const dueDate = formatDate(facture.due_date);
         const isOverdue = new Date(facture.due_date) < new Date() && facture.status !== 'paid';
         if (isOverdue) {
-          doc.setTextColor(211, 47, 47); // rouge
+          doc.setTextColor(211, 47, 47);
         }
         doc.text(dueDate, colEcheanceX + 3, currentY + 4);
         if (isOverdue) {
@@ -458,47 +542,37 @@ const ClientFacturesPDF = async (client, factures, options = {}) => {
         // Total
         doc.setTextColor(26, 35, 126);
         doc.setFont('helvetica', 'bold');
-        doc.text(formatCurrency(facture.total), colTotalX + 3, currentY + 4);
+        doc.text(formatCurrency(facture.total, company.devise), colTotalX + 3, currentY + 4);
         doc.setFont('helvetica', 'normal');
         doc.setTextColor(66, 66, 66);
 
         // Payé
-        doc.setTextColor(46, 125, 50); // vert
-        doc.text(formatCurrency(facture.paye), colPayeX + 3, currentY + 4);
+        doc.setTextColor(46, 125, 50);
+        doc.text(formatCurrency(facture.paye, company.devise), colPayeX + 3, currentY + 4);
         doc.setTextColor(66, 66, 66);
 
         // Reste
         const reste = facture.reste;
         if (reste > 0) {
-          doc.setTextColor(211, 47, 47); // rouge
+          doc.setTextColor(211, 47, 47);
         } else {
           doc.setTextColor(46, 125, 50);
         }
         doc.setFont('helvetica', 'bold');
-        doc.text(formatCurrency(reste), colResteX + 3, currentY + 4);
+        doc.text(formatCurrency(reste, company.devise), colResteX + 3, currentY + 4);
         doc.setFont('helvetica', 'normal');
         doc.setTextColor(66, 66, 66);
 
         // Statut (badge coloré aligné à droite)
-        let statusLabel = '';
-        let statusColor = '';
-        switch (facture.status) {
-          case 'draft': statusLabel = 'Brouillon'; statusColor = [158, 158, 158]; break;
-          case 'sent': statusLabel = 'Envoyée'; statusColor = [33, 150, 243]; break;
-          case 'partial': statusLabel = 'Partielle'; statusColor = [255, 152, 0]; break;
-          case 'paid': statusLabel = 'Payée'; statusColor = [76, 175, 80]; break;
-          case 'overdue': statusLabel = 'En retard'; statusColor = [211, 47, 47]; break;
-          case 'cancelled': statusLabel = 'Annulée'; statusColor = [211, 47, 47]; break;
-          default: statusLabel = facture.status || 'Inconnu'; statusColor = [158, 158, 158];
-        }
-        doc.setFillColor(statusColor[0], statusColor[1], statusColor[2]);
-        const badgeWidth = doc.getTextWidth(statusLabel) + 6;
-        const badgeX = colStatutX - badgeWidth - 2; // aligné à droite
+        const statusInfo = getStatusInfo(facture.status);
+        doc.setFillColor(statusInfo.color[0], statusInfo.color[1], statusInfo.color[2]);
+        const badgeWidth = doc.getTextWidth(statusInfo.label) + 6;
+        const badgeX = colStatutX - badgeWidth - 2;
         doc.roundedRect(badgeX, currentY - 0.5, badgeWidth, 5.5, 1, 1, 'F');
         doc.setTextColor(255, 255, 255);
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(6.5);
-        doc.text(statusLabel, badgeX + 3, currentY + 3.8);
+        doc.text(statusInfo.label, badgeX + 3, currentY + 3.8);
         doc.setFontSize(8);
         doc.setFont('helvetica', 'normal');
         doc.setTextColor(66, 66, 66);
@@ -528,15 +602,19 @@ const ClientFacturesPDF = async (client, factures, options = {}) => {
     doc.text('Total général des factures', margins.left + 6, ay + 7);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(26, 35, 126);
-    doc.text(formatCurrency(totalGeneral), pageWidth - margins.right - 6, ay + 7, { align: 'right' });
+    doc.text(formatCurrency(totalGeneral, company.devise), pageWidth - margins.right - 6, ay + 7, { align: 'right' });
 
     ay += 7;
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(84, 110, 122);
     doc.text('Total payé', margins.left + 6, ay + 7);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(46, 125, 50);
-    doc.text(formatCurrency(totalPaye), pageWidth - margins.right - 6, ay + 7, { align: 'right' });
+    doc.text(formatCurrency(totalPaye, company.devise), pageWidth - margins.right - 6, ay + 7, { align: 'right' });
 
     ay += 7;
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(84, 110, 122);
     doc.text('Reste à payer', margins.left + 6, ay + 7);
     doc.setFont('helvetica', 'bold');
     const resteTotal = totalGeneral - totalPaye;
@@ -545,7 +623,7 @@ const ClientFacturesPDF = async (client, factures, options = {}) => {
     } else {
       doc.setTextColor(46, 125, 50);
     }
-    doc.text(formatCurrency(resteTotal), pageWidth - margins.right - 6, ay + 7, { align: 'right' });
+    doc.text(formatCurrency(resteTotal, company.devise), pageWidth - margins.right - 6, ay + 7, { align: 'right' });
 
     ay += totalBoxHeight + 6;
 
@@ -614,11 +692,11 @@ const ClientFacturesPDF = async (client, factures, options = {}) => {
     doc.setFontSize(8);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(84, 110, 122);
-    doc.text('Signature SEYDI GROUP', signatureX2 + (signatureWidth / 2), signatureY, { align: 'center' });
+    doc.text(`Signature ${company.name}`, signatureX2 + (signatureWidth / 2), signatureY, { align: 'center' });
     doc.setFontSize(7);
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(120, 144, 156);
-    doc.text('Responsable commercial', signatureX2 + (signatureWidth / 2), signatureY + 12, { align: 'center' });
+    doc.text(`Gérant: ${company.gérant}`, signatureX2 + (signatureWidth / 2), signatureY + 12, { align: 'center' });
 
     y = signatureY + 20;
 
@@ -629,13 +707,22 @@ const ClientFacturesPDF = async (client, factures, options = {}) => {
     doc.setDrawColor(224, 224, 224);
     doc.setLineWidth(0.5);
     doc.line(margins.left, footerY - 5, pageWidth - margins.right, footerY - 5);
-    
+
     doc.setFontSize(7);
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(120, 144, 156);
-    doc.text(`${company.name} - ${company.address}`, pageWidth / 2, footerY, { align: 'center' });
-    doc.text(`Tél: ${company.phone} - Email: ${company.email}`, pageWidth / 2, footerY + 4, { align: 'center' });
-    doc.text(`RC: ${company.rccm} - NIF: ${company.nif}`, pageWidth / 2, footerY + 8, { align: 'center' });
+    doc.text(company.name, pageWidth / 2, footerY, { align: 'center' });
+    doc.text(`Tél: ${company.phone}`, pageWidth / 2, footerY + 4, { align: 'center' });
+    doc.text(company.address, pageWidth / 2, footerY + 8, { align: 'center' });
+
+    if (company.email) {
+      doc.setFontSize(6);
+      doc.setTextColor(160, 160, 170);
+      doc.text(`Email: ${company.email}`, pageWidth / 2, footerY + 13, { align: 'center' });
+    }
+    doc.setFontSize(6);
+    doc.setTextColor(160, 160, 170);
+    doc.text('Merci pour votre confiance', pageWidth / 2, footerY + 17, { align: 'center' });
 
     // ================================================================
     // NUMÉROTATION DES PAGES ET FILIGRANE FINAL
@@ -649,7 +736,7 @@ const ClientFacturesPDF = async (client, factures, options = {}) => {
       doc.text(`Page ${i}/${pageCount}`, pageWidth - margins.right, pageHeight - margins.bottom, { align: 'right' });
     }
 
-    const filename = options.filename || `Releve_factures_${client.code || 'client'}_${new Date().toISOString().slice(0,10)}.pdf`;
+    const filename = options.filename || `Releve_factures_${client.code || 'client'}_${new Date().toISOString().slice(0, 10)}.pdf`;
     doc.save(filename);
     return true;
 
@@ -671,7 +758,7 @@ export const downloadClientFacturesPDF = async (client, factures, filename = nul
 
     const options = {};
     if (filename) options.filename = filename;
-    
+
     const result = await ClientFacturesPDF(client, factures, options);
     return result;
   } catch (error) {
