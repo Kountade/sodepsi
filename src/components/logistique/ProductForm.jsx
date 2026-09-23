@@ -36,7 +36,7 @@ const ProductForm = () => {
     status: 'active',
     is_featured: false
   });
-  
+
   const [categories, setCategories] = useState([]);
   const [units, setUnits] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -80,7 +80,7 @@ const ProductForm = () => {
       setFetching(false);
       return;
     }
-    
+
     try {
       const token = getToken();
       const response = await AxiosInstance.get(`/products/${id}/`, {
@@ -146,15 +146,19 @@ const ProductForm = () => {
     setFormData(prev => ({ ...prev, code }));
   };
 
+  // ✅ VALIDATION CORRIGÉE : shelf_life_days et alert_days ne sont plus obligatoires
   const validate = () => {
     const newErrors = {};
     if (!formData.name.trim()) newErrors.name = 'Le nom est requis';
     if (!formData.code.trim()) newErrors.code = 'Le code est requis';
     if (!formData.purchase_price) newErrors.purchase_price = 'Le prix d\'achat est requis';
     if (!formData.selling_price) newErrors.selling_price = 'Le prix de vente est requis';
-    if (formData.has_expiry && !formData.shelf_life_days) {
-      newErrors.shelf_life_days = 'La durée de conservation est requise';
-    }
+
+    // ❌ SUPPRIMÉ : la durée de conservation n'est plus obligatoire
+    // if (formData.has_expiry && !formData.shelf_life_days) {
+    //   newErrors.shelf_life_days = 'La durée de conservation est requise';
+    // }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -162,16 +166,42 @@ const ProductForm = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!validate()) return;
-    
+
     setLoading(true);
     try {
       const token = getToken();
+
+      // ✅ CONVERSION DES VALEURS VIDES EN NULL
       const dataToSend = { ...formData };
+
       if (!dataToSend.category) dataToSend.category = null;
       if (!dataToSend.unit) dataToSend.unit = null;
-      
+      if (!dataToSend.barcode) dataToSend.barcode = null;
+      if (!dataToSend.wholesale_price) dataToSend.wholesale_price = null;
+      if (!dataToSend.promo_price) dataToSend.promo_price = null;
+
+      // Champs d'expiration : rendre null si vides (même si has_expiry est coché)
+      if (!dataToSend.shelf_life_days && dataToSend.shelf_life_days !== 0) {
+        dataToSend.shelf_life_days = null;
+      } else if (dataToSend.shelf_life_days !== null) {
+        dataToSend.shelf_life_days = parseInt(dataToSend.shelf_life_days, 10);
+      }
+
+      if (!dataToSend.alert_days && dataToSend.alert_days !== 0) {
+        dataToSend.alert_days = 30; // valeur par défaut
+      } else if (dataToSend.alert_days !== null) {
+        dataToSend.alert_days = parseInt(dataToSend.alert_days, 10);
+      }
+
+      // Conversion des nombres
+      if (dataToSend.tax_rate) dataToSend.tax_rate = parseFloat(dataToSend.tax_rate);
+      if (dataToSend.min_stock) dataToSend.min_stock = parseInt(dataToSend.min_stock, 10);
+      if (dataToSend.max_stock) dataToSend.max_stock = parseInt(dataToSend.max_stock, 10);
+      if (dataToSend.reorder_point) dataToSend.reorder_point = parseInt(dataToSend.reorder_point, 10);
+      if (dataToSend.reorder_quantity) dataToSend.reorder_quantity = parseInt(dataToSend.reorder_quantity, 10);
+
       const headers = { 'Authorization': `Token ${token}` };
-      
+
       if (isEditMode) {
         await AxiosInstance.patch(`/products/${id}/`, dataToSend, { headers });
         showNotification('Produit modifié avec succès', 'success');
@@ -179,7 +209,7 @@ const ProductForm = () => {
         await AxiosInstance.post('/products/', dataToSend, { headers });
         showNotification('Produit créé avec succès', 'success');
       }
-      
+
       setTimeout(() => navigate('/produits'), 1500);
     } catch (error) {
       console.error('Erreur:', error);
@@ -550,26 +580,30 @@ const ProductForm = () => {
                     <span className="text-sm font-medium">Ce produit a une date d'expiration</span>
                   </label>
                 </div>
-                
+
                 {formData.has_expiry && (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4 pt-4 border-t border-gray-100">
                     <div className="form-control">
                       <label className="label text-sm font-medium text-gray-700">
                         <Calendar className="w-3 h-3 mr-1" /> Durée de conservation (jours)
+                        <span className="text-xs text-gray-400 ml-2 font-normal">(optionnel)</span>
                       </label>
                       <input
                         type="number"
                         name="shelf_life_days"
                         value={formData.shelf_life_days}
                         onChange={handleChange}
-                        className={`input input-bordered w-full ${errors.shelf_life_days ? 'input-error' : ''}`}
-                        placeholder="Ex: 365"
+                        className="input input-bordered w-full"
+                        placeholder="Ex: 365 (facultatif)"
                       />
-                      {errors.shelf_life_days && <span className="text-error text-xs mt-1">{errors.shelf_life_days}</span>}
+                      <p className="text-xs text-gray-400 mt-1">
+                        Laissez vide si vous ne souhaitez pas définir de durée de conservation automatique
+                      </p>
                     </div>
                     <div className="form-control">
                       <label className="label text-sm font-medium text-gray-700">
                         <AlertTriangle className="w-3 h-3 mr-1 text-warning" /> Jours d'alerte avant expiration
+                        <span className="text-xs text-gray-400 ml-2 font-normal">(optionnel)</span>
                       </label>
                       <input
                         type="number"
@@ -579,7 +613,9 @@ const ProductForm = () => {
                         className="input input-bordered w-full"
                         placeholder="30"
                       />
-                      <p className="text-xs text-gray-400 mt-1">Une alerte sera déclenchée X jours avant l'expiration</p>
+                      <p className="text-xs text-gray-400 mt-1">
+                        Une alerte sera déclenchée X jours avant l'expiration (par défaut : 30)
+                      </p>
                     </div>
                   </div>
                 )}
