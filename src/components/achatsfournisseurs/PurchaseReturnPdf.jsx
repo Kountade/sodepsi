@@ -3,513 +3,741 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import jsPDF from 'jspdf';
 import AxiosInstance from '../AxiosInstance';
-import logoSvg from '../../assets/logo.svg';
 import { Loader2, AlertCircle } from 'lucide-react';
 
-// ============================================================
-// FONCTION PRINCIPALE DE GÉNÉRATION DU PDF DE RETOUR
-// ============================================================
-export const generatePurchaseReturnPdf = async (returnItem, companyInfo = null) => {
-  if (!returnItem || typeof returnItem !== 'object') {
+// ========== RÉCUPÉRATION DES DONNÉES DE L'ÉTABLISSEMENT ==========
+let etablissementCache = null;
+let etablissementPromise = null;
+
+const getEtablissement = async () => {
+  if (etablissementCache) return etablissementCache;
+  if (etablissementPromise) return await etablissementPromise;
+
+  etablissementPromise = (async () => {
+    try {
+      const token = localStorage.getItem('Token');
+      const response = await AxiosInstance.get('/etablissements/unique/', {
+        headers: token ? { Authorization: `Token ${token}` } : {}
+      });
+
+      if (response.data && response.data.id) {
+        etablissementCache = response.data;
+        return etablissementCache;
+      }
+      return null;
+    } catch (error) {
+      console.error('Erreur chargement établissement:', error);
+      return null;
+    } finally {
+      etablissementPromise = null;
+    }
+  })();
+
+  return await etablissementPromise;
+};
+
+// ========== FONCTIONS DE FORMATAGE ==========
+const formatNumber = (n) => {
+  const num = parseFloat(n) || 0;
+  return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+};
+
+const formatCurrency = (amt, devise = 'FCFA') => {
+  const num = parseFloat(amt) || 0;
+  return `${formatNumber(num)} ${devise}`;
+};
+
+const formatDate = (d) => {
+  if (!d) return '-';
+  try {
+    let date;
+    if (typeof d === 'string' && d.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      const [year, month, day] = d.split('-').map(Number);
+      date = new Date(year, month - 1, day);
+    } else {
+      date = new Date(d);
+    }
+    if (isNaN(date.getTime())) return '-';
+    return date.toLocaleDateString('fr-FR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric'
+    });
+  } catch {
+    return '-';
+  }
+};
+
+const formatDateTime = (d) => {
+  if (!d) return '-';
+  try {
+    const date = new Date(d);
+    return date.toLocaleDateString('fr-FR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  } catch {
+    return d;
+  }
+};
+
+// ========== GESTION DES STATUTS ==========
+const getStatusInfo = (status) => {
+  const map = {
+    requested: { label: 'Demandé', color: [255, 152, 0] },
+    approved: { label: 'Approuvé', color: [33, 150, 243] },
+    shipped: { label: 'Expédié', color: [156, 39, 176] },
+    refunded: { label: 'Remboursé', color: [76, 175, 80] },
+    replaced: { label: 'Remplacé', color: [0, 188, 212] },
+    rejected: { label: 'Refusé', color: [211, 47, 47] }
+  };
+  return map[status] || { label: status || 'Inconnu', color: [158, 158, 158] };
+};
+
+const getReasonLabel = (reason) => {
+  const map = {
+    defective: 'Produit défectueux',
+    wrong_product: 'Produit incorrect',
+    expired: 'Produit expiré',
+    damaged: 'Produit endommagé',
+    other: 'Autre'
+  };
+  return map[reason] || reason || 'Non précisé';
+};
+
+// ========== FILIGRANE ==========
+const addWatermark = (doc, text, options = {}) => {
+  const {
+    fontSize = 40,
+    color = [200, 200, 200],
+    opacity = 0.08,
+    angle = -45,
+    repeat = true,
+    spacing = 100
+  } = options;
+
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+
+  const currentFontSize = doc.internal.getFontSize();
+  const currentTextColor = doc.internal.getTextColor();
+
+  doc.setFontSize(fontSize);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(color[0], color[1], color[2]);
+
+  doc.setGState(new doc.GState({ opacity: opacity }));
+
+  const diagonal = Math.sqrt(pageWidth * pageWidth + pageHeight * pageHeight);
+  const textWidth = doc.getTextWidth(text);
+
+  const numX = Math.ceil((diagonal + textWidth) / (textWidth + spacing));
+  const numY = Math.ceil(diagonal / spacing);
+
+  const offsetX = (pageWidth - numX * (textWidth + spacing)) / 2;
+  const offsetY = (pageHeight - numY * spacing) / 2;
+
+  if (!repeat) {
+    doc.text(text, pageWidth / 2, pageHeight / 2, {
+      align: 'center',
+      angle: angle,
+      baseline: 'middle'
+    });
+  } else {
+    for (let i = 0; i < numY; i++) {
+      for (let j = 0; j < numX; j++) {
+        const x = offsetX + j * (textWidth + spacing);
+        const y = offsetY + i * spacing;
+        doc.text(text, x, y, {
+          angle: angle,
+          baseline: 'middle'
+        });
+      }
+    }
+  }
+
+  doc.setFontSize(currentFontSize);
+  doc.setTextColor(currentTextColor[0], currentTextColor[1], currentTextColor[2]);
+  doc.setGState(new doc.GState({ opacity: 1 }));
+};
+
+// ========== CHARGEMENT DU QR CODE ==========
+const loadQrCode = async (qrUrl) => {
+  if (!qrUrl) return null;
+
+  try {
+    let fullUrl = qrUrl;
+    if (!qrUrl.startsWith('http://') && !qrUrl.startsWith('https://')) {
+      const baseURL = AxiosInstance.defaults.baseURL || '';
+      fullUrl = `${baseURL}${qrUrl.startsWith('/') ? '' : '/'}${qrUrl}`;
+    }
+
+    const token = localStorage.getItem('Token');
+    const response = await fetch(fullUrl, {
+      headers: token ? { Authorization: `Token ${token}` } : {}
+    });
+
+    if (!response.ok) {
+      console.warn('QR Code non accessible:', response.status);
+      return null;
+    }
+
+    const blob = await response.blob();
+
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result);
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(blob);
+    });
+  } catch (error) {
+    console.error('Erreur chargement QR Code:', error);
+    return null;
+  }
+};
+
+// ========== GÉNÉRATION PDF ==========
+export const generatePurchaseReturnPdf = async (returnData, options = {}) => {
+  if (!returnData || typeof returnData !== 'object') {
     throw new Error('Données du retour invalides');
   }
 
   try {
+    const etab = await getEtablissement();
+
+    const company = {
+      name: etab?.nom || 'BOUTIQUE STATION SODEPCI',
+      sigle: etab?.sigle || '',
+      address: etab?.adresse || 'PARA EN FACE DU GRAND HOPITAL DE PARA',
+      phone: etab?.telephone || '070 84 29 609 / 074 75 57 169',
+      email: etab?.email || '',
+      site_web: etab?.site_web || '',
+      devise: etab?.devise || 'FCFA',
+      phone1: (etab?.telephone || '070 84 29 609').split('/')[0].trim(),
+      phone2: (etab?.telephone || '070 84 29 609 / 074 75 57 169').split('/')[1]?.trim() || '',
+      gérant: 'ZAKARIA',
+      rccm: etab?.rccm || '',
+      nif: etab?.nif || '',
+      capital: etab?.capital || '',
+    };
+
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
     const pageWidth = 210;
     const pageHeight = 297;
-    const margins = { left: 12, right: 12, top: 5, bottom: 5 };
+    const margins = { left: 15, right: 15, top: 18, bottom: 18 };
     const contentWidth = pageWidth - margins.left - margins.right;
-    const footerHeight = 20;
-    let yPosition = margins.top;
+    let y = margins.top;
 
-    // === INFORMATIONS SOCIÉTÉ - E.B.S.F ===
-    const defaultCompany = {
-      name: 'ETABLISSEMENTS BAH SOULEYMANE ET FILS',
-      sigle: 'E.B.S.F',
-      legal_form: 'Entreprise individuelle',
-      activity: 'Commerce Général',
-      address: 'Pita Centre – Grand Marché',
-      address2: 'République de Guinée',
-      phone1: '+224 626 53 32 53',
-      phone2: '+224 612 37 37 47',
-      phone3: '+224 613 37 37 47',
-      email: 'ebsfservices@gmail.com',
-      rccm: 'GN.KAL.2018.A.083 913',
-      nif: '051501F',
-      bank_name: 'VISTA BANK GUINÉE S.A',
-      bank_account: '1604533019',
-      bank_currency: 'GNF (Franc guinéen)',
-      ...companyInfo,
-    };
+    const statusInfo = getStatusInfo(returnData.status);
+    const dateRetour = returnData.return_date || new Date().toISOString().split('T')[0];
 
-    // === FONCTIONS DE FORMAT ===
-    const formatNumber = (n) => {
-      const num = parseFloat(n) || 0;
-      return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
-    };
-    
-    const formatCurrency = (amount) => {
-      if (!amount) return '0 GNF';
-      return formatNumber(amount) + ' GNF';
-    };
-    
-    const formatDate = (dateString) => {
-      if (!dateString) return '-';
-      try { return new Date(dateString).toLocaleDateString('fr-FR'); } catch { return '-'; }
-    };
-    
-    const getStatusLabel = (status) => {
-      const map = {
-        requested: 'Demandé',
-        approved: 'Approuvé',
-        shipped: 'Expédié',
-        refunded: 'Remboursé',
-        replaced: 'Remplacé',
-        rejected: 'Refusé'
-      };
-      return map[status] || status || '-';
-    };
-    
-    const getReasonLabel = (reason) => {
-      const map = {
-        defective: 'Produit défectueux',
-        wrong_product: 'Produit incorrect',
-        expired: 'Produit expiré',
-        damaged: 'Produit endommagé',
-        other: 'Autre'
-      };
-      return map[reason] || reason || '-';
-    };
-
-    // === CHARGEMENT DU LOGO ===
-    const loadLogo = (src) => new Promise((resolve) => {
-      const img = new Image();
-      img.crossOrigin = 'Anonymous';
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        canvas.width = img.width;
-        canvas.height = img.height;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0);
-        resolve(canvas.toDataURL('image/png'));
-      };
-      img.onerror = () => resolve(null);
-      img.src = src;
-    });
-    let logoData = null;
-    try { logoData = await loadLogo(logoSvg); } catch { /* ignore */ }
-
-    // ========== EN-TÊTE AVEC LOGO (COMPACT) ==========
-    const logoWidth = 25;
-    const logoHeight = 12;
-    if (logoData) {
-      doc.addImage(logoData, 'PNG', margins.left, yPosition, logoWidth, logoHeight);
-    } else {
-      doc.setFontSize(9);
-      doc.setFont('helvetica', 'bold');
-      doc.text(defaultCompany.sigle || defaultCompany.name, margins.left, yPosition + 4);
-    }
-
-    const textStartX = margins.left + (logoData ? logoWidth + 3 : 0);
-    
-    doc.setFontSize(8);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(0, 0, 0);
-    doc.text(defaultCompany.name, textStartX, yPosition + 2.5);
-    
-    doc.setFontSize(6);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(80, 80, 80);
-    doc.text(`Sigle: ${defaultCompany.sigle}`, textStartX, yPosition + 6);
-    
-    doc.setFontSize(5.5);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(80, 80, 80);
-    doc.text(`Adresse: ${defaultCompany.address}`, textStartX, yPosition + 9);
-    doc.text(` ${defaultCompany.address2}`, textStartX, yPosition + 12);
-    
-    doc.setFontSize(5);
-    doc.text(`Tél: ${defaultCompany.phone1} / ${defaultCompany.phone2}`, textStartX, yPosition + 15);
-    doc.text(`Email: ${defaultCompany.email}`, textStartX, yPosition + 18);
-    
-    doc.setFontSize(5);
-    doc.text(`RCCM: ${defaultCompany.rccm} | NIF: ${defaultCompany.nif}`, textStartX, yPosition + 21);
-    
-    yPosition += 25;
-
-    // ========== TITRE CENTRÉ ==========
-    doc.setFontSize(14);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(50, 50, 50);
-    doc.text('BON DE RETOUR', pageWidth / 2, yPosition, { align: 'center' });
-    yPosition += 4;
-    doc.setFontSize(8);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(100, 100, 100);
-    doc.text(`N° ${returnItem.return_number || 'N/A'}`, pageWidth / 2, yPosition, { align: 'center' });
-    yPosition += 5;
-
-    // ========== BLOC STATUT ==========
-    const statusColor = returnItem.status === 'approved' || returnItem.status === 'refunded' ? [34, 197, 94] : 
-                        returnItem.status === 'rejected' ? [239, 68, 68] : [59, 130, 246];
-    doc.setFillColor(statusColor[0], statusColor[1], statusColor[2]);
-    doc.rect(pageWidth - margins.right - 25, yPosition - 5, 25, 6, 'F');
-    doc.setFontSize(5.5);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(255, 255, 255);
-    doc.text(getStatusLabel(returnItem.status), pageWidth - margins.right - 12.5, yPosition - 1, { align: 'center' });
-
-    // ========== TABLEAU RÉCAPITULATIF (COMPACT) ==========
-    const summaryHeight = 18;
-    doc.setFillColor(248, 248, 248);
-    doc.rect(margins.left, yPosition, contentWidth, summaryHeight, 'F');
-    doc.rect(margins.left, yPosition, contentWidth, summaryHeight, 'S');
-    
-    let summaryY = yPosition + 2.5;
-    const col1 = margins.left + 4;
-    const col2 = margins.left + 55;
-    const col3 = margins.left + 100;
-
-    doc.setFontSize(6.5);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(80, 80, 80);
-    doc.text('Date retour :', col1, summaryY);
-    doc.setFont('helvetica', 'normal');
-    doc.text(formatDate(returnItem.return_date), col1 + 24, summaryY);
-    doc.setFont('helvetica', 'bold');
-    doc.text('Commande :', col2, summaryY);
-    doc.setFont('helvetica', 'normal');
-    doc.text(returnItem.po_number || '-', col2 + 20, summaryY);
-    summaryY += 4;
-    doc.setFont('helvetica', 'bold');
-    doc.text('Fournisseur :', col1, summaryY);
-    doc.setFont('helvetica', 'normal');
-    doc.text(returnItem.supplier_name || '-', col1 + 24, summaryY);
-    doc.setFont('helvetica', 'bold');
-    doc.text('Raison :', col3, summaryY);
-    doc.setFont('helvetica', 'normal');
-    doc.text(getReasonLabel(returnItem.reason), col3 + 16, summaryY);
-    summaryY += 4;
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(80, 80, 80);
-    doc.text('Réception :', col1, summaryY);
-    doc.setFont('helvetica', 'normal');
-    doc.text(returnItem.receipt_number || '-', col1 + 20, summaryY);
-    
-    yPosition += summaryHeight + 3;
-
-    // ========== PRODUITS RETOURNÉS (COMPACT) ==========
-    doc.setFillColor(55, 65, 85);
-    doc.rect(margins.left, yPosition, contentWidth, 5, 'F');
-    doc.setFontSize(7);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(255, 255, 255);
-    doc.text('PRODUITS RETOURNÉS', pageWidth / 2, yPosition + 3.5, { align: 'center' });
-    yPosition += 5;
-
-    // En-têtes du tableau
-    doc.setFillColor(220, 220, 220);
-    doc.rect(margins.left, yPosition, contentWidth, 4.5, 'F');
-    doc.setFontSize(6);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(0, 0, 0);
-    
-    const colPositions = {
-      product: margins.left + 3,
-      qty: margins.left + 75,
-      unitPrice: margins.left + 105,
-      total: margins.left + 145
-    };
-    
-    doc.text('DÉSIGNATION', colPositions.product, yPosition + 3.5);
-    doc.text('Qté', colPositions.qty, yPosition + 3.5, { align: 'center' });
-    doc.text('Prix unit.', colPositions.unitPrice, yPosition + 3.5, { align: 'center' });
-    doc.text('Total', colPositions.total, yPosition + 3.5, { align: 'center' });
-    yPosition += 4.5;
-
-    // Lignes des produits
-    let lineY = yPosition;
-    doc.setFontSize(5.5);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(60, 60, 60);
-    
-    if (returnItem.lines && returnItem.lines.length > 0) {
-      returnItem.lines.forEach((line, index) => {
-        if (lineY > pageHeight - margins.bottom - footerHeight - 50) {
-          doc.addPage();
-          lineY = margins.top;
-          doc.setFillColor(55, 65, 85);
-          doc.rect(margins.left, lineY, contentWidth, 5, 'F');
-          doc.setFontSize(7);
-          doc.setFont('helvetica', 'bold');
-          doc.setTextColor(255, 255, 255);
-          doc.text('PRODUITS RETOURNÉS', pageWidth / 2, lineY + 3.5, { align: 'center' });
-          lineY += 5;
-          
-          doc.setFillColor(220, 220, 220);
-          doc.rect(margins.left, lineY, contentWidth, 4.5, 'F');
-          doc.setFontSize(6);
-          doc.setFont('helvetica', 'bold');
-          doc.setTextColor(0, 0, 0);
-          doc.text('DÉSIGNATION', colPositions.product, lineY + 3.5);
-          doc.text('Qté', colPositions.qty, lineY + 3.5, { align: 'center' });
-          doc.text('Prix unit.', colPositions.unitPrice, lineY + 3.5, { align: 'center' });
-          doc.text('Total', colPositions.total, lineY + 3.5, { align: 'center' });
-          lineY += 4.5;
-          doc.setFontSize(5.5);
-          doc.setFont('helvetica', 'normal');
-          doc.setTextColor(60, 60, 60);
-        }
-        
-        const productName = line.product_name || line.product?.name || '-';
-        const productNameDisplay = productName.length > 35 ? productName.substring(0, 32) + '...' : productName;
-        
-        doc.text(productNameDisplay, colPositions.product, lineY + 2.5);
-        doc.text((line.quantity || 0).toString(), colPositions.qty, lineY + 2.5, { align: 'center' });
-        doc.text(formatCurrency(line.unit_price || 0), colPositions.unitPrice, lineY + 2.5, { align: 'center' });
-        doc.text(formatCurrency(line.total || 0), colPositions.total, lineY + 2.5, { align: 'center' });
-        
-        lineY += 4;
-      });
-    } else {
-      doc.text('Aucun produit', colPositions.product, lineY + 2.5);
-      lineY += 4;
-    }
-    
-    yPosition = lineY + 3;
-
-    // ========== TOTAL (SANS TRAIT AVANT) ==========
-    const totalX = pageWidth - margins.right - 45;
-    
-    doc.setFontSize(7.5);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(34, 197, 94);
-    doc.text('TOTAL RETOUR :', totalX, yPosition);
-    const totalAmount = returnItem.lines?.reduce((sum, line) => sum + (line.total || 0), 0) || 0;
-    doc.text(formatCurrency(totalAmount), pageWidth - margins.right - 2, yPosition, { align: 'right' });
-    yPosition += 6;
-
-    // ========== NOTES ==========
-    if (returnItem.notes) {
-      yPosition += 2;
-      
-      if (yPosition > pageHeight - margins.bottom - footerHeight - 35) {
-        doc.addPage();
-        yPosition = margins.top;
-      }
-      
-      doc.setFillColor(55, 65, 85);
-      doc.rect(margins.left, yPosition, contentWidth, 4, 'F');
-      doc.setFontSize(6.5);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(255, 255, 255);
-      doc.text('NOTES', margins.left + 4, yPosition + 3);
-      yPosition += 6.5;
-      
-      doc.setFontSize(6);
-      doc.setFont('helvetica', 'normal');
-      doc.setTextColor(60, 60, 60);
-      const splitNotes = doc.splitTextToSize(returnItem.notes, contentWidth - 8);
-      const maxNotesLines = Math.min(splitNotes.length, 3);
-      for (let i = 0; i < maxNotesLines; i++) {
-        doc.text(splitNotes[i], margins.left + 4, yPosition + (i * 4));
-      }
-      yPosition += maxNotesLines * 4 + 5;
-    }
-
-    // ========== QR CODE ==========
-    const qrCodeData = returnItem.qr_code_url || returnItem.qr_code;
-    
-    if (qrCodeData) {
-      yPosition += 3;
-      
-      if (yPosition > pageHeight - margins.bottom - footerHeight - 50) {
-        doc.addPage();
-        yPosition = margins.top + 10;
-      }
-      
-      const qrSize = 30;
-      const qrX = margins.left + 5;
-      const qrY = yPosition + 1;
-      
-      doc.setFillColor(248, 248, 248);
-      doc.rect(qrX - 3, qrY - 3, qrSize + 6, qrSize + 16, 'F');
-      doc.setDrawColor(200, 200, 200);
-      doc.rect(qrX - 3, qrY - 3, qrSize + 6, qrSize + 16, 'S');
-      
+    // ========== LOGO ==========
+    const loadLogo = async () => {
+      if (!etab?.logo) return null;
       try {
-        let qrImageUrl = qrCodeData;
-        
-        if (qrCodeData.startsWith('/')) {
-          const baseUrl = window.location.origin || 'http://127.0.0.1:8000';
-          qrImageUrl = `${baseUrl}${qrCodeData}`;
+        let logoUrl = etab.logo;
+        if (!logoUrl.startsWith('http://') && !logoUrl.startsWith('https://')) {
+          const baseURL = AxiosInstance.defaults.baseURL || '';
+          logoUrl = `${baseURL}${logoUrl.startsWith('/') ? '' : '/'}${logoUrl}`;
         }
-        
-        const qrImage = await new Promise((resolve, reject) => {
+        return new Promise((resolve) => {
           const img = new Image();
           img.crossOrigin = 'Anonymous';
-          
-          const timeout = setTimeout(() => {
-            reject(new Error('Timeout QR Code'));
-          }, 5000);
-          
           img.onload = () => {
-            clearTimeout(timeout);
-            resolve(img);
+            const canvas = document.createElement('canvas');
+            canvas.width = img.width;
+            canvas.height = img.height;
+            canvas.getContext('2d').drawImage(img, 0, 0);
+            resolve(canvas.toDataURL('image/png'));
           };
-          
-          img.onerror = () => {
-            clearTimeout(timeout);
-            reject(new Error('Erreur chargement QR Code'));
-          };
-          
-          img.src = qrImageUrl;
+          img.onerror = () => resolve(null);
+          img.src = logoUrl;
         });
-        
-        const canvas = document.createElement('canvas');
-        canvas.width = qrImage.width;
-        canvas.height = qrImage.height;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(qrImage, 0, 0);
-        const dataUrl = canvas.toDataURL('image/png');
-        
-        doc.addImage(dataUrl, 'PNG', qrX, qrY, qrSize, qrSize);
-        
-        doc.setFontSize(4);
-        doc.setFont('helvetica', 'normal');
-        doc.setTextColor(100, 100, 100);
-        doc.text('Scanner pour détails', qrX + qrSize/2, qrY + qrSize + 3.5, { align: 'center' });
-        
-        doc.setFontSize(3.5);
-        doc.setTextColor(130, 130, 130);
-        doc.text('Bon de retour', qrX + qrSize/2, qrY + qrSize + 6.5, { align: 'center' });
-        
-        doc.setFontSize(3);
-        doc.setTextColor(150, 150, 150);
-        doc.text(`N° ${returnItem.return_number}`, qrX + qrSize/2, qrY + qrSize + 9.5, { align: 'center' });
-        
-        yPosition += 34;
-        
-      } catch (error) {
-        console.error('Erreur chargement QR Code:', error);
-        
-        doc.setFillColor(200, 200, 200);
-        doc.rect(qrX, qrY, qrSize, qrSize, 'F');
+      } catch {
+        return null;
+      }
+    };
+
+    let logoData = await loadLogo();
+
+    // ========== QR CODE ==========
+    const qrCodeUrl = returnData.qr_code_url || returnData.qr_code || null;
+    let qrCodeData = null;
+    if (qrCodeUrl) {
+      qrCodeData = await loadQrCode(qrCodeUrl);
+    }
+
+    // Filigrane
+    const watermarkText = options.watermark || 'RETOUR FOURNISSEUR';
+    const watermarkOptions = {
+      fontSize: options.watermarkSize || 40,
+      color: options.watermarkColor || [200, 200, 200],
+      opacity: options.watermarkOpacity || 0.10,
+      angle: options.watermarkAngle || -45,
+      repeat: options.watermarkRepeat !== undefined ? options.watermarkRepeat : true,
+      spacing: options.watermarkSpacing || 100
+    };
+
+    // ================================================================
+    // EN-TÊTE
+    // ================================================================
+    const logoWidth = 26;
+    const logoHeight = 26;
+
+    if (logoData) {
+      doc.addImage(logoData, 'PNG', margins.left, y, logoWidth, logoHeight);
+    }
+
+    const textStartX = margins.left + logoWidth + 7;
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(14);
+    doc.setTextColor(26, 35, 126);
+    doc.text(company.name, textStartX, y + 6);
+
+    if (company.sigle) {
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(84, 110, 122);
+      doc.text(company.sigle, textStartX, y + 11);
+      y += 5;
+    }
+
+    doc.setFontSize(7.5);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(84, 110, 122);
+    doc.text(company.address.toUpperCase(), textStartX, y + 12);
+    doc.text(`Tél: ${company.phone}`, textStartX, y + 16.5);
+    if (company.email) {
+      doc.text(`Email: ${company.email}`, textStartX, y + 21);
+      y += 5;
+    }
+
+    const titleX = pageWidth - margins.right;
+    const titleY = y + 4;
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(16);
+    doc.setTextColor(220, 38, 38); // Rouge
+    doc.text('RETOUR FOURNISSEUR', titleX, titleY, { align: 'right' });
+
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(84, 110, 122);
+    doc.text(`N° ${returnData.return_number || '-'}`, titleX, titleY + 8, { align: 'right' });
+    doc.text(`Date: ${formatDate(dateRetour)}`, titleX, titleY + 16, { align: 'right' });
+
+    y += 32;
+    doc.setDrawColor(220, 38, 38);
+    doc.setLineWidth(0.4);
+    doc.line(margins.left, y, pageWidth - margins.right, y);
+    y += 8;
+
+    // ================================================================
+    // GRILLE D'INFORMATIONS
+    // ================================================================
+    const gridY = y;
+    doc.setFillColor(248, 249, 250);
+    doc.roundedRect(margins.left, gridY, contentWidth, 24, 2, 2, 'F');
+    doc.setDrawColor(224, 224, 224);
+    doc.setLineWidth(0.5);
+    doc.roundedRect(margins.left, gridY, contentWidth, 24, 2, 2, 'S');
+
+    const colWidth = contentWidth / 2;
+    const gridX1 = margins.left;
+    const gridX2 = margins.left + colWidth;
+
+    doc.setFontSize(7);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(120, 144, 156);
+    doc.text('FOURNISSEUR', gridX1 + 4, gridY + 4.5);
+
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(26, 35, 126);
+    doc.text(returnData.supplier_name || 'Fournisseur inconnu', gridX1 + 4, gridY + 11);
+
+    doc.setFontSize(7);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(84, 110, 122);
+    if (returnData.po_number) doc.text(`Commande N° ${returnData.po_number}`, gridX1 + 4, gridY + 17);
+    if (returnData.receipt_number) doc.text(`Réception N° ${returnData.receipt_number}`, gridX1 + 4, gridY + 22);
+
+    doc.setFontSize(7);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(120, 144, 156);
+    doc.text('STATUT', gridX2 + 4, gridY + 4.5);
+
+    const statusX = gridX2 + 4;
+    const statusY = gridY + 11;
+
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(statusInfo.color[0], statusInfo.color[1], statusInfo.color[2]);
+    doc.text(statusInfo.label, statusX, statusY);
+
+    doc.setFontSize(7);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(120, 144, 156);
+    doc.text('MOTIF', gridX2 + 4, gridY + 18);
+
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(153, 27, 27);
+    doc.text(getReasonLabel(returnData.reason), gridX2 + 4, gridY + 24);
+
+    y = gridY + 28;
+
+    // ================================================================
+    // TABLEAU DES PRODUITS
+    // ================================================================
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(26, 35, 126);
+    doc.text('DÉTAIL DES PRODUITS RETOURNÉS', margins.left, y);
+    y += 2;
+    doc.setDrawColor(224, 224, 224);
+    doc.setLineWidth(0.5);
+    doc.line(margins.left, y, pageWidth - margins.right, y);
+    y += 6;
+
+    const colDescX = margins.left;
+    const colLotX = margins.left + 70;
+    const colQtyX = margins.left + 105;
+    const colPuX = margins.left + 125;
+    const colTotX = pageWidth - margins.right - 2;
+
+    const headerY = y;
+    doc.setFillColor(26, 35, 126);
+    doc.roundedRect(colDescX, headerY, contentWidth, 7, 2, 2, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(7.5);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Désignation', colDescX + 3, headerY + 4.5);
+    doc.text('N° Lot', colLotX + 3, headerY + 4.5);
+    doc.text('Qté', colQtyX + 3, headerY + 4.5);
+    doc.text('P.U.', colPuX + 3, headerY + 4.5);
+    doc.text('Total', colTotX - 3, headerY + 4.5, { align: 'right' });
+
+    y = headerY + 7;
+    let currentY = y;
+    let rowIndex = 0;
+
+    const lines = returnData.lines || returnData.items || [];
+
+    if (lines.length === 0) {
+      doc.setTextColor(150, 150, 150);
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'italic');
+      doc.text('Aucun produit dans ce retour.', colDescX + 3, currentY + 5);
+      currentY += 10;
+    } else {
+      for (let idx = 0; idx < lines.length; idx++) {
+        const line = lines[idx];
+        const productName = line.product_name || line.product?.name || 'Produit inconnu';
+        const productCode = line.product_code || '';
+        const qty = line.quantity || 0;
+        const unitPrice = parseFloat(line.unit_price) || 0;
+        const total = parseFloat(line.total) || 0;
+        const lotNumber = line.lot_number || '-';
+
+        if (currentY > pageHeight - 60) {
+          doc.addPage();
+          addWatermark(doc, watermarkText, watermarkOptions);
+
+          currentY = margins.top;
+          doc.setFillColor(26, 35, 126);
+          doc.roundedRect(colDescX, currentY, contentWidth, 7, 2, 2, 'F');
+          doc.setTextColor(255, 255, 255);
+          doc.setFontSize(7.5);
+          doc.setFont('helvetica', 'bold');
+          doc.text('Désignation', colDescX + 3, currentY + 4.5);
+          doc.text('N° Lot', colLotX + 3, currentY + 4.5);
+          doc.text('Qté', colQtyX + 3, currentY + 4.5);
+          doc.text('P.U.', colPuX + 3, currentY + 4.5);
+          doc.text('Total', colTotX - 3, currentY + 4.5, { align: 'right' });
+          currentY += 7;
+        }
+
+        if (rowIndex % 2 === 0) {
+          doc.setFillColor(248, 249, 250);
+          doc.rect(colDescX, currentY - 0.5, contentWidth, 6.5, 'F');
+        }
+
+        doc.setDrawColor(224, 224, 224);
+        doc.setLineWidth(0.1);
+        doc.line(colDescX, currentY, colDescX, currentY + 6);
+        doc.line(colLotX, currentY, colLotX, currentY + 6);
+        doc.line(colQtyX, currentY, colQtyX, currentY + 6);
+        doc.line(colPuX, currentY, colPuX, currentY + 6);
+        doc.line(colTotX, currentY, colTotX, currentY + 6);
+
+        doc.setTextColor(33, 33, 33);
         doc.setFontSize(7);
-        doc.setFont('helvetica', 'bold');
-        doc.setTextColor(100, 100, 100);
-        doc.text('QR', qrX + qrSize/2, qrY + qrSize/2 + 2.5, { align: 'center' });
-        
-        doc.setFontSize(4.5);
         doc.setFont('helvetica', 'normal');
-        doc.setTextColor(100, 100, 100);
-        doc.text('Non disponible', qrX + qrSize/2, qrY + qrSize + 4, { align: 'center' });
-        doc.text(`N° ${returnItem.return_number}`, qrX + qrSize/2, qrY + qrSize + 7, { align: 'center' });
-        
-        yPosition += 34;
+        doc.text(productName, colDescX + 3, currentY + 3);
+        if (productCode) {
+          doc.setFontSize(5.5);
+          doc.setTextColor(120, 144, 156);
+          doc.text(productCode, colDescX + 3, currentY + 5.5);
+          doc.setFontSize(7);
+          doc.setTextColor(33, 33, 33);
+        }
+        doc.text(lotNumber, colLotX + 3, currentY + 4);
+        doc.setFont('helvetica', 'bold');
+        doc.text(qty.toString(), colQtyX + 3, currentY + 4);
+        doc.setFont('helvetica', 'normal');
+        doc.text(formatNumber(unitPrice), colPuX + 3, currentY + 4);
+        doc.setFont('helvetica', 'bold');
+        doc.text(formatNumber(total), colTotX - 3, currentY + 4, { align: 'right' });
+
+        currentY += 6.5;
+        rowIndex++;
       }
     }
 
-    // ========== SIGNATURES ==========
-    yPosition += 6;
-    
-    if (yPosition > pageHeight - margins.bottom - footerHeight - 35) {
-      doc.addPage();
-      yPosition = margins.top;
+    doc.setDrawColor(180, 180, 190);
+    doc.setLineWidth(0.3);
+    doc.line(colDescX, currentY, pageWidth - margins.right, currentY);
+    y = currentY + 5;
+
+    // ================================================================
+    // RÉCAPITULATIF DU MONTANT
+    // ================================================================
+    let ay = y;
+
+    const totalAmount = lines.reduce((sum, l) => sum + (parseFloat(l.total) || 0), 0);
+    const totalQuantity = lines.reduce((sum, l) => sum + (parseInt(l.quantity) || 0), 0);
+
+    const totalBoxHeight = 18;
+    doc.setFillColor(254, 226, 226);
+    doc.roundedRect(margins.left, ay, contentWidth, totalBoxHeight, 2, 2, 'F');
+    doc.setDrawColor(239, 68, 68);
+    doc.setLineWidth(0.4);
+    doc.roundedRect(margins.left, ay, contentWidth, totalBoxHeight, 2, 2, 'S');
+
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(153, 27, 27);
+    doc.text('TOTAL À RETOURNER', margins.left + 6, ay + 7);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(153, 27, 27);
+    doc.text(`${totalQuantity} article(s)`, margins.left + 6, ay + 13);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(13);
+    doc.setTextColor(220, 38, 38);
+    doc.text(formatCurrency(totalAmount, company.devise), pageWidth - margins.right - 6, ay + 11, { align: 'right' });
+
+    ay += totalBoxHeight + 6;
+
+    // ================================================================
+    // NOTES (gauche) + SIGNATURES (droite)
+    // ================================================================
+    const notesText = (returnData.notes && typeof returnData.notes === 'string' && returnData.notes.trim())
+      ? returnData.notes.trim()
+      : '';
+
+    const blockGap = 6;
+    const leftColWidth = (contentWidth - blockGap) * 0.55;
+    const rightColWidth = (contentWidth - blockGap) * 0.45;
+    const leftColX = margins.left;
+    const rightColX = margins.left + leftColWidth + blockGap;
+
+    const blockHeight = 42;
+    const blockY = ay;
+
+    // COLONNE GAUCHE : NOTES
+    if (notesText) {
+      doc.setFillColor(255, 248, 230);
+      doc.roundedRect(leftColX, blockY, leftColWidth, blockHeight, 2, 2, 'F');
+      doc.setDrawColor(255, 204, 128);
+      doc.setLineWidth(0.4);
+      doc.roundedRect(leftColX, blockY, leftColWidth, blockHeight, 2, 2, 'S');
+
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(230, 81, 0);
+      doc.text('NOTES', leftColX + 5, blockY + 6);
+
+      doc.setDrawColor(255, 204, 128);
+      doc.setLineWidth(0.3);
+      doc.line(leftColX + 5, blockY + 8, leftColX + leftColWidth - 5, blockY + 8);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(66, 66, 66);
+      doc.setFontSize(7.5);
+
+      const notesPadding = 5;
+      const notesMaxWidth = leftColWidth - (notesPadding * 2);
+      const notesMaxHeight = blockHeight - 14;
+
+      let notesFontSize = 7.5;
+      doc.setFontSize(notesFontSize);
+      let splitNotes = doc.splitTextToSize(notesText, notesMaxWidth);
+
+      while (splitNotes.length * 3.5 > notesMaxHeight && notesFontSize > 5.5) {
+        notesFontSize -= 0.5;
+        doc.setFontSize(notesFontSize);
+        splitNotes = doc.splitTextToSize(notesText, notesMaxWidth);
+      }
+
+      const maxLines = Math.floor(notesMaxHeight / 3.5);
+      if (splitNotes.length > maxLines) {
+        splitNotes = splitNotes.slice(0, maxLines);
+        splitNotes[maxLines - 1] = splitNotes[maxLines - 1].slice(0, -3) + '...';
+      }
+
+      doc.text(splitNotes, leftColX + notesPadding, blockY + 14);
+    } else {
+      doc.setFillColor(250, 250, 250);
+      doc.roundedRect(leftColX, blockY, leftColWidth, blockHeight, 2, 2, 'F');
+      doc.setDrawColor(230, 230, 230);
+      doc.setLineWidth(0.3);
+      doc.roundedRect(leftColX, blockY, leftColWidth, blockHeight, 2, 2, 'S');
+
+      doc.setFontSize(7.5);
+      doc.setFont('helvetica', 'italic');
+      doc.setTextColor(180, 180, 180);
+      doc.text('Aucune note', leftColX + leftColWidth / 2, blockY + blockHeight / 2, { align: 'center' });
     }
-    
-    doc.setDrawColor(200, 200, 200);
-    doc.line(margins.left, yPosition, pageWidth - margins.right, yPosition);
-    yPosition += 4;
-    
+
+    // COLONNE DROITE : SIGNATURES
+    doc.setFillColor(248, 249, 250);
+    doc.roundedRect(rightColX, blockY, rightColWidth, blockHeight, 2, 2, 'F');
+    doc.setDrawColor(224, 224, 224);
+    doc.setLineWidth(0.4);
+    doc.roundedRect(rightColX, blockY, rightColWidth, blockHeight, 2, 2, 'S');
+
     doc.setFontSize(8);
     doc.setFont('helvetica', 'bold');
-    doc.setTextColor(60, 60, 60);
-    doc.text('VALIDATION', pageWidth / 2, yPosition, { align: 'center' });
-    yPosition += 7;
-    
-    const signatureWidth = (contentWidth - 8) / 2;
-    const signatureHeight = 22;
-    
-    // Signature fournisseur
-    doc.rect(margins.left, yPosition, signatureWidth, signatureHeight, 'S');
-    doc.setFillColor(248, 248, 248);
-    doc.rect(margins.left, yPosition, signatureWidth, 4, 'F');
-    doc.setFontSize(6);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(70, 70, 70);
-    doc.text("BON POUR RETOUR", margins.left + signatureWidth / 2, yPosition + 3, { align: 'center' });
-    let sigY = yPosition + 7;
-    doc.setFontSize(5.5);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(80, 80, 80);
-    doc.text(`Fournisseur : ${returnItem.supplier_name || '________________'}`, margins.left + 4, sigY);
-    sigY += 5;
-    doc.text('Date : _______________', margins.left + 4, sigY);
-    sigY += 5;
-    doc.text('Signature : _______________', margins.left + 4, sigY);
-    
-    // Signature société
-    const employerX = margins.left + signatureWidth + 8;
-    doc.rect(employerX, yPosition, signatureWidth, signatureHeight, 'S');
-    doc.setFillColor(248, 248, 248);
-    doc.rect(employerX, yPosition, signatureWidth, 4, 'F');
-    doc.setFontSize(6);
-    doc.setFont('helvetica', 'bold');
-    doc.text("BON DE RETOUR", employerX + signatureWidth / 2, yPosition + 3, { align: 'center' });
-    sigY = yPosition + 7;
-    doc.setFontSize(5.5);
-    doc.setFont('helvetica', 'normal');
-    doc.text(`E.B.S.F - ${defaultCompany.name}`, employerX + 4, sigY);
-    sigY += 5;
-    doc.text('Date : _______________', employerX + 4, sigY);
-    sigY += 5;
-    doc.text('Signature : _______________', employerX + 4, sigY);
-    
-    yPosition += signatureHeight + 12;
+    doc.setTextColor(26, 35, 126);
+    doc.text('SIGNATURES', rightColX + 5, blockY + 6);
 
-    // ========== PIED DE PAGE ==========
-    if (yPosition < pageHeight - margins.bottom - 22) {
-      yPosition = pageHeight - margins.bottom - 22;
-    }
-    
-    doc.setDrawColor(180, 180, 180);
+    doc.setDrawColor(224, 224, 224);
     doc.setLineWidth(0.3);
-    doc.line(margins.left, yPosition, pageWidth - margins.right, yPosition);
-    yPosition += 2.5;
-    
-    doc.setFontSize(5);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(0, 0, 0);
-    doc.text('COORDONNÉES BANCAIRES', pageWidth / 2, yPosition + 1.5, { align: 'center' });
-    yPosition += 3.5;
-    
-    doc.setFontSize(4.5);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(80, 80, 80);
-    doc.text(`${defaultCompany.bank_name} - Compte: ${defaultCompany.bank_account} - ${defaultCompany.bank_currency}`, pageWidth / 2, yPosition + 1.5, { align: 'center' });
-    yPosition += 3.5;
-    
-    doc.setFontSize(4.5);
-    doc.setFont('helvetica', 'italic');
-    doc.setTextColor(100, 100, 100);
-    doc.text('Merci pour votre confiance', pageWidth / 2, yPosition + 1.5, { align: 'center' });
-    yPosition += 3.5;
-    
-    doc.setFontSize(4);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(130, 130, 130);
-    doc.text(`Document généré le ${formatDate(new Date().toISOString())}`, pageWidth / 2, yPosition + 1.5, { align: 'center' });
+    doc.line(rightColX + 5, blockY + 8, rightColX + rightColWidth - 5, blockY + 8);
 
-    // Sauvegarde du PDF
-    const fileName = `Bon_Retour_${returnItem.return_number || 'retour'}_${returnItem.supplier_name || 'fournisseur'}.pdf`;
-    doc.save(fileName);
+    const sigGap = 4;
+    const sigInnerPadding = 4;
+    const sigColWidth = (rightColWidth - (sigInnerPadding * 2) - sigGap) / 2;
+    const sig1X = rightColX + sigInnerPadding;
+    const sig2X = sig1X + sigColWidth + sigGap;
+
+    const sigLineY = blockY + blockHeight - 12;
+
+    // Préparé par
+    doc.setDrawColor(66, 66, 66);
+    doc.setLineWidth(0.4);
+    doc.line(sig1X, sigLineY, sig1X + sigColWidth, sigLineY);
+
+    doc.setFontSize(7);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(84, 110, 122);
+    doc.text('Préparé par', sig1X + sigColWidth / 2, sigLineY + 4, { align: 'center' });
+
+    doc.setFontSize(6);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(120, 144, 156);
+    const preparerDisplay = (returnData.created_by_name || 'Gestionnaire').length > 20
+      ? (returnData.created_by_name || 'Gestionnaire').substring(0, 18) + '...'
+      : (returnData.created_by_name || 'Gestionnaire');
+    doc.text(preparerDisplay, sig1X + sigColWidth / 2, sigLineY + 8, { align: 'center' });
+
+    // Reçu par (Fournisseur)
+    doc.setDrawColor(66, 66, 66);
+    doc.setLineWidth(0.4);
+    doc.line(sig2X, sigLineY, sig2X + sigColWidth, sigLineY);
+
+    doc.setFontSize(7);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(84, 110, 122);
+    doc.text('Reçu par (Fournisseur)', sig2X + sigColWidth / 2, sigLineY + 4, { align: 'center' });
+
+    doc.setFontSize(6);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(120, 144, 156);
+    doc.text('Signature & cachet', sig2X + sigColWidth / 2, sigLineY + 8, { align: 'center' });
+
+    // ================================================================
+    // QR CODE
+    // ================================================================
+    if (qrCodeData) {
+      const qrSize = 24;
+      const qrX = pageWidth - margins.right - qrSize;
+      const qrY = blockY + blockHeight + 5;
+
+      doc.setFillColor(255, 255, 255);
+      doc.roundedRect(qrX - 2, qrY - 2, qrSize + 4, qrSize + 9, 2, 2, 'F');
+      doc.setDrawColor(224, 224, 224);
+      doc.setLineWidth(0.3);
+      doc.roundedRect(qrX - 2, qrY - 2, qrSize + 4, qrSize + 9, 2, 2, 'S');
+
+      doc.addImage(qrCodeData, 'PNG', qrX, qrY, qrSize, qrSize);
+
+      doc.setFontSize(5.5);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(84, 110, 122);
+      doc.text('Vérification', qrX + qrSize / 2, qrY + qrSize + 3.5, { align: 'center' });
+      doc.setFontSize(5);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(120, 144, 156);
+      doc.text(`N° ${returnData.return_number || '-'}`, qrX + qrSize / 2, qrY + qrSize + 7, { align: 'center' });
+    }
+
+    y = blockY + blockHeight + 6;
+
+    // ================================================================
+    // PIED DE PAGE
+    // ================================================================
+    const footerY = pageHeight - margins.bottom - 10;
+    doc.setDrawColor(224, 224, 224);
+    doc.setLineWidth(0.5);
+    doc.line(margins.left, footerY - 5, pageWidth - margins.right, footerY - 5);
+
+    doc.setFontSize(7);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(120, 144, 156);
+    doc.text(company.name, pageWidth / 2, footerY, { align: 'center' });
+    doc.text(`Tél: ${company.phone}`, pageWidth / 2, footerY + 4, { align: 'center' });
+    doc.text(company.address, pageWidth / 2, footerY + 8, { align: 'center' });
+
+    if (company.email) {
+      doc.setFontSize(6);
+      doc.setTextColor(160, 160, 170);
+      doc.text(`Email: ${company.email}`, pageWidth / 2, footerY + 13, { align: 'center' });
+    }
+    doc.setFontSize(6);
+    doc.setTextColor(160, 160, 170);
+    doc.text('Merci pour votre confiance', pageWidth / 2, footerY + 17, { align: 'center' });
+
+    // ================================================================
+    // PAGINATION + FILIGRANE
+    // ================================================================
+    const pageCount = doc.internal.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i);
+      addWatermark(doc, watermarkText, watermarkOptions);
+      doc.setFontSize(7);
+      doc.setTextColor(160, 160, 170);
+      doc.text(`Page ${i}/${pageCount}`, pageWidth - margins.right, pageHeight - margins.bottom, { align: 'right' });
+    }
+
+    // ================================================================
+    // SAUVEGARDE
+    // ================================================================
+    const filename = options.filename || `Retour_Fournisseur_${returnData.return_number || 'retour'}.pdf`;
+    doc.save(filename);
     return true;
-    
+
   } catch (error) {
     console.error('Erreur generatePurchaseReturnPdf:', error);
-    throw new Error('Génération PDF échouée : ' + error.message);
+    throw error;
   }
 };
 
@@ -534,21 +762,21 @@ const PurchaseReturnPdf = () => {
         }
 
         setProgress(20);
-        
+
         const response = await AxiosInstance.get(`/purchase-returns/${id}/`, {
           headers: { Authorization: `Token ${token}` }
         });
-        
+
         setProgress(50);
-        const returnItem = response.data;
-        
-        await generatePurchaseReturnPdf(returnItem);
+        const returnData = response.data;
+
+        await generatePurchaseReturnPdf(returnData);
         setProgress(100);
-        
+
         setTimeout(() => {
-          navigate(`/purchase-returns/${id}`);
+          navigate(`/retours-fournisseurs/${id}`);
         }, 1500);
-        
+
       } catch (err) {
         console.error('Erreur:', err);
         setError(err.message || 'Erreur lors de la génération du PDF');
@@ -568,7 +796,7 @@ const PurchaseReturnPdf = () => {
         <div className="text-center max-w-md w-full px-4">
           <Loader2 className="animate-spin text-primary w-12 h-12 mx-auto mb-4" />
           <div className="w-full bg-gray-200 rounded-full h-2.5 mb-2">
-            <div 
+            <div
               className="bg-primary h-2.5 rounded-full transition-all duration-500 ease-out"
               style={{ width: `${progress}%` }}
             ></div>
@@ -588,8 +816,8 @@ const PurchaseReturnPdf = () => {
           <AlertCircle className="w-20 h-20 text-error mx-auto mb-4" />
           <h2 className="text-xl font-semibold text-gray-700 mb-2">Erreur</h2>
           <p className="text-gray-500 mb-6">{error}</p>
-          <button onClick={() => navigate(`/purchase-returns/${id}`)} className="btn btn-primary">
-            Retour au retour
+          <button onClick={() => navigate(`/retours-fournisseurs/${id}`)} className="btn btn-primary">
+            Retour au détail
           </button>
         </div>
       </div>

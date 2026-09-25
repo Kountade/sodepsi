@@ -35,7 +35,7 @@ const PurchaseReturnsList = () => {
       const token = getToken();
       let url = '/purchase-returns/';
       const params = new URLSearchParams();
-      
+
       if (statusFilter !== 'all') {
         params.append('status', statusFilter);
       }
@@ -48,11 +48,11 @@ const PurchaseReturnsList = () => {
       if (searchTerm) {
         params.append('search', searchTerm);
       }
-      
+
       if (params.toString()) {
         url += `?${params.toString()}`;
       }
-      
+
       const response = await AxiosInstance.get(url, {
         headers: { 'Authorization': `Token ${token}` }
       });
@@ -72,14 +72,16 @@ const PurchaseReturnsList = () => {
 
   useEffect(() => {
     fetchReturns();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [statusFilter, dateFrom, dateTo]);
 
+  // ✅ CORRIGÉ : URL française
   const handleDownloadPdf = (returnId) => {
-    navigate(`/purchase-returns/${returnId}/pdf`);
+    navigate(`/retours-fournisseurs/${returnId}/pdf`);
   };
 
   const filteredReturns = returns.filter(returnItem => {
-    const matchesSearch = !searchTerm || 
+    const matchesSearch = !searchTerm ||
       (returnItem.return_number?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
       (returnItem.po_number?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
       (returnItem.supplier_name?.toLowerCase() || '').includes(searchTerm.toLowerCase());
@@ -99,7 +101,7 @@ const PurchaseReturnsList = () => {
   };
 
   const getStatusBadge = (status) => {
-    switch(status) {
+    switch (status) {
       case 'requested':
         return <span className="badge badge-warning">Demandé</span>;
       case 'approved':
@@ -174,7 +176,11 @@ const PurchaseReturnsList = () => {
             <button onClick={fetchReturns} className="btn btn-sm sm:btn-md btn-outline gap-2">
               <RefreshCw className="w-4 h-4" /> Actualiser
             </button>
-            <button onClick={() => navigate('/purchase-returns/nouveau')} className="btn btn-sm sm:btn-md bg-gradient-to-r from-primary to-primary/80 text-white border-none shadow-lg gap-2">
+            {/* ✅ CORRIGÉ : URL française */}
+            <button
+              onClick={() => navigate('/retours-fournisseurs/nouveau')}
+              className="btn btn-sm sm:btn-md bg-gradient-to-r from-primary to-primary/80 text-white border-none shadow-lg gap-2"
+            >
               <Plus className="w-4 h-4" /> Nouveau retour
             </button>
           </div>
@@ -220,12 +226,12 @@ const PurchaseReturnsList = () => {
         <div className="flex flex-col gap-3">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input 
-              type="text" 
-              placeholder="Rechercher par numéro, commande ou fournisseur..." 
-              className="input input-bordered w-full pl-9" 
-              value={searchTerm} 
-              onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }} 
+            <input
+              type="text"
+              placeholder="Rechercher par numéro, commande ou fournisseur..."
+              className="input input-bordered w-full pl-9"
+              value={searchTerm}
+              onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
             />
           </div>
           <button onClick={() => setShowFilters(!showFilters)} className="btn btn-outline btn-sm sm:hidden gap-2">
@@ -271,7 +277,11 @@ const PurchaseReturnsList = () => {
                   <td colSpan="7" className="text-center py-16">
                     <ArrowLeftRight className="w-16 h-16 text-gray-300 mx-auto mb-3" />
                     <p className="text-gray-500 font-medium">Aucun retour trouvé</p>
-                    <button onClick={() => navigate('/purchase-returns/nouveau')} className="btn btn-primary btn-sm gap-2 mt-3">
+                    {/* ✅ CORRIGÉ : URL française */}
+                    <button
+                      onClick={() => navigate('/retours-fournisseurs/nouveau')}
+                      className="btn btn-primary btn-sm gap-2 mt-3"
+                    >
                       <Plus className="w-4 h-4" /> Créer un retour
                     </button>
                   </td>
@@ -285,7 +295,7 @@ const PurchaseReturnsList = () => {
                     <td className="py-3">
                       <div className="flex items-center gap-1">
                         <Calendar className="w-3 h-3 text-gray-400" />
-                        <span className="text-sm">{new Date(returnItem.return_date).toLocaleDateString()}</span>
+                        <span className="text-sm">{new Date(returnItem.return_date).toLocaleDateString('fr-FR')}</span>
                       </div>
                     </td>
                     <td className="py-3 text-center">
@@ -294,15 +304,16 @@ const PurchaseReturnsList = () => {
                     <td className="py-3 text-center">{getStatusBadge(returnItem.status)}</td>
                     <td className="py-3 text-center">
                       <div className="flex justify-center gap-1">
-                        <button 
-                          onClick={() => navigate(`/purchase-returns/${returnItem.id}`)} 
+                        {/* ✅ CORRIGÉ : URL française */}
+                        <button
+                          onClick={() => navigate(`/retours-fournisseurs/${returnItem.id}`)}
                           className="btn btn-ghost btn-sm btn-circle"
                           title="Voir détails"
                         >
                           <Eye className="w-4 h-4" />
                         </button>
-                        <button 
-                          onClick={() => handleDownloadPdf(returnItem.id)} 
+                        <button
+                          onClick={() => handleDownloadPdf(returnItem.id)}
                           className="btn btn-ghost btn-sm btn-circle text-primary"
                           title="Télécharger PDF"
                         >
@@ -324,9 +335,9 @@ const PurchaseReturnsList = () => {
               Affichage de {startIndex + 1} à {Math.min(currentPage * itemsPerPage, filteredReturns.length)} sur {filteredReturns.length}
             </div>
             <div className="flex items-center gap-3">
-              <select 
-                className="select select-bordered select-sm" 
-                value={itemsPerPage} 
+              <select
+                className="select select-bordered select-sm"
+                value={itemsPerPage}
                 onChange={(e) => { setItemsPerPage(parseInt(e.target.value)); setCurrentPage(1); }}
               >
                 <option value="5">5 lignes</option>
@@ -335,20 +346,20 @@ const PurchaseReturnsList = () => {
                 <option value="50">50 lignes</option>
               </select>
               <div className="join">
-                <button 
-                  className="join-item btn btn-sm" 
-                  onClick={() => setCurrentPage(p => Math.max(1, p-1))} 
+                <button
+                  className="join-item btn btn-sm"
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                   disabled={currentPage === 1}
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </button>
                 <span className="join-item btn btn-sm btn-disabled">
-                  Page {currentPage} / {totalPages}
+                  Page {currentPage} / {totalPages || 1}
                 </span>
-                <button 
-                  className="join-item btn btn-sm" 
-                  onClick={() => setCurrentPage(p => Math.min(totalPages, p+1))} 
-                  disabled={currentPage === totalPages}
+                <button
+                  className="join-item btn btn-sm"
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages || totalPages === 0}
                 >
                   <ChevronRight className="w-4 h-4" />
                 </button>
