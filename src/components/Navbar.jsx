@@ -98,7 +98,7 @@ import {
   Grid3x3,
   TableProperties,
   // ============================================================
-  // ✅ ICÔNES POUR STATION SERVICES (UNIQUEMENT CELLES NON DÉCLARÉES)
+  // ✅ ICÔNES POUR STATION SERVICES
   // ============================================================
   Fuel,
   Droplet,
@@ -306,8 +306,6 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
         if (!token) return;
 
         if (isAdmin || isGestionnaire) {
-          // ... (tous vos appels API existants)
-          
           // Chargement des données STATION SERVICES
           try {
             const cuvesRes = await axiosInstance.get('/cuves/alert/', {
@@ -500,7 +498,9 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
       ]
     });
 
-    // ✅ 9. STATION SERVICES
+    // ============================================================
+    // ✅ 9. STATION SERVICES — SANS PRÉFIXE "station/"
+    // ============================================================
     menuSections.splice(8, 0, {
       name: 'STATION SERVICES',
       icon: GasPump,
@@ -509,16 +509,18 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
           id: 'station-dashboard', 
           text: 'Tableau de Bord Station', 
           icon: StatsChart, 
-          path: '/station/dashboard', 
+          path: '/dashboard-station', 
           permission: isAdmin || isGestionnaire,
           badge: cuvesAlerte > 0 ? cuvesAlerte : 0
         },
         { id: 'separator-station-1', text: '', icon: null, path: '#', permission: true, separator: true },
+
+        // ---- CUVES ----
         { 
           id: 'cuves', 
           text: 'Gestion des Cuves', 
           icon: OilDrop, 
-          path: '/station/cuves', 
+          path: '/cuves', 
           permission: isAdmin || isGestionnaire || isMagasinier,
           badge: cuvesAlerte > 0 ? cuvesAlerte : 0
         },
@@ -526,22 +528,24 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
           id: 'cuve-approvisionnement', 
           text: 'Approvisionnement Cuve', 
           icon: TruckIcon, 
-          path: '/station/cuves/approvisionnement', 
+          path: '/cuves/approvisionnement', 
           permission: isAdmin || isGestionnaire || isMagasinier 
         },
         { 
           id: 'cuve-mouvements', 
           text: 'Mouvements Cuves', 
           icon: MoveHorizontal, 
-          path: '/station/cuves/mouvements', 
+          path: '/cuves/mouvements', 
           permission: isAdmin || isGestionnaire || isMagasinier 
         },
         { id: 'separator-station-2', text: '', icon: null, path: '#', permission: true, separator: true },
+
+        // ---- POMPES ----
         { 
           id: 'pompes', 
           text: 'Gestion des Pompes', 
           icon: Pump, 
-          path: '/station/pompes', 
+          path: '/pompes', 
           permission: isAdmin || isGestionnaire || isMagasinier,
           badge: pompesActives > 0 ? pompesActives : 0
         },
@@ -549,15 +553,17 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
           id: 'pompe-ventes', 
           text: 'Ventes par Pompe', 
           icon: BarChart3, 
-          path: '/station/pompes/ventes', 
+          path: '/pompes/ventes', 
           permission: isAdmin || isGestionnaire || isVendeur 
         },
         { id: 'separator-station-3', text: '', icon: null, path: '#', permission: true, separator: true },
+
+        // ---- VENTES CARBURANT ----
         { 
           id: 'ventes-carburant', 
           text: 'Ventes de Carburant', 
           icon: Fuel, 
-          path: '/station/ventes-carburant', 
+          path: '/ventes-carburant', 
           permission: isAdmin || isGestionnaire || isVendeur,
           badge: ventesCarburantJour > 0 ? Math.round(ventesCarburantJour) : 0
         },
@@ -565,22 +571,24 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
           id: 'nouvelle-vente-carburant', 
           text: 'Nouvelle Vente Carburant', 
           icon: PlusCircle, 
-          path: '/station/ventes-carburant/nouveau', 
+          path: '/ventes-carburant/nouveau', 
           permission: isAdmin || isGestionnaire || isVendeur 
         },
         { 
           id: 'prix-carburant', 
           text: 'Gestion des Prix', 
           icon: BadgeDollarSign, 
-          path: '/station/prix-carburant', 
+          path: '/prix-carburant', 
           permission: isAdmin || isGestionnaire 
         },
         { id: 'separator-station-4', text: '', icon: null, path: '#', permission: true, separator: true },
+
+        // ---- SERVICES ----
         { 
           id: 'services-station', 
           text: 'Services Station', 
           icon: Tools, 
-          path: '/station/services', 
+          path: '/services', 
           permission: isAdmin || isGestionnaire || isVendeur,
           badge: servicesEnAttente > 0 ? servicesEnAttente : 0
         },
@@ -588,36 +596,38 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
           id: 'ventes-services', 
           text: 'Ventes de Services', 
           icon: CarWash, 
-          path: '/station/ventes-services', 
+          path: '/ventes-services', 
           permission: isAdmin || isGestionnaire || isVendeur 
         },
         { 
           id: 'nouveau-service', 
           text: 'Nouveau Service', 
           icon: PlusCircle, 
-          path: '/station/services/nouveau', 
+          path: '/services/nouveau', 
           permission: isAdmin || isGestionnaire 
         },
         { id: 'separator-station-5', text: '', icon: null, path: '#', permission: true, separator: true },
+
+        // ---- STATISTIQUES / RAPPORTS / CONFIG ----
         { 
           id: 'station-statistiques', 
           text: 'Statistiques Station', 
           icon: StatsChart, 
-          path: '/station/statistiques', 
+          path: '/statistiques-station', 
           permission: isAdmin || isGestionnaire || isComptable 
         },
         { 
           id: 'station-rapports', 
           text: 'Rapports Station', 
           icon: FileSpreadsheet, 
-          path: '/station/rapports', 
+          path: '/rapports-station', 
           permission: isAdmin || isGestionnaire || isComptable 
         },
         { 
           id: 'station-config', 
           text: 'Configuration Station', 
           icon: SettingsGear, 
-          path: '/station/config', 
+          path: '/config-station', 
           permission: isAdmin 
         }
       ]
@@ -658,7 +668,8 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
       const visibleItems = section.items.filter(item => item.permission === true);
       return {
         ...section,
-        items: visibleItems      };
+        items: visibleItems
+      };
     })
     .filter(section => section.items.length > 0);
 

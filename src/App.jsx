@@ -163,6 +163,11 @@ import RetourClientForm from './components/ventesclients/RetourClientForm';
 import RetourClientDetail from './components/ventesclients/RetourClientDetail';
 import RetourClientPdf from './components/ventesclients/RetourClientPdf';
 
+
+import CuvesList from './components/station/CuvesList';
+import CuveDetail from './components/station/CuveDetail';
+import CuveForm from './components/station/CuveForm';
+
 import EtablissementSettings from './components/settings/EtablissementSettings';
 
 import Utilisateurs from './components/users/Utilisateurs';
@@ -405,6 +410,16 @@ function App() {
                 <Route path="/depenses" element={<DepensesList />} />
                 <Route path="/depenses/nouveau" element={<DepenseForm />} />
                 <Route path="/depenses/:id/modifier" element={<DepenseForm />} />
+
+
+
+
+
+
+<Route path="/cuves" element={<CuvesList />} />
+<Route path="/cuves/nouveau" element={<CuveForm />} />
+<Route path="/cuves/:id" element={<CuveDetail />} />
+<Route path="/cuves/:id/modifier" element={<CuveForm />} />
 
                 <Route path="/company-config" element={<EtablissementSettings />} />
               </Route>
