@@ -77,7 +77,23 @@ const Dashboard = () => {
     );
   }
 
-  const { products, sales, purchases, cash, alerts, recent_activities } = summary;
+  const {
+    products,
+    sales,
+    purchases,
+    cash,
+    alerts,
+    receivables,          // ✅ NOUVEAU
+    recent_activities
+  } = summary;
+
+  // Sécurité : si le backend n'a pas encore renvoyé receivables
+  const safeReceivables = receivables || {
+    total: 0,
+    invoices_count: 0,
+    overdue_count: 0,
+    top_debtors: [],
+  };
 
   const formatCurrency = (num) => {
     if (num === undefined || num === null) return '0 FCFA';
@@ -197,7 +213,8 @@ const Dashboard = () => {
       </div>
 
       {/* Cartes statistiques */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+        {/* Produits */}
         <div className="card bg-base-100 shadow-md hover:shadow-lg transition-shadow">
           <div className="card-body p-5">
             <div className="flex items-center justify-between">
@@ -216,6 +233,7 @@ const Dashboard = () => {
           </div>
         </div>
 
+        {/* Ventes */}
         <div className="card bg-base-100 shadow-md hover:shadow-lg transition-shadow">
           <div className="card-body p-5">
             <div className="flex items-center justify-between">
@@ -231,6 +249,7 @@ const Dashboard = () => {
           </div>
         </div>
 
+        {/* Achats */}
         <div className="card bg-base-100 shadow-md hover:shadow-lg transition-shadow">
           <div className="card-body p-5">
             <div className="flex items-center justify-between">
@@ -246,6 +265,7 @@ const Dashboard = () => {
           </div>
         </div>
 
+        {/* Trésorerie */}
         <div className="card bg-base-100 shadow-md hover:shadow-lg transition-shadow">
           <div className="card-body p-5">
             <div className="flex items-center justify-between">
@@ -259,6 +279,33 @@ const Dashboard = () => {
               </div>
               <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
                 <DollarSign className="w-6 h-6 text-primary" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ✅ NOUVEAU : Créances clients (montants non payés) */}
+        <div className="card bg-base-100 shadow-md hover:shadow-lg transition-shadow border-l-4 border-error">
+          <div className="card-body p-5">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-base-content/60 text-sm font-medium">Créances clients</p>
+                <p className="text-2xl font-bold text-error">
+                  {formatCurrency(safeReceivables.total)}
+                </p>
+                <div className="flex flex-wrap gap-3 text-xs mt-1">
+                  <span className="text-warning">
+                    {formatNumber(safeReceivables.invoices_count)} facture(s) impayée(s)
+                  </span>
+                  {safeReceivables.overdue_count > 0 && (
+                    <span className="text-error font-semibold">
+                      {formatNumber(safeReceivables.overdue_count)} en retard
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div className="w-12 h-12 rounded-full bg-error/10 flex items-center justify-center">
+                <AlertTriangle className="w-6 h-6 text-error" />
               </div>
             </div>
           </div>
@@ -321,6 +368,52 @@ const Dashboard = () => {
           </div>
         </div>
       </div>
+
+      {/* ✅ NOUVEAU : Top 5 des clients débiteurs */}
+      {safeReceivables.top_debtors && safeReceivables.top_debtors.length > 0 && (
+        <div className="card bg-base-100 shadow-md mb-6">
+          <div className="card-body p-5">
+            <h3 className="text-lg font-semibold flex items-center gap-2 mb-3">
+              <Users className="w-5 h-5 text-error" />
+              Clients avec le plus de dettes
+              <span className="badge badge-error badge-sm ml-2">
+                {formatCurrency(safeReceivables.total)}
+              </span>
+            </h3>
+            <div className="divider my-1"></div>
+            <div className="overflow-x-auto">
+              <table className="table table-sm">
+                <thead>
+                  <tr>
+                    <th className="w-12">#</th>
+                    <th>Client</th>
+                    <th className="text-center">Factures</th>
+                    <th className="text-right">Montant dû</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {safeReceivables.top_debtors.map((debtor, idx) => (
+                    <tr key={idx} className="hover">
+                      <td>
+                        <span className="badge badge-ghost badge-sm">{idx + 1}</span>
+                      </td>
+                      <td className="font-medium">{debtor.client_name}</td>
+                      <td className="text-center">
+                        <span className="badge badge-warning badge-sm">
+                          {debtor.invoices_count}
+                        </span>
+                      </td>
+                      <td className="text-right font-semibold text-error">
+                        {formatCurrency(debtor.total_due)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Activités récentes */}
       <div className="card bg-base-100 shadow-md">

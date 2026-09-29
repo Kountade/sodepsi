@@ -1,4 +1,4 @@
-// src/components/Navbar.jsx - Version avec STATION SERVICES - IMPORTS CORRIGÉS
+// src/components/Navbar.jsx - Navbar1
 
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
