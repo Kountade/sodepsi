@@ -167,6 +167,14 @@ import RetourClientPdf from './components/ventesclients/RetourClientPdf';
 import CuvesList from './components/station/CuvesList';
 import CuveDetail from './components/station/CuveDetail';
 import CuveForm from './components/station/CuveForm';
+import CuveApprovisionnement from './components/station/CuveApprovisionnement';
+import CuvesMouvements from './components/station/CuvesMouvements';
+
+import PompesList from './components/station/PompesList';
+import PompeDetail from './components/station/PompeDetail';
+import PompeForm from './components/station/PompeForm';
+import VentesParPompe from './components/station/VentesParPompe';
+
 
 import EtablissementSettings from './components/settings/EtablissementSettings';
 
@@ -418,8 +426,19 @@ function App() {
 
 <Route path="/cuves" element={<CuvesList />} />
 <Route path="/cuves/nouveau" element={<CuveForm />} />
+<Route path="/cuves/approvisionnement" element={<CuveApprovisionnement />} />
+<Route path="/cuves/mouvements" element={<CuvesMouvements />} />
 <Route path="/cuves/:id" element={<CuveDetail />} />
 <Route path="/cuves/:id/modifier" element={<CuveForm />} />
+
+
+
+<Route path="/pompes" element={<PompesList />} />
+<Route path="/pompes/nouveau" element={<PompeForm />} />
+<Route path="/pompes/:id" element={<PompeDetail />} />
+<Route path="/pompes/:id/modifier" element={<PompeForm />} />
+<Route path="/pompes/ventes" element={<VentesParPompe />} />
+
 
                 <Route path="/company-config" element={<EtablissementSettings />} />
               </Route>
