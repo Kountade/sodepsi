@@ -174,6 +174,19 @@ import PompesList from './components/station/PompesList';
 import PompeDetail from './components/station/PompeDetail';
 import PompeForm from './components/station/PompeForm';
 import VentesParPompe from './components/station/VentesParPompe';
+import VenteCarburantForm from './components/station/VenteCarburantForm';
+import VentesCarburantList from './components/station/VentesCarburantList';
+import VenteCarburantDetail from './components/station/VenteCarburantDetail';
+import PrixCarburantList from './components/station/PrixCarburantList';
+import PrixCarburantForm from './components/station/PrixCarburantForm';
+import PrixCarburantDetail from './components/station/PrixCarburantDetail';
+
+import ServicesList from './components/station/ServicesList';
+import ServiceForm from './components/station/ServiceForm';
+import ServiceDetail from './components/station/ServiceDetail';
+import VentesServicesList from './components/station/VentesServicesList';
+import VenteServiceForm from './components/station/VenteServiceForm';
+import VenteServiceDetail from './components/station/VenteServiceDetail';
 
 
 import EtablissementSettings from './components/settings/EtablissementSettings';
@@ -438,7 +451,32 @@ function App() {
 <Route path="/pompes/:id" element={<PompeDetail />} />
 <Route path="/pompes/:id/modifier" element={<PompeForm />} />
 <Route path="/pompes/ventes" element={<VentesParPompe />} />
+<Route path="/ventes-carburant/nouveau" element={<VenteCarburantForm />} />
+<Route path="/ventes-carburant" element={<VentesCarburantList />} />
 
+
+
+
+<Route path="/ventes-carburant/nouveau" element={<VenteCarburantForm />} />
+<Route path="/ventes-carburant/:id" element={<VenteCarburantDetail />} />
+
+
+<Route path="/prix-carburant" element={<PrixCarburantList />} />
+<Route path="/prix-carburant/nouveau" element={<PrixCarburantForm />} />
+<Route path="/prix-carburant/:id" element={<PrixCarburantDetail />} />
+<Route path="/prix-carburant/:id/modifier" element={<PrixCarburantForm />} />
+
+
+
+<Route path="/services" element={<ServicesList />} />
+<Route path="/services/nouveau" element={<ServiceForm />} />
+<Route path="/services/:id" element={<ServiceDetail />} />
+<Route path="/services/:id/modifier" element={<ServiceForm />} />
+<Route path="/ventes-services" element={<VentesServicesList />} />
+
+<Route path="/ventes-services/nouveau" element={<VenteServiceForm />} />
+<Route path="/ventes-services/:id/modifier" element={<VenteServiceForm />} />
+<Route path="/ventes-services/:id" element={<VenteServiceDetail />} />
 
                 <Route path="/company-config" element={<EtablissementSettings />} />
               </Route>
