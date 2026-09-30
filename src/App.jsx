@@ -188,6 +188,11 @@ import VentesServicesList from './components/station/VentesServicesList';
 import VenteServiceForm from './components/station/VenteServiceForm';
 import VenteServiceDetail from './components/station/VenteServiceDetail';
 
+import StationDashboard from './components/station/StationDashboard';
+import StatistiquesStation from './components/station/StatistiquesStation';
+import RapportsStation from './components/station/RapportsStation';
+import ConfigStation from './components/station/ConfigStation';
+
 
 import EtablissementSettings from './components/settings/EtablissementSettings';
 
@@ -477,6 +482,13 @@ function App() {
 <Route path="/ventes-services/nouveau" element={<VenteServiceForm />} />
 <Route path="/ventes-services/:id/modifier" element={<VenteServiceForm />} />
 <Route path="/ventes-services/:id" element={<VenteServiceDetail />} />
+
+
+<Route path="/dashboard-station" element={<StationDashboard />} />
+<Route path="/statistiques-station" element={<StatistiquesStation />} />
+<Route path="/rapports-station" element={<RapportsStation />} />
+<Route path="/config-station" element={<ConfigStation />} />
+
 
                 <Route path="/company-config" element={<EtablissementSettings />} />
               </Route>
