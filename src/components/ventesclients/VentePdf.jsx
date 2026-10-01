@@ -537,6 +537,78 @@ const generateVentePdf = async (vente, options = {}) => {
     y = currentY + 5;
 
     // ================================================================
+    // LIGNE DE SOUS-TOTAL (frais de livraison, remise, TVA)
+    // Alignée à mi-chemin, au niveau de la colonne Remise
+    // ================================================================
+    const subtotal = parseFloat(vente.subtotal) || 0;
+    const discountAmount = parseFloat(vente.discount_amount) || 0;
+    const taxAmount = parseFloat(vente.tax_amount) || 0;
+    const shippingFee = parseFloat(vente.shipping_fee) || 0;
+
+    // On n'affiche cette section que s'il y a des ajustements
+    const hasAdjustments = discountAmount > 0 || taxAmount > 0 || shippingFee > 0;
+
+    if (hasAdjustments) {
+      let adjY = y;
+
+      // Vérifier si on a assez de place, sinon nouvelle page
+      if (adjY > pageHeight - 80) {
+        doc.addPage();
+        addWatermark(doc, watermarkText, watermarkOptions);
+        adjY = margins.top;
+      }
+
+      // Largeur de la zone d'ajustement : de colRemiseX à colTotalX
+      const adjLeftX = colRemiseX;
+      const adjRightX = colTotalX;
+      const adjWidth = adjRightX - adjLeftX;
+
+      // Sous-total (toujours affiché si ajustements)
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(84, 110, 122);
+      doc.text('Sous-total', adjLeftX + 3, adjY + 5);
+      doc.setTextColor(33, 33, 33);
+      doc.text(formatCurrency(subtotal), adjRightX - 3, adjY + 5, { align: 'right' });
+      adjY += 6;
+
+      // Remise globale
+      if (discountAmount > 0) {
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(244, 67, 54);
+        doc.text('Remise', adjLeftX + 3, adjY + 5);
+        doc.text(`-${formatCurrency(discountAmount)}`, adjRightX - 3, adjY + 5, { align: 'right' });
+        adjY += 6;
+      }
+
+      // TVA
+      if (taxAmount > 0) {
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(84, 110, 122);
+        doc.text(`TVA (${vente.tax_rate || 0}%)`, adjLeftX + 3, adjY + 5);
+        doc.setTextColor(33, 33, 33);
+        doc.text(formatCurrency(taxAmount), adjRightX - 3, adjY + 5, { align: 'right' });
+        adjY += 6;
+      }
+
+      // Frais de livraison
+      if (shippingFee > 0) {
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(255, 152, 0);
+        doc.text('Frais de livraison', adjLeftX + 3, adjY + 5);
+        doc.text(formatCurrency(shippingFee), adjRightX - 3, adjY + 5, { align: 'right' });
+        adjY += 6;
+      }
+
+      // Ligne de séparation
+      doc.setDrawColor(200, 200, 200);
+      doc.setLineWidth(0.2);
+      doc.line(adjLeftX, adjY, adjRightX, adjY);
+
+      y = adjY + 3;
+    }
+
+    // ================================================================
     // TOTAUX
     // ================================================================
     let ay = y;
