@@ -316,12 +316,130 @@ const PaiementForm = () => {
         <form onSubmit={handleSubmit} className="w-full">
           
           {/* ============================================ */}
-          {/* 2 COLONNES : GAUCHE = Autres cartes / DROITE = Informations facture */}
+          {/* 2 COLONNES : GAUCHE = Informations facture / DROITE = Autres cartes */}
           {/* ============================================ */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 w-full items-stretch">
             
             {/* ============================================ */}
-            {/* COLONNE GAUCHE (1/2) - Montant, Référence, Notes */}
+            {/* COLONNE GAUCHE (1/2) - Informations facture LARGE */}
+            {/* ============================================ */}
+            <div className="flex flex-col">
+              
+              {/* ✅ Carte Informations facture - HAUTEUR MINIMALE AUGMENTÉE */}
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex-1 flex flex-col min-h-[900px]">
+                <div className="bg-gray-50/80 px-6 py-4 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
+                  <h3 className="font-semibold flex items-center gap-3 text-gray-700 text-lg">
+                    <FileText className="w-6 h-6 text-primary" /> 
+                    Informations facture
+                  </h3>
+                  {selectedFacture && (
+                    <span>{getStatusBadge(selectedFacture.status)}</span>
+                  )}
+                </div>
+
+                <div className="flex-1 flex flex-col p-6 sm:p-8 pb-12">
+                  <div className="w-full flex-1 flex flex-col space-y-5">
+                    
+                    {/* Sélecteur de facture */}
+                    <div className="w-full">
+                      <label className="label text-sm font-medium text-gray-700 pb-1">
+                        Sélectionner une facture <span className="text-red-500">*</span>
+                      </label>
+                      <FactureSearchSelect
+                        value={formData.facture}
+                        onChange={handleFactureSelect}
+                        placeholder="Rechercher par client, n° facture, téléphone..."
+                      />
+
+                      {!formData.facture && (
+                        <p className="text-warning text-sm mt-3 flex items-center gap-1.5">
+                          <AlertCircle className="w-4 h-4" />
+                          Recherchez et sélectionnez une facture pour continuer
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Détails de la facture sélectionnée */}
+                    {selectedFacture ? (
+                      <div className="flex-1 flex flex-col justify-center">
+                        <div className="grid grid-cols-2 gap-5 bg-gray-50 rounded-xl p-6 border border-gray-100">
+                          <div>
+                            <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">N° Facture</p>
+                            <p className="font-semibold text-lg mt-2">{selectedFacture.invoice_number}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Client</p>
+                            <p className="font-semibold text-lg mt-2 truncate">
+                              {selectedFacture.client_name}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Total</p>
+                            <p className="font-semibold text-lg text-primary mt-2">
+                              {formatCurrency(selectedFacture.total)}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Reste à payer</p>
+                            <p className="font-semibold text-lg text-success mt-2">
+                              {formatCurrency(selectedFacture.remaining_amount || selectedFacture.total)}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="mt-5 bg-primary/5 rounded-xl border border-primary/20 p-5">
+                          <h4 className="font-semibold text-base text-primary mb-3 flex items-center gap-2">
+                            <FileText className="w-5 h-5" />
+                            Récapitulatif du paiement
+                          </h4>
+                          <div className="space-y-2 text-sm">
+                            <div className="flex justify-between">
+                              <span className="text-gray-600">Total facture</span>
+                              <span className="font-medium">{formatCurrency(selectedFacture.total)}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-600">Déjà payé</span>
+                              <span className="font-medium">
+                                {formatCurrency((selectedFacture.total || 0) - (selectedFacture.remaining_amount || selectedFacture.total || 0))}
+                              </span>
+                            </div>
+                            <div className="flex justify-between border-t border-primary/20 pt-2 mt-2">
+                              <span className="text-gray-700 font-semibold">Reste à payer</span>
+                              <span className="font-bold text-success">
+                                {formatCurrency(selectedFacture.remaining_amount || selectedFacture.total)}
+                              </span>
+                            </div>
+                            {formData.amount && parseFloat(formData.amount) > 0 && (
+                              <div className="flex justify-between text-primary pt-2 border-t border-primary/20">
+                                <span className="font-semibold">Paiement en cours</span>
+                                <span className="font-bold">{formatCurrency(parseFloat(formData.amount))}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex-1 flex items-center justify-center">
+                        <div className="text-center">
+                          <div className="inline-flex items-center justify-center w-24 h-24 rounded-full bg-gray-100 mb-4">
+                            <FileText className="w-12 h-12 text-gray-300" />
+                          </div>
+                          <p className="text-gray-500 font-medium mb-1">
+                            Aucune facture sélectionnée
+                          </p>
+                          <p className="text-gray-400 text-sm">
+                            Les informations de la facture s'afficheront ici
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* ============================================ */}
+            {/* COLONNE DROITE (1/2) - Montant, Référence, Notes */}
             {/* ============================================ */}
             <div className="space-y-6">
               
@@ -482,124 +600,6 @@ const PaiementForm = () => {
                     placeholder="Informations complémentaires..."
                     className="textarea textarea-bordered w-full min-h-[100px] resize-none text-base"
                   />
-                </div>
-              </div>
-            </div>
-
-            {/* ============================================ */}
-            {/* COLONNE DROITE (1/2) - Informations facture LARGE */}
-            {/* ============================================ */}
-            <div className="flex flex-col">
-              
-              {/* ✅ Carte Informations facture - HAUTEUR MINIMALE AUGMENTÉE À 900px */}
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex-1 flex flex-col min-h-[900px]">
-                <div className="bg-gray-50/80 px-6 py-4 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
-                  <h3 className="font-semibold flex items-center gap-3 text-gray-700 text-lg">
-                    <FileText className="w-6 h-6 text-primary" /> 
-                    Informations facture
-                  </h3>
-                  {selectedFacture && (
-                    <span>{getStatusBadge(selectedFacture.status)}</span>
-                  )}
-                </div>
-
-                <div className="flex-1 flex flex-col p-6 sm:p-8 pb-12">
-                  <div className="w-full flex-1 flex flex-col space-y-5">
-                    
-                    {/* Sélecteur de facture */}
-                    <div className="w-full">
-                      <label className="label text-sm font-medium text-gray-700 pb-1">
-                        Sélectionner une facture <span className="text-red-500">*</span>
-                      </label>
-                      <FactureSearchSelect
-                        value={formData.facture}
-                        onChange={handleFactureSelect}
-                        placeholder="Rechercher par client, n° facture, téléphone..."
-                      />
-
-                      {!formData.facture && (
-                        <p className="text-warning text-sm mt-3 flex items-center gap-1.5">
-                          <AlertCircle className="w-4 h-4" />
-                          Recherchez et sélectionnez une facture pour continuer
-                        </p>
-                      )}
-                    </div>
-
-                    {/* Détails de la facture sélectionnée */}
-                    {selectedFacture ? (
-                      <div className="flex-1 flex flex-col justify-center">
-                        <div className="grid grid-cols-2 gap-5 bg-gray-50 rounded-xl p-6 border border-gray-100">
-                          <div>
-                            <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">N° Facture</p>
-                            <p className="font-semibold text-lg mt-2">{selectedFacture.invoice_number}</p>
-                          </div>
-                          <div>
-                            <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Client</p>
-                            <p className="font-semibold text-lg mt-2 truncate">
-                              {selectedFacture.client_name}
-                            </p>
-                          </div>
-                          <div>
-                            <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Total</p>
-                            <p className="font-semibold text-lg text-primary mt-2">
-                              {formatCurrency(selectedFacture.total)}
-                            </p>
-                          </div>
-                          <div>
-                            <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Reste à payer</p>
-                            <p className="font-semibold text-lg text-success mt-2">
-                              {formatCurrency(selectedFacture.remaining_amount || selectedFacture.total)}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="mt-5 bg-primary/5 rounded-xl border border-primary/20 p-5">
-                          <h4 className="font-semibold text-base text-primary mb-3 flex items-center gap-2">
-                            <FileText className="w-5 h-5" />
-                            Récapitulatif du paiement
-                          </h4>
-                          <div className="space-y-2 text-sm">
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">Total facture</span>
-                              <span className="font-medium">{formatCurrency(selectedFacture.total)}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">Déjà payé</span>
-                              <span className="font-medium">
-                                {formatCurrency((selectedFacture.total || 0) - (selectedFacture.remaining_amount || selectedFacture.total || 0))}
-                              </span>
-                            </div>
-                            <div className="flex justify-between border-t border-primary/20 pt-2 mt-2">
-                              <span className="text-gray-700 font-semibold">Reste à payer</span>
-                              <span className="font-bold text-success">
-                                {formatCurrency(selectedFacture.remaining_amount || selectedFacture.total)}
-                              </span>
-                            </div>
-                            {formData.amount && parseFloat(formData.amount) > 0 && (
-                              <div className="flex justify-between text-primary pt-2 border-t border-primary/20">
-                                <span className="font-semibold">Paiement en cours</span>
-                                <span className="font-bold">{formatCurrency(parseFloat(formData.amount))}</span>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="flex-1 flex items-center justify-center">
-                        <div className="text-center">
-                          <div className="inline-flex items-center justify-center w-24 h-24 rounded-full bg-gray-100 mb-4">
-                            <FileText className="w-12 h-12 text-gray-300" />
-                          </div>
-                          <p className="text-gray-500 font-medium mb-1">
-                            Aucune facture sélectionnée
-                          </p>
-                          <p className="text-gray-400 text-sm">
-                            Les informations de la facture s'afficheront ici
-                          </p>
-                        </div>
-                      </div>
-                    )}
-                  </div>
                 </div>
               </div>
             </div>
