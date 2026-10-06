@@ -1,4 +1,4 @@
-// pages/utilisateurs/UtilisateurDetails.jsx
+// components/utilisateurs/UtilisateurDetail.jsx
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import {

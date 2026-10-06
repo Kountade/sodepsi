@@ -13,7 +13,8 @@ const FournisseursForm = () => {
   const { id } = useParams();
   const isEditMode = !!id;
 
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = us
+  eState(false);
   const [saving, setSaving] = useState(false);
   const [notification, setNotification] = useState({ show: false, message: '', type: 'success' });
   const [activeTab, setActiveTab] = useState('general');

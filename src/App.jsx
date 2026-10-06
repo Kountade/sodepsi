@@ -48,11 +48,12 @@ import ReceptionForm from './components/achatsfournisseurs/ReceptionForm';
 import ReceptionDetails from './components/achatsfournisseurs/ReceptionDetails';
 import ReceptionPdf from './components/achatsfournisseurs/ReceptionPdf';
 
-// ✅ RETOURS FOURNISSEURS — Les 4 imports
+//  RETOURS FOURNISSEURS — Les 4 imports
 import PurchaseReturnsList from './components/achatsfournisseurs/PurchaseReturnsList';
 import PurchaseReturnForm from './components/achatsfournisseurs/PurchaseReturnForm';
 import PurchaseReturnDetail from './components/achatsfournisseurs/PurchaseReturnDetail';
 import PurchaseReturnPdf from './components/achatsfournisseurs/PurchaseReturnPdf';
+
 
 import PurchaseAlerts from './components/achatsfournisseurs/PurchaseAlerts';
 
@@ -436,6 +437,7 @@ function App() {
                 <Route path="/depenses" element={<DepensesList />} />
                 <Route path="/depenses/nouveau" element={<DepenseForm />} />
                 <Route path="/depenses/:id/modifier" element={<DepenseForm />} />
+
 
 
 
