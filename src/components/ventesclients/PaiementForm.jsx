@@ -93,13 +93,13 @@ const PaiementForm = () => {
   };
 
   // ============================================================
-  // SÉLECTION DE FACTURE (via FactureSearchSelect)
+  // SÉLECTION DE FACTURE
   // ============================================================
   const handleFactureSelect = (factureId, facture) => {
     setFormData(prev => ({
       ...prev,
       facture: factureId,
-      amount: ''  // Réinitialiser le montant
+      amount: ''
     }));
     setSelectedFacture(facture);
     setErrors(prev => ({ ...prev, amount: '' }));
@@ -126,6 +126,21 @@ const PaiementForm = () => {
     }
     
     return { valid: true, message: '' };
+  };
+
+  // ============================================================
+  // RÉINITIALISATION
+  // ============================================================
+  const resetForm = () => {
+    setFormData({
+      facture: '',
+      amount: '',
+      method: 'cash',
+      reference: '',
+      notes: ''
+    });
+    setSelectedFacture(null);
+    setErrors({});
   };
 
   // ============================================================
@@ -163,22 +178,22 @@ const PaiementForm = () => {
       };
       
       if (isEdit) {
-        // Modification d'un paiement existant
         await AxiosInstance.put(`/payments/${id}/`, dataToSend, {
           headers: { 'Authorization': `Token ${token}` }
         });
         showNotification('Paiement modifié avec succès', 'success');
+        setTimeout(() => navigate('/paiements'), 1500);
       } else {
-        // Création : on passe par la facture
         await AxiosInstance.post(
           `/factures/${formData.facture}/register_payment/`, 
           dataToSend, 
           { headers: { 'Authorization': `Token ${token}` } }
         );
         showNotification('Paiement enregistré avec succès', 'success');
+        
+        // ✅ Rester sur /paiements/nouveau et réinitialiser
+        resetForm();
       }
-
-      setTimeout(() => navigate('/paiements'), 1500);
 
     } catch (error) {
       console.error('Erreur:', error);
@@ -213,9 +228,6 @@ const PaiementForm = () => {
     return <span className={`badge ${config.className}`}>{config.label}</span>;
   };
 
-  // ============================================================
-  // MÉTHODES DE PAIEMENT
-  // ============================================================
   const paymentMethods = [
     { value: 'cash', label: 'Espèces', icon: Banknote },
     { value: 'card', label: 'Carte bancaire', icon: CreditCard },
@@ -303,234 +315,292 @@ const PaiementForm = () => {
       <div className="w-full px-6 sm:px-8 py-6">
         <form onSubmit={handleSubmit} className="w-full">
           
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 w-full">
+          {/* ============================================ */}
+          {/* 2 COLONNES : GAUCHE = Autres cartes / DROITE = Informations facture */}
+          {/* ============================================ */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 w-full items-stretch">
             
             {/* ============================================ */}
-            {/* COLONNE 1 - Informations facture              */}
+            {/* COLONNE GAUCHE (1/2) - Montant, Référence, Notes */}
             {/* ============================================ */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-              <div className="bg-gray-50/80 px-5 py-3.5 border-b border-gray-200 flex items-center justify-between">
-                <h3 className="font-semibold flex items-center gap-2.5 text-gray-700">
-                  <FileText className="w-5 h-5 text-primary" /> 
-                  Informations facture
-                </h3>
-                {selectedFacture && (
-                  <span>{getStatusBadge(selectedFacture.status)}</span>
-                )}
-              </div>
-              <div className="p-5 space-y-4">
-                <div>
-                  <label className="label text-sm font-medium text-gray-700 pb-1">
-                    Sélectionner une facture <span className="text-red-500">*</span>
-                  </label>
-                  
-                  <FactureSearchSelect
-                    value={formData.facture}
-                    onChange={handleFactureSelect}
-                    placeholder="Rechercher par client, n° facture, téléphone..."
-                  />
-
-                  {!formData.facture && (
-                    <p className="text-warning text-sm mt-2 flex items-center gap-1.5">
-                      <AlertCircle className="w-4 h-4" />
-                      Recherchez et sélectionnez une facture pour continuer
-                    </p>
-                  )}
+            <div className="space-y-6">
+              
+              {/* Carte Montant & Paiement */}
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                <div className="bg-gray-50/80 px-5 py-3.5 border-b border-gray-200">
+                  <h3 className="font-semibold flex items-center gap-2.5 text-gray-700">
+                    <Wallet className="w-5 h-5 text-primary" /> 
+                    Montant & Paiement
+                  </h3>
                 </div>
-
-                {selectedFacture && (
-                  <div className="grid grid-cols-2 gap-3 bg-gray-50 rounded-lg p-4">
-                    <div>
-                      <p className="text-xs text-gray-500 font-medium">N° Facture</p>
-                      <p className="font-semibold text-base">{selectedFacture.invoice_number}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-500 font-medium">Client</p>
-                      <p className="font-semibold text-base truncate">
-                        {selectedFacture.client_name}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-500 font-medium">Total</p>
-                      <p className="font-semibold text-base text-primary">
-                        {formatCurrency(selectedFacture.total)}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-500 font-medium">Reste à payer</p>
-                      <p className="font-semibold text-base text-success">
-                        {formatCurrency(selectedFacture.remaining_amount || selectedFacture.total)}
-                      </p>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* ============================================ */}
-            {/* COLONNE 2 - Montant et méthode               */}
-            {/* ============================================ */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-              <div className="bg-gray-50/80 px-5 py-3.5 border-b border-gray-200">
-                <h3 className="font-semibold flex items-center gap-2.5 text-gray-700">
-                  <Wallet className="w-5 h-5 text-primary" /> 
-                  Montant & Paiement
-                </h3>
-              </div>
-              <div className="p-5 space-y-4">
-                {/* Montant */}
-                <div>
-                  <label className="label text-sm font-medium text-gray-700 pb-1">
-                    Montant (FCFA) <span className="text-red-500">*</span>
-                  </label>
-                  <div className="relative">
-                    <div className="absolute left-3 top-1/2 -translate-y-1/2">
-                      <Banknote className="w-5 h-5 text-gray-400" />
-                    </div>
-                    <input
-                      type="number"
-                      name="amount"
-                      value={formData.amount}
-                      onChange={handleChange}
-                      placeholder="Ex: 10 000"
-                      className={`input input-bordered w-full pl-10 h-12 text-base ${errors.amount ? 'input-error' : ''}`}
-                      min="1"
-                      step="1"
-                      disabled={!selectedFacture}
-                      onBlur={(e) => {
-                        const value = e.target.value;
-                        const validation = validateAmount(value);
-                        if (!validation.valid && value) {
-                          setErrors(prev => ({ ...prev, amount: validation.message }));
-                        } else {
+                <div className="p-5 space-y-4">
+                  {/* Montant */}
+                  <div>
+                    <label className="label text-sm font-medium text-gray-700 pb-1">
+                      Montant (FCFA) <span className="text-red-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <div className="absolute left-3 top-1/2 -translate-y-1/2">
+                        <Banknote className="w-5 h-5 text-gray-400" />
+                      </div>
+                      <input
+                        type="number"
+                        name="amount"
+                        value={formData.amount}
+                        onChange={handleChange}
+                        placeholder="Ex: 10 000"
+                        className={`input input-bordered w-full pl-10 h-12 text-base ${errors.amount ? 'input-error' : ''}`}
+                        min="1"
+                        step="1"
+                        disabled={!selectedFacture}
+                        onBlur={(e) => {
+                          const value = e.target.value;
+                          const validation = validateAmount(value);
+                          if (!validation.valid && value) {
+                            setErrors(prev => ({ ...prev, amount: validation.message }));
+                          } else {
+                            setErrors(prev => ({ ...prev, amount: '' }));
+                          }
+                        }}
+                        onFocus={() => {
                           setErrors(prev => ({ ...prev, amount: '' }));
-                        }
-                      }}
-                      onFocus={() => {
-                        setErrors(prev => ({ ...prev, amount: '' }));
-                      }}
-                    />
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-400 font-medium">
-                      FCFA
-                    </span>
-                  </div>
-                  
-                  {/* Quick fill : reste à payer */}
-                  {selectedFacture && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const remaining = selectedFacture.remaining_amount || selectedFacture.total;
-                        setFormData(prev => ({ ...prev, amount: remaining }));
-                        setErrors(prev => ({ ...prev, amount: '' }));
-                      }}
-                      className="text-xs text-primary hover:underline mt-1.5 font-medium"
-                    >
-                      → Remplir avec le solde restant ({formatCurrency(selectedFacture.remaining_amount || selectedFacture.total)})
-                    </button>
-                  )}
-                  
-                  {errors.amount && (
-                    <p className="text-red-500 text-sm mt-1.5 flex items-center gap-1.5">
-                      <AlertCircle className="w-4 h-4" />
-                      {errors.amount}
-                    </p>
-                  )}
-                  
-                  {formData.amount && !errors.amount && parseFloat(formData.amount) > 0 && (
-                    <p className="text-green-600 text-sm mt-1.5 flex items-center gap-1.5">
-                      <CheckCircle className="w-4 h-4" />
-                      {formatCurrency(parseFloat(formData.amount))}
-                    </p>
-                  )}
-                  
-                  <p className="text-gray-400 text-xs mt-1.5 flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 bg-gray-300 rounded-full"></span>
-                    Montant minimum : 1 FCFA
-                    {selectedFacture && (
-                      <span className="ml-2">
-                        • Maximum : {formatCurrency(selectedFacture.remaining_amount || selectedFacture.total)}
+                        }}
+                      />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-400 font-medium">
+                        FCFA
                       </span>
+                    </div>
+                    
+                    {selectedFacture && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const remaining = selectedFacture.remaining_amount || selectedFacture.total;
+                          setFormData(prev => ({ ...prev, amount: remaining }));
+                          setErrors(prev => ({ ...prev, amount: '' }));
+                        }}
+                        className="text-xs text-primary hover:underline mt-2 font-medium"
+                      >
+                        → Remplir avec le solde restant ({formatCurrency(selectedFacture.remaining_amount || selectedFacture.total)})
+                      </button>
                     )}
+                    
+                    {errors.amount && (
+                      <p className="text-red-500 text-sm mt-2 flex items-center gap-1.5">
+                        <AlertCircle className="w-4 h-4" />
+                        {errors.amount}
+                      </p>
+                    )}
+                    
+                    {formData.amount && !errors.amount && parseFloat(formData.amount) > 0 && (
+                      <p className="text-green-600 text-sm mt-2 flex items-center gap-1.5">
+                        <CheckCircle className="w-4 h-4" />
+                        {formatCurrency(parseFloat(formData.amount))}
+                      </p>
+                    )}
+                    
+                    <p className="text-gray-400 text-xs mt-2 flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 bg-gray-300 rounded-full"></span>
+                      Montant minimum : 1 FCFA
+                      {selectedFacture && (
+                        <span className="ml-2">
+                          • Maximum : {formatCurrency(selectedFacture.remaining_amount || selectedFacture.total)}
+                        </span>
+                      )}
+                    </p>
+                  </div>
+
+                  {/* Méthode de paiement */}
+                  <div>
+                    <label className="label text-sm font-medium text-gray-700 pb-1">
+                      Méthode de paiement <span className="text-red-500">*</span>
+                    </label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {paymentMethods.map((method) => {
+                        const Icon = method.icon;
+                        const isSelected = formData.method === method.value;
+                        return (
+                          <button
+                            key={method.value}
+                            type="button"
+                            onClick={() => setFormData(prev => ({ ...prev, method: method.value }))}
+                            className={`
+                              flex items-center justify-center gap-2 p-3 rounded-lg border-2 text-sm font-medium transition-all
+                              ${isSelected 
+                                ? 'border-primary bg-primary/5 text-primary shadow-sm' 
+                                : 'border-gray-200 hover:border-gray-300 text-gray-600 hover:bg-gray-50'
+                              }
+                            `}
+                          >
+                            <Icon className={`w-5 h-5 ${isSelected ? 'text-primary' : 'text-gray-400'}`} />
+                            {method.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <input type="hidden" name="method" value={formData.method} />
+                  </div>
+                </div>
+              </div>
+
+              {/* Carte Référence */}
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                <div className="bg-gray-50/80 px-5 py-3.5 border-b border-gray-200">
+                  <h3 className="font-semibold flex items-center gap-2.5 text-gray-700">
+                    <Hash className="w-5 h-5 text-primary" /> 
+                    Référence
+                  </h3>
+                </div>
+                <div className="p-5">
+                  <input
+                    type="text"
+                    name="reference"
+                    value={formData.reference}
+                    onChange={handleChange}
+                    placeholder="Numéro de référence ou de transaction..."
+                    className="input input-bordered w-full h-12 text-base"
+                  />
+                  <p className="text-gray-400 text-xs mt-2">
+                    Ex: N° de chèque, numéro de transaction, code de validation
                   </p>
                 </div>
+              </div>
 
-                {/* Méthode de paiement */}
-                <div>
-                  <label className="label text-sm font-medium text-gray-700 pb-1">
-                    Méthode de paiement <span className="text-red-500">*</span>
-                  </label>
-                  <div className="grid grid-cols-3 gap-2">
-                    {paymentMethods.map((method) => {
-                      const Icon = method.icon;
-                      const isSelected = formData.method === method.value;
-                      return (
-                        <button
-                          key={method.value}
-                          type="button"
-                          onClick={() => setFormData(prev => ({ ...prev, method: method.value }))}
-                          className={`
-                            flex items-center justify-center gap-2 p-3 rounded-lg border-2 text-sm font-medium transition-all
-                            ${isSelected 
-                              ? 'border-primary bg-primary/5 text-primary shadow-sm' 
-                              : 'border-gray-200 hover:border-gray-300 text-gray-600 hover:bg-gray-50'
-                            }
-                          `}
-                        >
-                          <Icon className={`w-5 h-5 ${isSelected ? 'text-primary' : 'text-gray-400'}`} />
-                          {method.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <input type="hidden" name="method" value={formData.method} />
+              {/* Carte Notes */}
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                <div className="bg-gray-50/80 px-5 py-3.5 border-b border-gray-200">
+                  <h3 className="font-semibold flex items-center gap-2.5 text-gray-700">
+                    <MessageSquare className="w-5 h-5 text-primary" /> 
+                    Notes
+                  </h3>
+                </div>
+                <div className="p-5">
+                  <textarea
+                    name="notes"
+                    value={formData.notes}
+                    onChange={handleChange}
+                    placeholder="Informations complémentaires..."
+                    className="textarea textarea-bordered w-full min-h-[100px] resize-none text-base"
+                  />
                 </div>
               </div>
             </div>
 
             {/* ============================================ */}
-            {/* COLONNE 1 - Référence (2ème ligne)           */}
+            {/* COLONNE DROITE (1/2) - Informations facture LARGE */}
             {/* ============================================ */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-              <div className="bg-gray-50/80 px-5 py-3.5 border-b border-gray-200">
-                <h3 className="font-semibold flex items-center gap-2.5 text-gray-700">
-                  <Hash className="w-5 h-5 text-primary" /> 
-                  Référence
-                </h3>
-              </div>
-              <div className="p-5">
-                <input
-                  type="text"
-                  name="reference"
-                  value={formData.reference}
-                  onChange={handleChange}
-                  placeholder="Numéro de référence ou de transaction..."
-                  className="input input-bordered w-full h-12 text-base"
-                />
-                <p className="text-gray-400 text-xs mt-2">
-                  Ex: N° de chèque, numéro de transaction, code de validation
-                </p>
-              </div>
-            </div>
+            <div className="flex flex-col">
+              
+              {/* ✅ Carte Informations facture - HAUTEUR MINIMALE AUGMENTÉE À 900px */}
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex-1 flex flex-col min-h-[900px]">
+                <div className="bg-gray-50/80 px-6 py-4 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
+                  <h3 className="font-semibold flex items-center gap-3 text-gray-700 text-lg">
+                    <FileText className="w-6 h-6 text-primary" /> 
+                    Informations facture
+                  </h3>
+                  {selectedFacture && (
+                    <span>{getStatusBadge(selectedFacture.status)}</span>
+                  )}
+                </div>
 
-            {/* ============================================ */}
-            {/* COLONNE 2 - Notes (2ème ligne)               */}
-            {/* ============================================ */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-              <div className="bg-gray-50/80 px-5 py-3.5 border-b border-gray-200">
-                <h3 className="font-semibold flex items-center gap-2.5 text-gray-700">
-                  <MessageSquare className="w-5 h-5 text-primary" /> 
-                  Notes
-                </h3>
-              </div>
-              <div className="p-5">
-                <textarea
-                  name="notes"
-                  value={formData.notes}
-                  onChange={handleChange}
-                  placeholder="Informations complémentaires..."
-                  className="textarea textarea-bordered w-full min-h-[100px] resize-none text-base"
-                />
+                <div className="flex-1 flex flex-col p-6 sm:p-8 pb-12">
+                  <div className="w-full flex-1 flex flex-col space-y-5">
+                    
+                    {/* Sélecteur de facture */}
+                    <div className="w-full">
+                      <label className="label text-sm font-medium text-gray-700 pb-1">
+                        Sélectionner une facture <span className="text-red-500">*</span>
+                      </label>
+                      <FactureSearchSelect
+                        value={formData.facture}
+                        onChange={handleFactureSelect}
+                        placeholder="Rechercher par client, n° facture, téléphone..."
+                      />
+
+                      {!formData.facture && (
+                        <p className="text-warning text-sm mt-3 flex items-center gap-1.5">
+                          <AlertCircle className="w-4 h-4" />
+                          Recherchez et sélectionnez une facture pour continuer
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Détails de la facture sélectionnée */}
+                    {selectedFacture ? (
+                      <div className="flex-1 flex flex-col justify-center">
+                        <div className="grid grid-cols-2 gap-5 bg-gray-50 rounded-xl p-6 border border-gray-100">
+                          <div>
+                            <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">N° Facture</p>
+                            <p className="font-semibold text-lg mt-2">{selectedFacture.invoice_number}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Client</p>
+                            <p className="font-semibold text-lg mt-2 truncate">
+                              {selectedFacture.client_name}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Total</p>
+                            <p className="font-semibold text-lg text-primary mt-2">
+                              {formatCurrency(selectedFacture.total)}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Reste à payer</p>
+                            <p className="font-semibold text-lg text-success mt-2">
+                              {formatCurrency(selectedFacture.remaining_amount || selectedFacture.total)}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="mt-5 bg-primary/5 rounded-xl border border-primary/20 p-5">
+                          <h4 className="font-semibold text-base text-primary mb-3 flex items-center gap-2">
+                            <FileText className="w-5 h-5" />
+                            Récapitulatif du paiement
+                          </h4>
+                          <div className="space-y-2 text-sm">
+                            <div className="flex justify-between">
+                              <span className="text-gray-600">Total facture</span>
+                              <span className="font-medium">{formatCurrency(selectedFacture.total)}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-600">Déjà payé</span>
+                              <span className="font-medium">
+                                {formatCurrency((selectedFacture.total || 0) - (selectedFacture.remaining_amount || selectedFacture.total || 0))}
+                              </span>
+                            </div>
+                            <div className="flex justify-between border-t border-primary/20 pt-2 mt-2">
+                              <span className="text-gray-700 font-semibold">Reste à payer</span>
+                              <span className="font-bold text-success">
+                                {formatCurrency(selectedFacture.remaining_amount || selectedFacture.total)}
+                              </span>
+                            </div>
+                            {formData.amount && parseFloat(formData.amount) > 0 && (
+                              <div className="flex justify-between text-primary pt-2 border-t border-primary/20">
+                                <span className="font-semibold">Paiement en cours</span>
+                                <span className="font-bold">{formatCurrency(parseFloat(formData.amount))}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex-1 flex items-center justify-center">
+                        <div className="text-center">
+                          <div className="inline-flex items-center justify-center w-24 h-24 rounded-full bg-gray-100 mb-4">
+                            <FileText className="w-12 h-12 text-gray-300" />
+                          </div>
+                          <p className="text-gray-500 font-medium mb-1">
+                            Aucune facture sélectionnée
+                          </p>
+                          <p className="text-gray-400 text-sm">
+                            Les informations de la facture s'afficheront ici
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
 

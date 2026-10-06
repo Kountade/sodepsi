@@ -166,9 +166,9 @@ const FactureSearchSelect = ({
         </div>
       )}
 
-      {/* Dropdown des résultats */}
+      {/* ✅ Dropdown des résultats - HAUTEUR AUGMENTÉE POUR 8 FACTURES MINIMUM */}
       {isOpen && !selectedFacture && (
-        <div className="absolute z-50 w-full mt-1 bg-white rounded-lg shadow-xl border border-gray-200 max-h-80 overflow-y-auto">
+        <div className="absolute z-50 w-full mt-1 bg-white rounded-lg shadow-xl border border-gray-200 max-h-[680px] overflow-y-auto">
           {loading && results.length === 0 ? (
             <div className="p-4 text-center text-gray-500">
               <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2" />
