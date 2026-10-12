@@ -1,6 +1,6 @@
 // src/components/pos/PosForm.jsx
 // ============================================================
-// VERSION OPTIMISÉE - Chargement rapide + Recherche serveur
+// VERSION OPTIMISÉE - Recherche serveur + Voir tous les produits
 // ============================================================
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
@@ -68,6 +68,8 @@ const PosFormContent = () => {
   // ============================================================
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [loadingAll, setLoadingAll] = useState(false);       // ✅ NOUVEAU
+  const [allProductsLoaded, setAllProductsLoaded] = useState(false); // ✅ NOUVEAU
   const [submitting, setSubmitting] = useState(false);
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -76,6 +78,8 @@ const PosFormContent = () => {
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [selectedWarehouse, setSelectedWarehouse] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');  // ✅ NOUVEAU
+  const [isSearching, setIsSearching] = useState(false);      // ✅ NOUVEAU
   const [selectedCategory, setSelectedCategory] = useState('');
   const [cart, setCart] = useState([]);
   const [showCustomerModal, setShowCustomerModal] = useState(false);
@@ -166,9 +170,22 @@ const PosFormContent = () => {
   }, []);
 
   // ============================================================
-  // ✅ CHARGEMENT DES PRODUITS (avec pagination serveur)
+  // ✅ TRANSFORMATION PRODUIT
   // ============================================================
-  const fetchProducts = useCallback(async (page = 1, append = false) => {
+  const transformProduct = useCallback((product) => ({
+    ...product,
+    image_url: product.image_url || getImageUrl(product.image),
+    stock_quantity: parseFloat(product.current_stock) || 0,
+    selling_price: parseFloat(product.selling_price) || 0,
+    wholesale_price: parseFloat(product.wholesale_price) || 0,
+    barcode: product.barcode || '',
+    display_price: parseFloat(product.selling_price) || 0
+  }), [getImageUrl]);
+
+  // ============================================================
+  // ✅ CHARGEMENT DES PRODUITS (avec recherche serveur)
+  // ============================================================
+  const fetchProducts = useCallback(async (page = 1, append = false, search = '') => {
     try {
       const token = getToken();
       if (!token) return;
@@ -176,9 +193,9 @@ const PosFormContent = () => {
       const params = new URLSearchParams();
       params.append('status', 'active');
       params.append('page', page);
-      params.append('page_size', 50);  // ✅ 50 produits à la fois
+      params.append('page_size', 50);
 
-      if (searchTerm) params.append('search', searchTerm);
+      if (search) params.append('search', search);
       if (selectedCategory) params.append('category', selectedCategory);
 
       const response = await AxiosInstance.get(`/products/?${params.toString()}`, {
@@ -186,16 +203,7 @@ const PosFormContent = () => {
       });
 
       const { results, count, hasMore } = getPaginatedInfo(response.data);
-
-      const productsWithData = results.map(product => ({
-        ...product,
-        image_url: product.image_url || getImageUrl(product.image),
-        stock_quantity: parseFloat(product.current_stock) || 0,
-        selling_price: parseFloat(product.selling_price) || 0,
-        wholesale_price: parseFloat(product.wholesale_price) || 0,
-        barcode: product.barcode || '',
-        display_price: parseFloat(product.selling_price) || 0
-      }));
+      const productsWithData = results.map(transformProduct);
 
       if (append) {
         setProducts(prev => [...prev, ...productsWithData]);
@@ -209,10 +217,53 @@ const PosFormContent = () => {
     } catch (error) {
       console.error('❌ Erreur produits:', error);
     }
-  }, [searchTerm, selectedCategory, getImageUrl]);
+  }, [selectedCategory, transformProduct]);
 
   // ============================================================
-  // ✅ CHARGEMENT DES CLIENTS (avec pagination serveur)
+  // ✅ NOUVEAU : CHARGER TOUS LES PRODUITS
+  // ============================================================
+  const loadAllProducts = useCallback(async () => {
+    if (loadingAll) return;
+
+    setLoadingAll(true);
+    try {
+      const token = getToken();
+      if (!token) return;
+
+      console.log('📦 Chargement de TOUS les produits...');
+
+      const params = new URLSearchParams();
+      params.append('status', 'active');
+      params.append('page', 1);
+      params.append('page_size', 5000); // ✅ Très grande taille pour tout charger
+
+      if (selectedCategory) params.append('category', selectedCategory);
+
+      const response = await AxiosInstance.get(`/products/?${params.toString()}`, {
+        headers: { 'Authorization': `Token ${token}` }
+      });
+
+      const { results, count } = getPaginatedInfo(response.data);
+      const productsWithData = results.map(transformProduct);
+
+      setProducts(productsWithData);
+      setProductTotal(count);
+      setProductHasMore(false);
+      setAllProductsLoaded(true);
+
+      showNotification(`✅ ${productsWithData.length} produits chargés`, 'success');
+      console.log(`✅ ${productsWithData.length} produits chargés`);
+
+    } catch (error) {
+      console.error('❌ Erreur chargement tous produits:', error);
+      showNotification('Erreur lors du chargement de tous les produits', 'error');
+    } finally {
+      setLoadingAll(false);
+    }
+  }, [loadingAll, selectedCategory, transformProduct, showNotification]);
+
+  // ============================================================
+  // ✅ CHARGEMENT DES CLIENTS
   // ============================================================
   const fetchCustomers = useCallback(async (page = 1, search = '', append = false) => {
     setLoadingCustomers(true);
@@ -222,7 +273,7 @@ const PosFormContent = () => {
 
       const params = new URLSearchParams();
       params.append('page', page);
-      params.append('page_size', 50);  // ✅ 50 clients à la fois
+      params.append('page_size', 50);
       if (search) params.append('search', search);
 
       const response = await AxiosInstance.get(`/clients/?${params.toString()}`, {
@@ -249,7 +300,7 @@ const PosFormContent = () => {
   }, []);
 
   // ============================================================
-  // ✅ CHARGEMENT INITIAL (rapide : 50 produits + 50 clients)
+  // ✅ CHARGEMENT INITIAL
   // ============================================================
   const fetchInitialData = useCallback(async () => {
     setLoading(true);
@@ -265,30 +316,21 @@ const PosFormContent = () => {
 
       console.log('🔍 Chargement initial POS...');
 
-      // ✅ Charger en parallèle : 50 produits + 50 clients + catégories + entrepôts
       const [productsRes, customersRes, categoriesRes, warehousesRes] = await Promise.all([
         AxiosInstance.get('/products/?status=active&page=1&page_size=50', { headers })
-          .catch(err => ({ data: { results: [], count: 0 } })),
+          .catch(() => ({ data: { results: [], count: 0 } })),
         AxiosInstance.get('/clients/?page=1&page_size=50', { headers })
-          .catch(err => ({ data: { results: [], count: 0 } })),
+          .catch(() => ({ data: { results: [], count: 0 } })),
         AxiosInstance.get('/categories/', { headers })
-          .catch(err => ({ data: [] })),
+          .catch(() => ({ data: [] })),
         AxiosInstance.get('/warehouses/?active=true', { headers })
-          .catch(err => ({ data: [] }))
+          .catch(() => ({ data: [] }))
       ]);
 
       const productsInfo = getPaginatedInfo(productsRes.data);
       const customersInfo = getPaginatedInfo(customersRes.data);
 
-      const productsWithData = productsInfo.results.map(product => ({
-        ...product,
-        image_url: product.image_url || getImageUrl(product.image),
-        stock_quantity: parseFloat(product.current_stock) || 0,
-        selling_price: parseFloat(product.selling_price) || 0,
-        wholesale_price: parseFloat(product.wholesale_price) || 0,
-        barcode: product.barcode || '',
-        display_price: parseFloat(product.selling_price) || 0
-      }));
+      const productsWithData = productsInfo.results.map(transformProduct);
 
       setProducts(productsWithData);
       setProductTotal(productsInfo.count);
@@ -325,7 +367,7 @@ const PosFormContent = () => {
     } finally {
       setLoading(false);
     }
-  }, [navigate, showNotification, getImageUrl]);
+  }, [navigate, showNotification, transformProduct]);
 
   useEffect(() => {
     fetchInitialData();
@@ -336,17 +378,33 @@ const PosFormContent = () => {
   }, [fetchInitialData]);
 
   // ============================================================
-  // ✅ RECHERCHE SERVEUR PRODUITS (debounce)
+  // ✅ DEBOUNCE DE LA RECHERCHE (500ms)
+  // ============================================================
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
+  // ============================================================
+  // ✅ RECHERCHE SERVEUR PRODUITS (déclenchée par debouncedSearchTerm)
   // ============================================================
   useEffect(() => {
     if (!isInitialized) return;
 
-    const timer = setTimeout(() => {
-      fetchProducts(1, false);
-    }, 400);  // ✅ Debounce 400ms
+    const performSearch = async () => {
+      setIsSearching(true);
+      try {
+        await fetchProducts(1, false, debouncedSearchTerm);
+      } finally {
+        setIsSearching(false);
+      }
+    };
 
-    return () => clearTimeout(timer);
-  }, [searchTerm, selectedCategory, isInitialized, fetchProducts]);
+    performSearch();
+  }, [debouncedSearchTerm, selectedCategory, isInitialized, fetchProducts]);
 
   // ============================================================
   // ✅ RECHERCHE SERVEUR CLIENTS (debounce)
@@ -357,7 +415,7 @@ const PosFormContent = () => {
     const timer = setTimeout(() => {
       setCustomerPage(1);
       fetchCustomers(1, customerSearchTerm, false);
-    }, 300);  // ✅ Debounce 300ms
+    }, 300);
 
     return () => clearTimeout(timer);
   }, [customerSearchTerm, showCustomerModal, fetchCustomers]);
@@ -396,7 +454,7 @@ const PosFormContent = () => {
   }, [hasWholesaleProducts, priceType, isInitialized, showNotification]);
 
   // ============================================================
-  // ✅ CHARGER PLUS DE CLIENTS (scroll infini)
+  // ✅ CHARGER PLUS DE CLIENTS
   // ============================================================
   const loadMoreCustomers = useCallback(() => {
     if (!customerHasMore || loadingCustomers) return;
@@ -413,9 +471,9 @@ const PosFormContent = () => {
     setLoadingMore(true);
     const nextPage = currentPage + 1;
     setCurrentPage(nextPage);
-    await fetchProducts(nextPage, true);
+    await fetchProducts(nextPage, true, debouncedSearchTerm);
     setLoadingMore(false);
-  }, [productHasMore, loadingMore, currentPage, fetchProducts]);
+  }, [productHasMore, loadingMore, currentPage, fetchProducts, debouncedSearchTerm]);
 
   // ============================================================
   // ✅ GESTION DU CODE-BARRES
@@ -456,19 +514,11 @@ const PosFormContent = () => {
   // ============================================================
   const filteredProducts = useMemo(() => {
     let filtered = products;
-    if (searchTerm) {
-      const term = searchTerm.toLowerCase();
-      filtered = filtered.filter(p =>
-        (p.name || '').toLowerCase().includes(term) ||
-        (p.code || '').toLowerCase().includes(term) ||
-        (p.barcode || '').toLowerCase().includes(term)
-      );
-    }
     if (selectedCategory) {
       filtered = filtered.filter(p => p.category === parseInt(selectedCategory));
     }
     return filtered;
-  }, [products, searchTerm, selectedCategory]);
+  }, [products, selectedCategory]);
 
   const sortedProducts = useMemo(() => {
     const sorted = [...filteredProducts];
@@ -750,13 +800,6 @@ const PosFormContent = () => {
         const data = error.response.data;
         if (typeof data === 'string') errorMsg = data;
         else if (data.detail) errorMsg = data.detail;
-        else if (typeof data === 'object') {
-          const errors = [];
-          Object.entries(data).forEach(([key, value]) => {
-            if (Array.isArray(value)) errors.push(`${key}: ${value.join(', ')}`);
-          });
-          if (errors.length > 0) errorMsg = errors.join('; ');
-        }
       }
       showNotification(errorMsg, 'error');
     } finally {
@@ -810,7 +853,7 @@ const PosFormContent = () => {
         </div>
       )}
 
-      {/* Modal Client - AVEC SCROLL INFINI */}
+      {/* Modal Client */}
       {showCustomerModal && (
         <div className="modal modal-open">
           <div className="modal-box max-w-md">
@@ -835,14 +878,6 @@ const PosFormContent = () => {
                   onChange={(e) => setCustomerSearchTerm(e.target.value)}
                   autoFocus
                 />
-                {customerSearchTerm && (
-                  <button
-                    className="absolute right-3 top-1/2 -translate-y-1/2 btn btn-ghost btn-xs btn-circle"
-                    onClick={() => setCustomerSearchTerm('')}
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                )}
               </div>
               <label className="label">
                 <span className="label-text-alt text-base-content/50">
@@ -851,7 +886,6 @@ const PosFormContent = () => {
               </label>
             </div>
 
-            {/* ✅ Liste avec scroll infini */}
             <div className="max-h-60 overflow-y-auto space-y-2 mb-4">
               {filteredCustomers.length === 0 && !loadingCustomers ? (
                 <div className="text-center py-8 text-base-content/50">
@@ -863,7 +897,7 @@ const PosFormContent = () => {
                   {filteredCustomers.map(customer => (
                     <button
                       key={customer.id}
-                      className={`w-full text-left p-3 rounded-lg hover:bg-base-200 flex items-center gap-3 transition-colors ${
+                      className={`w-full text-left p-3 rounded-lg hover:bg-base-200 flex items-center gap-3 ${
                         selectedCustomer?.id === customer.id ? 'bg-primary/10 border border-primary/30' : ''
                       }`}
                       onClick={() => {
@@ -888,7 +922,6 @@ const PosFormContent = () => {
                     </button>
                   ))}
 
-                  {/* ✅ Bouton "Charger plus" */}
                   {customerHasMore && (
                     <button
                       className="btn btn-outline btn-sm w-full"
@@ -1073,7 +1106,7 @@ const PosFormContent = () => {
         </div>
       </div>
 
-      {/* Filtres */}
+      {/* Filtres - ✅ AJOUT du bouton "Voir tous les produits" */}
       <div className="bg-base-100 rounded-xl shadow-md border border-base-300 p-4 lg:p-6">
         <div className="flex flex-col lg:flex-row gap-4">
           <div className="flex-1">
@@ -1082,12 +1115,30 @@ const PosFormContent = () => {
               <input
                 ref={searchInputRef}
                 type="text"
-                placeholder="Rechercher par nom, code, code-barres... (recherche serveur)"
-                className="input input-bordered w-full pl-12"
+                placeholder="Rechercher dans TOUS les produits (nom, code, code-barres)..."
+                className="input input-bordered w-full pl-12 pr-12"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
+              {isSearching && (
+                <div className="absolute right-4 top-1/2 -translate-y-1/2">
+                  <Loader className="w-4 h-4 text-primary animate-spin" />
+                </div>
+              )}
+              {!isSearching && searchTerm && (
+                <button
+                  className="absolute right-3 top-1/2 -translate-y-1/2 btn btn-ghost btn-xs btn-circle"
+                  onClick={() => setSearchTerm('')}
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
             </div>
+            {searchTerm && (
+              <p className="text-xs text-base-content/60 mt-1">
+                {isSearching ? '⏳ Recherche en cours...' : `✅ ${productTotal} résultat(s) trouvé(s) dans la base`}
+              </p>
+            )}
           </div>
 
           <div className="flex flex-wrap gap-3">
@@ -1126,6 +1177,28 @@ const PosFormContent = () => {
               <Filter className="w-4 h-4" /> Réinitialiser
             </button>
 
+            {/* ✅ NOUVEAU : Bouton "Voir tous les produits" */}
+            {!allProductsLoaded && productHasMore && (
+              <button
+                className="btn btn-secondary gap-2"
+                onClick={loadAllProducts}
+                disabled={loadingAll}
+                title="Charger TOUS les produits d'un coup"
+              >
+                {loadingAll ? (
+                  <><Loader className="w-4 h-4 animate-spin" /> Chargement...</>
+                ) : (
+                  <><Package className="w-4 h-4" /> Voir tous les produits</>
+                )}
+              </button>
+            )}
+
+            {allProductsLoaded && (
+              <span className="badge badge-success gap-1">
+                <CheckCircle className="w-3 h-3" /> Tous chargés
+              </span>
+            )}
+
             <div className="join">
               <button className={`join-item btn ${viewMode === 'grid' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setViewMode('grid')}>
                 <LayoutGrid className="w-4 h-4" />
@@ -1149,12 +1222,24 @@ const PosFormContent = () => {
                 ({sortedProducts.length} affichés sur {productTotal})
               </span>
             </span>
+            {!allProductsLoaded && productHasMore && (
+              <span className="text-xs text-warning">
+                ⚠️ Cliquez sur "Voir tous les produits" pour tout charger
+              </span>
+            )}
           </div>
 
           {paginatedProducts.length === 0 ? (
             <div className="p-12 text-center">
               <Package className="w-20 h-20 mx-auto mb-4 text-base-content/20" />
-              <p className="text-base-content/60 text-lg">Aucun produit trouvé</p>
+              <p className="text-base-content/60 text-lg">
+                {searchTerm ? 'Aucun produit ne correspond à votre recherche' : 'Aucun produit trouvé'}
+              </p>
+              {searchTerm && (
+                <p className="text-sm text-base-content/40 mt-2">
+                  Essayez avec un autre terme ou vérifiez l'orthographe
+                </p>
+              )}
             </div>
           ) : viewMode === 'grid' ? (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 p-4">
@@ -1254,8 +1339,8 @@ const PosFormContent = () => {
                 </div>
               )}
 
-              {/* ✅ Bouton Charger plus */}
-              {productHasMore && (
+              {/* ✅ Bouton Charger plus (désactivé si "Tous" chargés) */}
+              {productHasMore && !allProductsLoaded && (
                 <button
                   className="btn btn-outline btn-sm gap-2"
                   onClick={loadMoreProducts}
@@ -1267,6 +1352,12 @@ const PosFormContent = () => {
                     <>Charger plus ({productTotal - products.length} restants)</>
                   )}
                 </button>
+              )}
+
+              {allProductsLoaded && (
+                <span className="badge badge-success gap-1">
+                  <CheckCircle className="w-3 h-3" /> Tous les produits sont chargés
+                </span>
               )}
             </div>
           </div>
