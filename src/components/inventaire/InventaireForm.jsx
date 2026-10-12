@@ -1,5 +1,5 @@
 // src/pages/inventaires/InventaireForm.jsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
   ArrowLeft, Save, X, ClipboardList, Warehouse, Calendar,
@@ -7,12 +7,84 @@ import {
 } from 'lucide-react';
 import AxiosInstance from '../AxiosInstance';
 
+// ============================================================
+// ✅ HELPERS
+// ============================================================
+const getToken = () => {
+  try {
+    return localStorage.getItem('Token');
+  } catch {
+    return null;
+  }
+};
+
+/** Normalise TOUJOURS en tableau */
+const ensureArray = (data) => {
+  if (Array.isArray(data)) return data;
+  if (data && Array.isArray(data.results)) return data.results;
+  return [];
+};
+
+/**
+ * ✅ Formate une Date en chaîne `datetime-local` (heure LOCALE, pas UTC)
+ * Format : "YYYY-MM-DDTHH:mm"
+ */
+const toLocalDatetimeInput = (dateLike) => {
+  const d = dateLike instanceof Date ? dateLike : new Date(dateLike);
+  if (isNaN(d.getTime())) return '';
+  const pad = (n) => String(n).padStart(2, '0');
+  return (
+    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
+    `T${pad(d.getHours())}:${pad(d.getMinutes())}`
+  );
+};
+
+/**
+ * ✅ Convertit une valeur `datetime-local` (heure locale) en ISO UTC
+ * pour l'envoyer au backend Django.
+ */
+const toISOStringFromLocal = (localValue) => {
+  if (!localValue) return null;
+  // `new Date("2026-01-15T14:30")` est interprété en LOCAL par les navigateurs modernes
+  const d = new Date(localValue);
+  if (isNaN(d.getTime())) return null;
+  return d.toISOString();
+};
+
+/**
+ * ✅ Parse les erreurs DRF de manière robuste et récursive.
+ */
+const extractErrorMessage = (data) => {
+  if (!data) return 'Erreur inconnue';
+  if (typeof data === 'string') return data;
+  if (Array.isArray(data)) return data.map(extractErrorMessage).join(' • ');
+  if (typeof data === 'object') {
+    return Object.entries(data)
+      .map(([key, value]) => {
+        const msg = extractErrorMessage(value);
+        return key === 'non_field_errors' || key === 'detail'
+          ? msg
+          : `${key}: ${msg}`;
+      })
+      .join(' • ');
+  }
+  return String(data);
+};
+
+// ============================================================
+// COMPOSANT
+// ============================================================
 const InventaireForm = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const isEditMode = !!id;
-  const token = localStorage.getItem('Token');
-  const authHeaders = { Authorization: `Token ${token}` };
+  const token = getToken();
+
+  // ✅ Mémoïsation : évite de recréer les headers à chaque render
+  const authHeaders = useMemo(
+    () => ({ Authorization: `Token ${token}` }),
+    [token]
+  );
 
   const [warehouses, setWarehouses] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -24,7 +96,7 @@ const InventaireForm = () => {
     name: '',
     description: '',
     warehouse: '',
-    start_date: new Date().toISOString().slice(0, 16),
+    start_date: '', // ✅ Initialisé dans useEffect pour éviter le décalage UTC
     notes: '',
   });
 
@@ -32,53 +104,87 @@ const InventaireForm = () => {
   // CHARGEMENT
   // ============================================================
   useEffect(() => {
+    let cancelled = false;
+
     const load = async () => {
       setLoading(true);
+      setError(null);
+
+      // ✅ Valeur par défaut : maintenant en heure LOCALE
+      const now = new Date();
+      // ⚠️ On enlève 60s de marge pour éviter "date dans le passé"
+      now.setSeconds(0, 0);
+      const defaultStart = toLocalDatetimeInput(now);
+
       try {
+        // --- Chargement des entrepôts ---
         const wsRes = await AxiosInstance.get('/warehouses/', {
           headers: authHeaders,
-          params: { active: true },
+          params: { active: 'true' },
         });
-        setWarehouses(wsRes.data || []);
+        // ✅ Correction CRITIQUE : normaliser en tableau
+        const warehouseList = ensureArray(wsRes.data);
 
+        if (!cancelled) setWarehouses(warehouseList);
+
+        // --- Chargement de l'inventaire en mode édition ---
         if (isEditMode) {
           const invRes = await AxiosInstance.get(`/inventories/${id}/`, {
             headers: authHeaders,
           });
           const current = invRes.data;
-          setFormData({
-            name: current.name || '',
-            description: current.description || '',
-            warehouse: current.warehouse || '',
-            start_date: current.start_date
-              ? new Date(current.start_date).toISOString().slice(0, 16)
-              : new Date().toISOString().slice(0, 16),
-            notes: current.notes || '',
-          });
+
+          if (!cancelled) {
+            setFormData({
+              name: current.name || '',
+              description: current.description || '',
+              warehouse: current.warehouse || '',
+              start_date: current.start_date
+                ? toLocalDatetimeInput(current.start_date)
+                : defaultStart,
+              notes: current.notes || '',
+            });
+          }
+        } else {
+          if (!cancelled) {
+            setFormData((prev) => ({ ...prev, start_date: defaultStart }));
+          }
         }
       } catch (err) {
-        console.error(err);
-        setError('Impossible de charger les données');
+        console.error('❌ Erreur chargement inventaire:', err);
+        if (!cancelled) {
+          setError(
+            err?.response?.status === 404
+              ? 'Inventaire introuvable'
+              : 'Impossible de charger les données'
+          );
+        }
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
-    load();
-  }, [id, isEditMode]);
 
+    load();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [id, isEditMode, authHeaders]);
+
+  // ============================================================
+  // HANDLERS
+  // ============================================================
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  // ============================================================
-  // SOUMISSION
-  // ============================================================
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError(null);
     setSuccess(false);
 
+    // --- Validations ---
     if (!formData.name.trim()) {
       setError("Le nom de l'inventaire est obligatoire");
       return;
@@ -87,20 +193,38 @@ const InventaireForm = () => {
       setError('Veuillez sélectionner un entrepôt');
       return;
     }
+    if (!formData.start_date) {
+      setError('La date de début est obligatoire');
+      return;
+    }
+
+    // ✅ Convertir en ISO UTC pour Django
+    const startDateISO = toISOStringFromLocal(formData.start_date);
+    if (!startDateISO) {
+      setError('Date de début invalide');
+      return;
+    }
+
+    // ✅ Petite marge : si la date est dans le passé (< maintenant), on la remplace par maintenant
+    const now = new Date();
+    const startDate = new Date(startDateISO);
+    const finalStartDate =
+      startDate.getTime() < now.getTime() ? now : startDate;
+
+    const payload = {
+      name: formData.name.trim(),
+      description: formData.description.trim(),
+      warehouse: parseInt(formData.warehouse, 10),
+      start_date: finalStartDate.toISOString(),
+      notes: formData.notes.trim(),
+    };
 
     setSaving(true);
     try {
-      const payload = {
-        name: formData.name,
-        description: formData.description,
-        warehouse: parseInt(formData.warehouse),
-        start_date: new Date(formData.start_date).toISOString(),
-        notes: formData.notes,
-      };
-
       let response;
       if (isEditMode) {
-        response = await AxiosInstance.put(
+        // ✅ PATCH au lieu de PUT : tolérant aux champs manquants
+        response = await AxiosInstance.patch(
           `/inventories/${id}/`,
           payload,
           { headers: authHeaders }
@@ -112,23 +236,26 @@ const InventaireForm = () => {
       }
 
       setSuccess(true);
+      const newId = response?.data?.id || id;
       setTimeout(() => {
-        navigate(`/inventaires/${response.data.id}`);
-      }, 1200);
+        if (newId) {
+          navigate(`/inventaires/${newId}`);
+        } else {
+          navigate('/inventaires');
+        }
+      }, 1000);
     } catch (err) {
-      console.error(err);
-      const data = err.response?.data;
-      if (data && typeof data === 'object') {
-        const messages = Object.values(data).flat().join(' • ');
-        setError(messages || 'Erreur lors de la sauvegarde');
-      } else {
-        setError('Erreur lors de la sauvegarde');
-      }
+      console.error('❌ Erreur sauvegarde:', err);
+      const data = err?.response?.data;
+      setError(extractErrorMessage(data) || 'Erreur lors de la sauvegarde');
     } finally {
       setSaving(false);
     }
   };
 
+  // ============================================================
+  // RENDU — LOADING
+  // ============================================================
   if (loading) {
     return (
       <div className="flex justify-center items-center min-h-[400px]">
@@ -137,12 +264,14 @@ const InventaireForm = () => {
     );
   }
 
+  const backLink = isEditMode ? `/inventaires/${id}` : '/inventaires';
+
   return (
     <div className="p-4 md:p-6 max-w-4xl mx-auto">
       {/* En-tête */}
       <div className="mb-6">
         <Link
-          to={isEditMode ? `/inventaires/${id}` : '/inventaires'}
+          to={backLink}
           className="text-sm text-base-content/60 hover:text-primary inline-flex items-center gap-1"
         >
           <ArrowLeft className="w-4 h-4" />
@@ -195,6 +324,7 @@ const InventaireForm = () => {
                 placeholder="Ex: Inventaire mensuel Décembre 2025"
                 className="input input-bordered w-full"
                 required
+                maxLength={200}
               />
             </div>
 
@@ -215,6 +345,7 @@ const InventaireForm = () => {
                 disabled={isEditMode}
               >
                 <option value="">Sélectionner un entrepôt</option>
+                {/* ✅ safeWarehouses : garantit un tableau */}
                 {warehouses.map((w) => (
                   <option key={w.id} value={w.id}>
                     {w.name} ({w.code})
@@ -225,6 +356,13 @@ const InventaireForm = () => {
                 <label className="label">
                   <span className="label-text-alt text-info">
                     L'entrepôt ne peut pas être modifié
+                  </span>
+                </label>
+              )}
+              {warehouses.length === 0 && (
+                <label className="label">
+                  <span className="label-text-alt text-warning">
+                    Aucun entrepôt actif disponible
                   </span>
                 </label>
               )}
@@ -246,6 +384,11 @@ const InventaireForm = () => {
                 className="input input-bordered w-full"
                 required
               />
+              <label className="label">
+                <span className="label-text-alt text-base-content/60">
+                  La date ne peut pas être dans le passé
+                </span>
+              </label>
             </div>
 
             {/* Description */}
@@ -293,10 +436,7 @@ const InventaireForm = () => {
 
           {/* Actions */}
           <div className="card-actions justify-end mt-4 pt-4 border-t">
-            <Link
-              to={isEditMode ? `/inventaires/${id}` : '/inventaires'}
-              className="btn btn-ghost gap-1"
-            >
+            <Link to={backLink} className="btn btn-ghost gap-1">
               <X className="w-4 h-4" /> Annuler
             </Link>
             <button

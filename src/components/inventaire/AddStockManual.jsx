@@ -1,9 +1,9 @@
 // src/components/products/AddStockManual.jsx
 // ============================================================
-// AJOUT MANUEL DE STOCK - VERSION PROFESSIONNELLE
+// AJOUT MANUEL DE STOCK - VERSION CORRIGÉE
 // ============================================================
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import AxiosInstance from '../AxiosInstance';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -14,7 +14,61 @@ import {
   Box, Layers, Clock, Info, Shield, Check
 } from 'lucide-react';
 
-const AddStockManual = () => {
+// ============================================================
+// ✅ ERROR BOUNDARY
+// ============================================================
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error('❌ ErrorBoundary AddStockManual:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-gray-50 p-6 flex items-center justify-center">
+          <div className="bg-white rounded-2xl shadow-lg p-8 max-w-2xl w-full">
+            <div className="flex items-center gap-3 mb-4 text-error">
+              <AlertCircle className="w-8 h-8" />
+              <h2 className="text-2xl font-bold">Erreur dans le formulaire d'ajout</h2>
+            </div>
+            <pre className="bg-gray-100 p-4 rounded-lg text-sm overflow-auto max-h-64 text-red-600">
+              {this.state.error?.toString()}
+            </pre>
+            <div className="mt-6 flex gap-3">
+              <button
+                onClick={() => window.location.reload()}
+                className="btn btn-primary"
+              >
+                Recharger
+              </button>
+              <button
+                onClick={() => window.location.href = '/stocks'}
+                className="btn btn-ghost"
+              >
+                Retour aux stocks
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// ============================================================
+// COMPOSANT PRINCIPAL
+// ============================================================
+const AddStockManualContent = () => {
   const navigate = useNavigate();
   const token = localStorage.getItem('Token');
 
@@ -24,6 +78,8 @@ const AddStockManual = () => {
   const [warehouses, setWarehouses] = useState([]);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [notification, setNotification] = useState(null);
+  const [errors, setErrors] = useState({});
+
   const [formData, setFormData] = useState({
     product_id: '',
     warehouse_id: '',
@@ -36,55 +92,109 @@ const AddStockManual = () => {
     notes: '',
     reason: 'Ajout manuel'
   });
-  const [errors, setErrors] = useState({});
 
-  const showNotification = (message, type) => {
-    setNotification({ message, type });
-    setTimeout(() => setNotification(null), 4000);
+  // ============================================================
+  // ✅ NORMALISATION DES RÉPONSES
+  // ============================================================
+  const normalizeData = (data) => {
+    if (Array.isArray(data)) return data;
+    if (data && Array.isArray(data.results)) return data.results;
+    return [];
   };
 
-  // Charger les produits et entrepôts
+  // ============================================================
+  // ✅ NOTIFICATION
+  // ============================================================
+  const showNotification = useCallback((message, type = 'success') => {
+    setNotification({ message, type });
+    setTimeout(() => setNotification(null), 4000);
+  }, []);
+
+  // ============================================================
+  // ✅ CHARGEMENT DES DONNÉES (robuste)
+  // ============================================================
   useEffect(() => {
+    let isMounted = true;
+
     const loadData = async () => {
+      if (!token) {
+        showNotification('Session expirée', 'error');
+        setTimeout(() => navigate('/login'), 2000);
+        return;
+      }
+
       setLoading(true);
       try {
+        console.log('🔍 Chargement produits + entrepôts...');
+
         const [productsRes, warehousesRes] = await Promise.all([
-          AxiosInstance.get('/products/', {
+          AxiosInstance.get('/products/?status=active&page_size=500', {
             headers: { Authorization: `Token ${token}` }
+          }).catch(err => {
+            console.warn('⚠️ Erreur products:', err.message);
+            return { data: [] };
           }),
-          AxiosInstance.get('/warehouses/', {
+          AxiosInstance.get('/warehouses/?active=true', {
             headers: { Authorization: `Token ${token}` }
+          }).catch(err => {
+            console.warn('⚠️ Erreur warehouses:', err.message);
+            return { data: [] };
           })
         ]);
-        setProducts(productsRes.data || []);
-        setWarehouses(warehousesRes.data || []);
+
+        if (!isMounted) return;
+
+        const productsData = normalizeData(productsRes.data);
+        const warehousesData = normalizeData(warehousesRes.data);
+
+        console.log('✅ Données chargées:', {
+          products: productsData.length,
+          warehouses: warehousesData.length
+        });
+
+        setProducts(productsData);
+        setWarehouses(warehousesData);
+
       } catch (error) {
-        console.error('Erreur chargement données:', error);
-        showNotification('Erreur de chargement des données', 'error');
+        console.error('❌ Erreur chargement données:', error);
+        if (isMounted) {
+          showNotification('Erreur de chargement des données', 'error');
+        }
       } finally {
-        setLoading(false);
+        if (isMounted) setLoading(false);
       }
     };
-    loadData();
-  }, [token]);
 
-  // Mettre à jour le produit sélectionné
+    loadData();
+
+    return () => { isMounted = false; };
+  }, [token, navigate, showNotification]);
+
+  // ============================================================
+  // ✅ MISE À JOUR DU PRODUIT SÉLECTIONNÉ
+  // ============================================================
   useEffect(() => {
-    if (formData.product_id) {
-      const product = products.find(p => p.id === parseInt(formData.product_id));
-      setSelectedProduct(product);
-      if (product) {
-        setFormData(prev => ({
-          ...prev,
-          purchase_price: prev.purchase_price || product.purchase_price || '',
-          selling_price: prev.selling_price || product.selling_price || '',
-        }));
-      }
-    } else {
+    if (!formData.product_id) {
       setSelectedProduct(null);
+      return;
+    }
+
+    const productId = parseInt(formData.product_id);
+    const product = products.find(p => p.id === productId);
+    setSelectedProduct(product || null);
+
+    if (product) {
+      setFormData(prev => ({
+        ...prev,
+        purchase_price: prev.purchase_price || product.purchase_price || '',
+        selling_price: prev.selling_price || product.selling_price || '',
+      }));
     }
   }, [formData.product_id, products]);
 
+  // ============================================================
+  // HANDLERS
+  // ============================================================
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
@@ -93,6 +203,9 @@ const AddStockManual = () => {
     }
   };
 
+  // ============================================================
+  // VALIDATION
+  // ============================================================
   const validate = () => {
     const newErrors = {};
     if (!formData.product_id) newErrors.product_id = 'Veuillez sélectionner un produit';
@@ -107,8 +220,13 @@ const AddStockManual = () => {
     return Object.keys(newErrors).length === 0;
   };
 
+  // ============================================================
+  // SOUMISSION
+  // ============================================================
   const handleSubmit = async (e) => {
-    e.preventDefault();
+    if (e) e.preventDefault();
+    if (submitting) return;
+
     if (!validate()) {
       showNotification('Veuillez corriger les erreurs', 'error');
       return;
@@ -116,35 +234,74 @@ const AddStockManual = () => {
 
     setSubmitting(true);
     try {
-      const response = await AxiosInstance.post('/products/add_stock_manual/', formData, {
-        headers: { Authorization: `Token ${token}` }
-      });
+      // ✅ Préparer les données (enlever les champs vides)
+      const payload = {
+        product_id: parseInt(formData.product_id),
+        warehouse_id: parseInt(formData.warehouse_id),
+        quantity: parseInt(formData.quantity),
+        reason: formData.reason || 'Ajout manuel',
+      };
 
-      showNotification(response.data.message || 'Stock ajouté avec succès', 'success');
-      setTimeout(() => {
-        navigate('/stocks');
-      }, 2000);
+      if (formData.lot_number?.trim()) payload.lot_number = formData.lot_number.trim();
+      if (formData.batch_number?.trim()) payload.batch_number = formData.batch_number.trim();
+      if (formData.expiry_date) payload.expiry_date = formData.expiry_date;
+      if (formData.purchase_price) payload.purchase_price = parseFloat(formData.purchase_price);
+      if (formData.selling_price) payload.selling_price = parseFloat(formData.selling_price);
+      if (formData.notes?.trim()) payload.notes = formData.notes.trim();
+
+      console.log('📤 Envoi add_stock_manual:', payload);
+
+      const response = await AxiosInstance.post(
+        '/products/add_stock_manual/',
+        payload,
+        { headers: { Authorization: `Token ${token}` } }
+      );
+
+      console.log('✅ Réponse:', response.data);
+
+      showNotification(
+        response.data.message || 'Stock ajouté avec succès',
+        'success'
+      );
+
+      setTimeout(() => navigate('/stocks'), 2000);
 
     } catch (error) {
-      console.error('Erreur:', error);
+      console.error('❌ Erreur soumission:', error);
+
+      let errorMessage = 'Erreur lors de l\'ajout';
+
       if (error.response?.data) {
-        const backendErrors = error.response.data;
-        const newErrors = {};
-        Object.keys(backendErrors).forEach(key => {
-          newErrors[key] = Array.isArray(backendErrors[key])
-            ? backendErrors[key][0]
-            : backendErrors[key];
-        });
-        setErrors(newErrors);
-        showNotification('Erreur lors de l\'ajout', 'error');
-      } else {
-        showNotification('Erreur réseau', 'error');
+        const data = error.response.data;
+
+        if (typeof data === 'string') {
+          errorMessage = data;
+        } else if (data.detail) {
+          errorMessage = data.detail;
+        } else if (data.error) {
+          errorMessage = data.error;
+        } else if (typeof data === 'object') {
+          const newErrors = {};
+          const messages = [];
+          Object.keys(data).forEach(key => {
+            const val = Array.isArray(data[key]) ? data[key][0] : data[key];
+            newErrors[key] = val;
+            messages.push(`${key}: ${val}`);
+          });
+          setErrors(newErrors);
+          if (messages.length > 0) errorMessage = messages.join(' | ');
+        }
       }
+
+      showNotification(errorMessage, 'error');
     } finally {
       setSubmitting(false);
     }
   };
 
+  // ============================================================
+  // RENDU
+  // ============================================================
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full w-full bg-gray-50">
@@ -160,7 +317,7 @@ const AddStockManual = () => {
     <div className="w-full h-full bg-gray-50 overflow-hidden">
       {/* Notification */}
       {notification && (
-        <div className="fixed top-20 right-4 z-50 animate-slideDown">
+        <div className="fixed top-20 right-4 z-50">
           <div className={`alert ${notification.type === 'success' ? 'alert-success' : 'alert-error'} shadow-xl rounded-xl max-w-md`}>
             <div className="flex items-center gap-2">
               {notification.type === 'success' ? <CheckCircle className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
@@ -173,12 +330,12 @@ const AddStockManual = () => {
         </div>
       )}
 
-      {/* Header avec design professionnel */}
+      {/* Header */}
       <div className="w-full bg-gradient-to-r from-primary/10 via-primary/5 to-transparent border-b border-primary/20 py-4 px-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <button 
-              onClick={() => navigate('/stocks')} 
+            <button
+              onClick={() => navigate('/stocks')}
               className="btn btn-ghost btn-sm gap-2 hover:bg-primary/10"
             >
               <ArrowLeft className="w-4 h-4" /> Retour
@@ -204,11 +361,11 @@ const AddStockManual = () => {
       {/* Formulaire */}
       <div className="w-full h-[calc(100%-80px)] overflow-hidden">
         <form onSubmit={handleSubmit} className="h-full w-full flex flex-col">
-          
+
           {/* Contenu du formulaire */}
           <div className="flex-1 w-full overflow-hidden p-6">
             <div className="grid grid-cols-1 xl:grid-cols-4 gap-6 h-full">
-              
+
               {/* Colonne 1: Produit & Entrepôt */}
               <div className="bg-white rounded-2xl shadow-md border border-gray-100 overflow-hidden flex flex-col">
                 <div className="bg-primary/5 px-5 py-3 border-b border-primary/10">
@@ -227,14 +384,19 @@ const AddStockManual = () => {
                       onChange={handleChange}
                       className={`select select-bordered w-full text-base h-12 ${errors.product_id ? 'select-error' : ''}`}
                     >
-                      <option value="">Sélectionner un produit</option>
-                      {products.filter(p => p.status === 'active').map(product => (
+                      <option value="">Sélectionner un produit ({products.length} disponibles)</option>
+                      {products.map(product => (
                         <option key={product.id} value={product.id}>
                           {product.code} - {product.name} (Stock: {product.current_stock || 0})
                         </option>
                       ))}
                     </select>
                     {errors.product_id && <p className="text-error text-sm mt-1">{errors.product_id}</p>}
+                    {products.length === 0 && (
+                      <p className="text-warning text-sm mt-2">
+                        ⚠️ Aucun produit actif disponible
+                      </p>
+                    )}
                     {selectedProduct && (
                       <div className="mt-3 p-3 bg-primary/5 rounded-xl space-y-1.5">
                         <p className="text-sm text-gray-600 flex items-center gap-2">
@@ -244,7 +406,7 @@ const AddStockManual = () => {
                           <Calendar className="w-4 h-4 text-primary" /> Expiration: <span className="font-medium">{selectedProduct.has_expiry ? 'Oui' : 'Non'}</span>
                         </p>
                         <p className="text-sm text-gray-600 flex items-center gap-2">
-                          <BadgeDollarSign className="w-4 h-4 text-primary" /> Prix achat: <span className="font-medium">{selectedProduct.purchase_price?.toLocaleString()} FCFA</span>
+                          <BadgeDollarSign className="w-4 h-4 text-primary" /> Prix achat: <span className="font-medium">{(parseFloat(selectedProduct.purchase_price) || 0).toLocaleString('fr-FR')} FCFA</span>
                         </p>
                       </div>
                     )}
@@ -259,14 +421,19 @@ const AddStockManual = () => {
                       onChange={handleChange}
                       className={`select select-bordered w-full text-base h-12 ${errors.warehouse_id ? 'select-error' : ''}`}
                     >
-                      <option value="">Sélectionner un entrepôt</option>
-                      {warehouses.filter(w => w.is_active).map(warehouse => (
+                      <option value="">Sélectionner un entrepôt ({warehouses.length} disponibles)</option>
+                      {warehouses.map(warehouse => (
                         <option key={warehouse.id} value={warehouse.id}>
                           {warehouse.name} ({warehouse.code})
                         </option>
                       ))}
                     </select>
                     {errors.warehouse_id && <p className="text-error text-sm mt-1">{errors.warehouse_id}</p>}
+                    {warehouses.length === 0 && (
+                      <p className="text-warning text-sm mt-2">
+                        ⚠️ Aucun entrepôt actif disponible
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -389,9 +556,8 @@ const AddStockManual = () => {
                 </div>
               </div>
 
-              {/* Colonne 4: Notes et Résumé */}
+              {/* Colonne 4: Notes & Résumé */}
               <div className="flex flex-col gap-4 h-full">
-                {/* Notes */}
                 <div className="bg-white rounded-2xl shadow-md border border-gray-100 overflow-hidden flex-1">
                   <div className="bg-primary/5 px-5 py-3 border-b border-primary/10">
                     <h3 className="font-semibold flex items-center gap-2 text-base">
@@ -427,7 +593,7 @@ const AddStockManual = () => {
                   </div>
                 </div>
 
-                {/* Résumé compact et professionnel */}
+                {/* Résumé */}
                 <div className="bg-gradient-to-r from-primary/5 to-primary/10 rounded-2xl border border-primary/20 overflow-hidden">
                   <div className="bg-primary/10 px-5 py-2.5 border-b border-primary/10">
                     <h3 className="font-semibold flex items-center gap-2 text-sm">
@@ -465,7 +631,7 @@ const AddStockManual = () => {
             </div>
           </div>
 
-          {/* Boutons - fixes en bas avec design moderne */}
+          {/* Boutons */}
           <div className="w-full px-6 py-4 bg-white border-t border-gray-200 flex flex-col sm:flex-row gap-4 justify-end">
             <button
               type="button"
@@ -478,7 +644,7 @@ const AddStockManual = () => {
             <button
               type="submit"
               className="btn btn-primary gap-2 min-w-[180px] text-base px-8 h-12 shadow-lg shadow-primary/20 hover:shadow-primary/30 transition-all"
-              disabled={submitting}
+              disabled={submitting || products.length === 0 || warehouses.length === 0}
             >
               {submitting ? (
                 <Loader2 className="w-5 h-5 animate-spin" />
@@ -494,5 +660,14 @@ const AddStockManual = () => {
     </div>
   );
 };
+
+// ============================================================
+// WRAPPER avec ErrorBoundary
+// ============================================================
+const AddStockManual = () => (
+  <ErrorBoundary>
+    <AddStockManualContent />
+  </ErrorBoundary>
+);
 
 export default AddStockManual;

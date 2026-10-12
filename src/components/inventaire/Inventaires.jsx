@@ -1,12 +1,63 @@
 // src/pages/inventaires/Inventaires.jsx
-import React, { useState, useEffect } from 'react';
+// ============================================================
+// VERSION COMPLÈTE CORRIGÉE - Sans boucle infinie
+// ============================================================
+
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   ClipboardList, Plus, Search, Filter, RefreshCw, Eye,
   PlayCircle, CheckCircle, AlertCircle, Warehouse, Calendar,
   TrendingUp, TrendingDown, Trash2, ChevronRight,
 } from 'lucide-react';
-import AxiosInstance from '../AxiosInstance';
+
+// ✅ ADAPTER le chemin selon l'emplacement de AxiosInstance.jsx
+import AxiosInstance from '../../components/AxiosInstance';
+
+// ============================================================
+// ERROR BOUNDARY
+// ============================================================
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error('❌ ErrorBoundary Inventaires:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-gray-50 p-6 flex items-center justify-center">
+          <div className="bg-white rounded-2xl shadow-lg p-8 max-w-2xl w-full">
+            <div className="flex items-center gap-3 mb-4 text-error">
+              <AlertCircle className="w-8 h-8" />
+              <h2 className="text-2xl font-bold">Erreur dans la page Inventaires</h2>
+            </div>
+            <pre className="bg-gray-100 p-4 rounded-lg text-sm overflow-auto max-h-64 text-red-600">
+              {this.state.error?.toString()}
+            </pre>
+            <div className="mt-6 flex gap-3">
+              <button
+                onClick={() => window.location.reload()}
+                className="btn btn-primary"
+              >
+                Recharger
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 // ============================================================
 // UTILITAIRES
@@ -32,16 +83,55 @@ const getStatusBadge = (status) => {
   );
 };
 
+const formatDate = (dateStr) => {
+  if (!dateStr) return '—';
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return '—';
+    return d.toLocaleDateString('fr-FR');
+  } catch {
+    return '—';
+  }
+};
+
+const normalizeData = (data) => {
+  if (Array.isArray(data)) return data;
+  if (data && Array.isArray(data.results)) return data.results;
+  return [];
+};
+
+const getPaginatedInfo = (data) => {
+  if (Array.isArray(data)) {
+    return { results: data, count: data.length };
+  }
+  if (data && typeof data === 'object') {
+    return {
+      results: Array.isArray(data.results) ? data.results : [],
+      count: typeof data.count === 'number' ? data.count : 0,
+    };
+  }
+  return { results: [], count: 0 };
+};
+
 // ============================================================
-// COMPOSANT
+// COMPOSANT PRINCIPAL
 // ============================================================
-const Inventaires = () => {
+const InventairesContent = () => {
   const navigate = useNavigate();
-  const token = localStorage.getItem('Token');
-  const authHeaders = { Authorization: `Token ${token}` };
+
+  // ✅ Récupérer le token UNE SEULE FOIS
+  const token = useMemo(() => localStorage.getItem('Token'), []);
+
+  // ✅ Mémoïser les headers pour éviter la recréation
+  const authHeaders = useMemo(
+    () => ({ Authorization: `Token ${token}` }),
+    [token]
+  );
+
+  // ✅ Utiliser useRef pour éviter les doubles appels (React 18 StrictMode)
+  const hasFetchedRef = useRef(false);
 
   const [inventaires, setInventaires] = useState([]);
-  const [filtered, setFiltered] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [notification, setNotification] = useState(null);
@@ -49,47 +139,107 @@ const Inventaires = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
 
-  const showNotification = (message, type = 'success') => {
+  // ✅ Stats globales
+  const [stats, setStats] = useState({
+    total: 0,
+    planned: 0,
+    inProgress: 0,
+    completed: 0,
+  });
+
+  // ✅ Mémoïser showNotification
+  const showNotification = useCallback((message, type = 'success') => {
     setNotification({ message, type });
     setTimeout(() => setNotification(null), 3500);
-  };
-
-  // ============================================================
-  // CHARGEMENT
-  // ============================================================
-  const fetchInventaires = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const response = await AxiosInstance.get('/inventories/', {
-        headers: authHeaders,
-      });
-      setInventaires(response.data || []);
-      setFiltered(response.data || []);
-    } catch (err) {
-      console.error('Erreur chargement inventaires:', err);
-      setError('Impossible de charger les inventaires.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchInventaires();
   }, []);
 
   // ============================================================
-  // FILTRES
+  // CHARGEMENT DES INVENTAIRES
+  // ============================================================
+  const fetchInventaires = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      if (!token) {
+        showNotification('Session expirée', 'error');
+        setTimeout(() => navigate('/login'), 2000);
+        return;
+      }
+
+      const response = await AxiosInstance.get('/inventories/', {
+        headers: authHeaders,
+      });
+
+      const data = response.data;
+      const { results } = getPaginatedInfo(data);
+
+      setInventaires(results);
+
+    } catch (err) {
+      console.error('❌ Erreur chargement inventaires:', err);
+      if (err.response?.status === 401) {
+        showNotification('Session expirée', 'error');
+        setTimeout(() => navigate('/login'), 2000);
+      } else {
+        setError('Impossible de charger les inventaires.');
+      }
+      setInventaires([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [token, authHeaders, navigate, showNotification]);
+
+  // ============================================================
+  // CHARGEMENT DES STATS
+  // ============================================================
+  const fetchStats = useCallback(async () => {
+    try {
+      if (!token) return;
+
+      // ✅ Utiliser le même endpoint (la limite de 1000 est gérée côté backend)
+      const response = await AxiosInstance.get('/inventories/?page_size=1000', {
+        headers: authHeaders,
+      });
+
+      const all = normalizeData(response.data);
+
+      setStats({
+        total: all.length,
+        planned: all.filter((i) => i.status === 'planned').length,
+        inProgress: all.filter((i) => i.status === 'in_progress').length,
+        completed: all.filter((i) => i.status === 'completed').length,
+      });
+
+    } catch (err) {
+      console.error('❌ Erreur fetchStats:', err);
+    }
+  }, [token, authHeaders]);
+
+  // ============================================================
+  // ✅ UN SEUL useEffect - évite la boucle infinie
   // ============================================================
   useEffect(() => {
+    // ✅ Guard contre le double-mount React 18
+    if (hasFetchedRef.current) return;
+    hasFetchedRef.current = true;
+
+    console.log('🔍 Chargement initial des inventaires');
+    fetchInventaires();
+    fetchStats();
+  }, [fetchInventaires, fetchStats]);
+
+  // ============================================================
+  // FILTRES (calculés localement, sans effet)
+  // ============================================================
+  const filtered = useMemo(() => {
     let result = [...inventaires];
 
     if (searchTerm.trim()) {
       const q = searchTerm.toLowerCase();
       result = result.filter(
         (i) =>
-          i.name?.toLowerCase().includes(q) ||
-          i.warehouse_name?.toLowerCase().includes(q)
+          (i.name || '').toLowerCase().includes(q) ||
+          (i.warehouse_name || '').toLowerCase().includes(q)
       );
     }
 
@@ -97,12 +247,17 @@ const Inventaires = () => {
       result = result.filter((i) => i.status === statusFilter);
     }
 
-    setFiltered(result);
+    return result;
   }, [searchTerm, statusFilter, inventaires]);
 
   // ============================================================
   // ACTIONS
   // ============================================================
+  const handleRefresh = useCallback(() => {
+    fetchInventaires();
+    fetchStats();
+  }, [fetchInventaires, fetchStats]);
+
   const handleStart = async (inv) => {
     if (!window.confirm(`Démarrer l'inventaire "${inv.name}" ?`)) return;
     try {
@@ -112,9 +267,9 @@ const Inventaires = () => {
         { headers: authHeaders }
       );
       showNotification('Inventaire démarré');
-      fetchInventaires();
+      handleRefresh();
     } catch (err) {
-      console.error(err);
+      console.error('❌ Erreur démarrage:', err);
       showNotification('Erreur lors du démarrage', 'error');
     }
   };
@@ -128,9 +283,9 @@ const Inventaires = () => {
         { headers: authHeaders }
       );
       showNotification('Inventaire terminé');
-      fetchInventaires();
+      handleRefresh();
     } catch (err) {
-      console.error(err);
+      console.error('❌ Erreur finalisation:', err);
       showNotification('Erreur lors de la clôture', 'error');
     }
   };
@@ -142,21 +297,11 @@ const Inventaires = () => {
         headers: authHeaders,
       });
       showNotification('Inventaire supprimé');
-      fetchInventaires();
+      handleRefresh();
     } catch (err) {
-      console.error(err);
+      console.error('❌ Erreur suppression:', err);
       showNotification('Erreur lors de la suppression', 'error');
     }
-  };
-
-  // ============================================================
-  // STATS
-  // ============================================================
-  const stats = {
-    total: inventaires.length,
-    planned: inventaires.filter((i) => i.status === 'planned').length,
-    inProgress: inventaires.filter((i) => i.status === 'in_progress').length,
-    completed: inventaires.filter((i) => i.status === 'completed').length,
   };
 
   // ============================================================
@@ -200,7 +345,7 @@ const Inventaires = () => {
             Inventaires
           </h1>
           <p className="text-base-content/60 text-sm mt-1">
-            Suivi et ajustement des stocks
+            Suivi et ajustement des stocks — {stats.total} inventaire(s)
           </p>
         </div>
         <Link to="/inventaires/nouveau" className="btn btn-primary gap-2">
@@ -246,10 +391,12 @@ const Inventaires = () => {
               <span className="font-medium">Filtres</span>
             </div>
             <button
-              onClick={fetchInventaires}
+              onClick={handleRefresh}
               className="btn btn-sm btn-outline gap-1"
+              disabled={loading}
             >
-              <RefreshCw className="w-4 h-4" /> Actualiser
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+              Actualiser
             </button>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -337,7 +484,7 @@ const Inventaires = () => {
                       </h2>
                       <p className="text-xs text-base-content/50 flex items-center gap-1 mt-1">
                         <Warehouse className="w-3 h-3" />
-                        {inv.warehouse_name}
+                        {inv.warehouse_name || 'N/A'}
                       </p>
                     </div>
                     {getStatusBadge(inv.status)}
@@ -350,9 +497,7 @@ const Inventaires = () => {
                         <Calendar className="w-3 h-3" /> Début
                       </p>
                       <p className="text-sm font-medium mt-0.5">
-                        {inv.start_date
-                          ? new Date(inv.start_date).toLocaleDateString('fr-FR')
-                          : '—'}
+                        {formatDate(inv.start_date)}
                       </p>
                     </div>
                     <div className="bg-base-200 rounded-lg p-2">
@@ -360,7 +505,7 @@ const Inventaires = () => {
                         <ClipboardList className="w-3 h-3" /> Lignes
                       </p>
                       <p className="text-sm font-medium mt-0.5">
-                        {inv.lines?.length || 0}
+                        {inv.lines_count_annotated ?? (Array.isArray(inv.lines) ? inv.lines.length : 0)}
                       </p>
                     </div>
                   </div>
@@ -453,5 +598,14 @@ const Inventaires = () => {
     </div>
   );
 };
+
+// ============================================================
+// WRAPPER avec ErrorBoundary
+// ============================================================
+const Inventaires = () => (
+  <ErrorBoundary>
+    <InventairesContent />
+  </ErrorBoundary>
+);
 
 export default Inventaires;
