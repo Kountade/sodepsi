@@ -208,6 +208,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
   const [budgetsAlertes, setBudgetsAlertes] = useState(0);
   const [ecrituresBrouillon, setEcrituresBrouillon] = useState(0);
   const [tresorerieAlerte, setTresorerieAlerte] = useState(0);
+  const [categoriesBudgetCount, setCategoriesBudgetCount] = useState(0);
 
   // États pour STATION SERVICES
   const [cuvesAlerte, setCuvesAlerte] = useState(0);
@@ -337,13 +338,28 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
             console.error('Erreur chargement données station:', error);
           }
         }
+
+        // ✅ NOUVEAU : Charger le nombre de catégories de budget
+        if (isAdmin || isComptable) {
+          try {
+            const catBudgetRes = await axiosInstance.get('/budget-categories/', {
+              headers: { Authorization: `Token ${token}` }
+            }).catch(() => ({ data: [] }));
+            const count = Array.isArray(catBudgetRes.data) 
+              ? catBudgetRes.data.length 
+              : (catBudgetRes.data?.results?.length || 0);
+            setCategoriesBudgetCount(count);
+          } catch (error) {
+            console.error('Erreur chargement catégories budget:', error);
+          }
+        }
       } catch (error) {
         console.error('Erreur chargement données:', error);
       }
     };
 
     loadData();
-  }, [role, isAdmin, isGestionnaire]);
+  }, [role, isAdmin, isGestionnaire, isComptable]);
 
   // Gestion des sections
   const handleSectionToggle = (section) => {
@@ -447,24 +463,64 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
       ]
     });
 
-    // 6. FINANCES
+    // 6. FINANCES - ✅ MISE À JOUR AVEC CATÉGORIES DE BUDGET
     menuSections.splice(5, 0, {
       name: 'FINANCES',
       icon: DollarSign,
       items: [
+        // --- Tableau de bord et comptabilité ---
         { id: 'dashboard-finances', text: 'Tableau de Bord Finances', icon: Gauge, path: '/dashboard-finances', permission: isAdmin || isComptable },
         { id: 'comptes-comptables', text: 'Plan Comptable', icon: Grid3x3, path: '/comptes-comptables', permission: isAdmin || isComptable },
         { id: 'ecritures-comptables', text: 'Écritures Comptables', icon: BookOpen, path: '/ecritures-comptables', permission: isAdmin || isComptable, badge: ecrituresBrouillon > 0 ? ecrituresBrouillon : 0 },
         { id: 'journal-comptable', text: 'Journal Comptable', icon: ScrollText, path: '/journal-comptable', permission: isAdmin || isComptable },
         { id: 'grand-livre', text: 'Grand Livre', icon: Scale, path: '/grand-livre', permission: isAdmin || isComptable },
         { id: 'balance-generale', text: 'Balance Générale', icon: TableProperties, path: '/balance-generale', permission: isAdmin || isComptable },
+        
+        // --- Séparateur ---
+        { id: 'separator-finances-1', text: '', icon: null, path: '#', permission: true, separator: true },
+        
+        // --- Dépenses ---
         { id: 'depenses', text: 'Dépenses', icon: TrendingDown, path: '/depenses', permission: isAdmin || isComptable, badge: depensesEnAttente > 0 ? depensesEnAttente : 0 },
+        { id: 'nouvelle-depense', text: 'Nouvelle Dépense', icon: PlusCircle, path: '/depenses/nouveau', permission: isAdmin || isComptable },
+        
+        // --- Séparateur ---
+        { id: 'separator-finances-2', text: '', icon: null, path: '#', permission: true, separator: true },
+        
+        // --- ✅ CATÉGORIES DE BUDGET (NOUVEAU) ---
+        { 
+          id: 'budget-categories', 
+          text: 'Catégories de Budget', 
+          icon: Tags, 
+          path: '/budget-categories', 
+          permission: isAdmin || isComptable,
+          badge: categoriesBudgetCount > 0 ? categoriesBudgetCount : 0
+        },
+        { 
+          id: 'nouvelle-budget-categorie', 
+          text: 'Nouvelle Catégorie Budget', 
+          icon: PlusCircle, 
+          path: '/budget-categories/nouveau', 
+          permission: isAdmin || isComptable 
+        },
+        
+        // --- Séparateur ---
+        { id: 'separator-finances-3', text: '', icon: null, path: '#', permission: true, separator: true },
+        
+        // --- Budgets ---
         { id: 'budgets', text: 'Budgets', icon: PiggyBank, path: '/budgets', permission: isAdmin || isComptable, badge: budgetsAlertes > 0 ? budgetsAlertes : 0 },
+        { id: 'nouveau-budget', text: 'Nouveau Budget', icon: PlusCircle, path: '/budgets/nouveau', permission: isAdmin || isComptable },
+        
+        // --- Séparateur ---
+        { id: 'separator-finances-4', text: '', icon: null, path: '#', permission: true, separator: true },
+        
+        // --- Rapports et Configuration ---
         { id: 'rapports-financiers', text: 'Rapports Financiers', icon: FileSpreadsheet, path: '/rapports-financiers', permission: isAdmin || isComptable },
         { id: 'config-financiere', text: 'Configuration Financière', icon: Cog, path: '/config-financiere', permission: isAdmin },
-        { id: 'separator-finances', text: '', icon: null, path: '#', permission: true, separator: true },
-        { id: 'nouvelle-depense', text: 'Nouvelle Dépense', icon: PlusCircle, path: '/depenses/nouveau', permission: isAdmin || isComptable },
-        { id: 'nouveau-budget', text: 'Nouveau Budget', icon: PlusCircle, path: '/budgets/nouveau', permission: isAdmin || isComptable },
+        
+        // --- Séparateur ---
+        { id: 'separator-finances-5', text: '', icon: null, path: '#', permission: true, separator: true },
+        
+        // --- Écritures ---
         { id: 'nouvelle-ecriture', text: 'Nouvelle Écriture', icon: PlusCircle, path: '/ecritures-comptables/nouveau', permission: isAdmin || isComptable }
       ]
     });
@@ -498,9 +554,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
       ]
     });
 
-    // ============================================================
-    // ✅ 9. STATION SERVICES — SANS PRÉFIXE "station/"
-    // ============================================================
+    // 9. STATION SERVICES
     menuSections.splice(8, 0, {
       name: 'STATION SERVICES',
       icon: GasPump,
@@ -706,7 +760,7 @@ const Navbar = ({ content, mode, toggleColorMode }) => {
     }
 
     const ItemIcon = item.icon;
-    const isNewItem = item.id && item.id.startsWith('nouveau-');
+    const isNewItem = item.id && item.id.startsWith('nouveau-') || item.id.startsWith('nouvelle-');
     
     return (
       <Link

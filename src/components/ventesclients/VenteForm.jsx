@@ -1,7 +1,6 @@
 // src/components/ventes/VenteForm.jsx
 // ============================================================
-// VERSION COMPLÈTE AVEC GESTION AUTOMATIQUE DES LOTS (comme PosForm)
-// ET SUPPRESSION DE LA DATE DE LIVRAISON
+// VERSION CORRIGÉE AVEC GARDE-FOUS (anti-page blanche)
 // ============================================================
 
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
@@ -15,7 +14,64 @@ import {
   Tag, Layers, Edit3, Eye
 } from 'lucide-react';
 
-const VenteForm = () => {
+// ============================================================
+// ✅ ERROR BOUNDARY (affiche l'erreur au lieu d'une page blanche)
+// ============================================================
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error('❌ ErrorBoundary a capturé:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-gray-50 p-6 flex items-center justify-center">
+          <div className="bg-white rounded-2xl shadow-lg p-8 max-w-2xl w-full">
+            <div className="flex items-center gap-3 mb-4 text-error">
+              <AlertCircle className="w-8 h-8" />
+              <h2 className="text-2xl font-bold">Erreur dans le formulaire</h2>
+            </div>
+            <p className="text-gray-600 mb-4">
+              Une erreur est survenue lors du rendu du composant :
+            </p>
+            <pre className="bg-gray-100 p-4 rounded-lg text-sm overflow-auto max-h-64 text-red-600">
+              {this.state.error?.toString()}
+            </pre>
+            <div className="mt-6 flex gap-3">
+              <button
+                onClick={() => window.location.reload()}
+                className="btn btn-primary"
+              >
+                Recharger la page
+              </button>
+              <button
+                onClick={() => window.location.href = '/ventes'}
+                className="btn btn-ghost"
+              >
+                Retour aux ventes
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// ============================================================
+// COMPOSANT PRINCIPAL
+// ============================================================
+const VenteFormContent = () => {
   const navigate = useNavigate();
   const { id } = useParams();
   const isEdit = !!id;
@@ -23,7 +79,6 @@ const VenteForm = () => {
   // ============================================================
   // ÉTATS
   // ============================================================
-  
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -33,7 +88,6 @@ const VenteForm = () => {
   const [lots, setLots] = useState([]);
   const [notification, setNotification] = useState(null);
 
-  // Formulaire principal - ✅ SUPPRESSION DE delivery_date
   const [formData, setFormData] = useState({
     client: '',
     warehouse: '',
@@ -50,7 +104,6 @@ const VenteForm = () => {
     lines: []
   });
 
-  // Formulaire de ligne
   const [lineForm, setLineForm] = useState({
     product: '',
     quantity: 1,
@@ -61,21 +114,21 @@ const VenteForm = () => {
   });
 
   // ============================================================
-  // FONCTIONS UTILITAIRES
+  // UTILITAIRES
   // ============================================================
-  
   const getToken = () => localStorage.getItem('Token');
 
-  const showNotification = (message, type) => {
+  const showNotification = useCallback((message, type) => {
     setNotification({ message, type });
     setTimeout(() => setNotification(null), 4000);
-  };
+  }, []);
 
   // ============================================================
-  // CHARGEMENT DES DONNÉES INITIALES
+  // ✅ CHARGEMENT DES DONNÉES INITIALES (avec garde-fous)
   // ============================================================
-  
   useEffect(() => {
+    let isMounted = true;
+
     const fetchData = async () => {
       try {
         const token = getToken();
@@ -85,32 +138,50 @@ const VenteForm = () => {
           return;
         }
 
+        console.log('🔍 Chargement des données initiales...');
+
         const [clientsRes, productsRes, warehousesRes] = await Promise.all([
-          AxiosInstance.get('/clients/', { 
-            headers: { 'Authorization': `Token ${token}` } 
+          AxiosInstance.get('/clients/', {
+            headers: { 'Authorization': `Token ${token}` }
+          }).catch(err => {
+            console.warn('⚠️ Erreur clients:', err.message);
+            return { data: [] };
           }),
-          AxiosInstance.get('/products/?status=active', { 
-            headers: { 'Authorization': `Token ${token}` } 
+          AxiosInstance.get('/products/?status=active', {
+            headers: { 'Authorization': `Token ${token}` }
+          }).catch(err => {
+            console.warn('⚠️ Erreur products:', err.message);
+            return { data: [] };
           }),
-          AxiosInstance.get('/warehouses/?active=true', { 
-            headers: { 'Authorization': `Token ${token}` } 
+          AxiosInstance.get('/warehouses/?active=true', {
+            headers: { 'Authorization': `Token ${token}` }
+          }).catch(err => {
+            console.warn('⚠️ Erreur warehouses:', err.message);
+            return { data: [] };
           })
         ]);
 
-        setClients(clientsRes.data || []);
-        
-        const productsData = productsRes.data || [];
-        console.log('Produits chargés:', productsData.map(p => ({
-          id: p.id,
-          name: p.name,
-          selling_price: p.selling_price,
-          wholesale_price: p.wholesale_price,
-          current_stock: p.current_stock
-        })));
-        
-        setProducts(productsData);
+        if (!isMounted) return;
 
-        const warehousesData = warehousesRes.data || [];
+        // ✅ Normalisation (peut être un tableau OU un objet paginé DRF)
+        const normalize = (data) => {
+          if (Array.isArray(data)) return data;
+          if (data && Array.isArray(data.results)) return data.results;
+          return [];
+        };
+
+        const clientsData = normalize(clientsRes.data);
+        const productsData = normalize(productsRes.data);
+        const warehousesData = normalize(warehousesRes.data);
+
+        console.log('✅ Données chargées:', {
+          clients: clientsData.length,
+          products: productsData.length,
+          warehouses: warehousesData.length
+        });
+
+        setClients(clientsData);
+        setProducts(productsData);
         setWarehouses(warehousesData);
 
         // Sélection automatique de l'entrepôt
@@ -120,172 +191,204 @@ const VenteForm = () => {
             warehouse: warehousesData[0].id
           }));
         }
-
       } catch (error) {
-        console.error('Erreur chargement données:', error);
-        showNotification('Erreur de chargement des données', 'error');
+        console.error('❌ Erreur chargement données:', error);
+        if (isMounted) {
+          showNotification('Erreur de chargement des données', 'error');
+        }
       }
     };
 
     fetchData();
-  }, []);
+
+    return () => { isMounted = false; };
+  }, [navigate, showNotification]);
 
   // ============================================================
-  // CHARGEMENT DES LOTS PAR ENTREPÔT
+  // CHARGEMENT DES LOTS
   // ============================================================
-  
   useEffect(() => {
-    if (formData.warehouse) {
-      const fetchLots = async () => {
-        try {
-          const token = getToken();
-          const response = await AxiosInstance.get(
-            `/lots/?warehouse=${formData.warehouse}&available=true`,
-            { headers: { 'Authorization': `Token ${token}` } }
-          );
-          setLots(response.data || []);
-        } catch (error) {
-          console.error('Erreur chargement lots:', error);
-          setLots([]);
-        }
-      };
-      fetchLots();
-    } else {
+    if (!formData.warehouse) {
       setLots([]);
+      return;
     }
+
+    let isMounted = true;
+
+    const fetchLots = async () => {
+      try {
+        const token = getToken();
+        if (!token) return;
+
+        const response = await AxiosInstance.get(
+          `/lots/?warehouse=${formData.warehouse}&available=true`,
+          { headers: { 'Authorization': `Token ${token}` } }
+        );
+
+        if (!isMounted) return;
+
+        const lotsData = Array.isArray(response.data)
+          ? response.data
+          : (response.data?.results || []);
+
+        setLots(lotsData);
+      } catch (error) {
+        console.error('❌ Erreur chargement lots:', error);
+        if (isMounted) setLots([]);
+      }
+    };
+
+    fetchLots();
+
+    return () => { isMounted = false; };
   }, [formData.warehouse]);
 
   // ============================================================
   // CHARGEMENT DE LA VENTE EN MODIFICATION
   // ============================================================
-  
   useEffect(() => {
-    if (isEdit && id) {
-      const fetchVente = async () => {
-        setLoading(true);
-        try {
-          const token = getToken();
-          const response = await AxiosInstance.get(`/sales/${id}/`, {
-            headers: { 'Authorization': `Token ${token}` }
-          });
+    if (!isEdit || !id) return;
 
-          const data = response.data;
-          setFormData({
-            client: data.client?.id || '',
-            warehouse: data.warehouse || '',
-            payment_due_date: data.payment_due_date || '',
-            discount_type: data.discount_type || 'percentage',
-            discount_value: data.discount_value || 0,
-            tax_rate: data.tax_rate || 0,
-            shipping_fee: data.shipping_fee || 0,
-            payment_method: data.payment_method || '',
-            delivery_method: data.delivery_method || '',
-            delivery_address: data.delivery_address || '',
-            notes: data.notes || '',
-            internal_notes: data.internal_notes || '',
-            lines: (data.lines || []).map(line => ({
-              id: line.id,
-              product: line.product,
-              product_name: line.product_name || '',
-              lot: line.lot || '',
-              lot_number: line.lot_number || '',
-              quantity: line.quantity || 0,
-              unit_price: line.unit_price || 0,
-              discount: line.discount || 0,
-              tax_rate: line.tax_rate || 0,
-              total: line.total || 0,
-              price_type: line.price_type || 'detail'
-            }))
-          });
-        } catch (error) {
-          console.error('Erreur chargement vente:', error);
+    let isMounted = true;
+
+    const fetchVente = async () => {
+      setLoading(true);
+      try {
+        const token = getToken();
+        if (!token) {
+          showNotification('Session expirée', 'error');
+          return;
+        }
+
+        const response = await AxiosInstance.get(`/sales/${id}/`, {
+          headers: { 'Authorization': `Token ${token}` }
+        });
+
+        if (!isMounted) return;
+
+        const data = response.data || {};
+        setFormData({
+          client: data.client?.id || data.client_id || '',
+          warehouse: data.warehouse || data.warehouse_id || '',
+          payment_due_date: data.payment_due_date || '',
+          discount_type: data.discount_type || 'percentage',
+          discount_value: parseFloat(data.discount_value) || 0,
+          tax_rate: parseFloat(data.tax_rate) || 0,
+          shipping_fee: parseFloat(data.shipping_fee) || 0,
+          payment_method: data.payment_method || '',
+          delivery_method: data.delivery_method || '',
+          delivery_address: data.delivery_address || '',
+          notes: data.notes || '',
+          internal_notes: data.internal_notes || '',
+          lines: (data.lines || []).map(line => ({
+            id: line.id,
+            product: line.product,
+            product_name: line.product_name || '',
+            lot: line.lot || '',
+            lot_number: line.lot_number || '',
+            quantity: line.quantity || 0,
+            unit_price: parseFloat(line.unit_price) || 0,
+            discount: parseFloat(line.discount) || 0,
+            tax_rate: parseFloat(line.tax_rate) || 0,
+            total: parseFloat(line.total) || 0,
+            price_type: line.price_type || 'detail'
+          }))
+        });
+      } catch (error) {
+        console.error('❌ Erreur chargement vente:', error);
+        if (isMounted) {
           showNotification('Erreur de chargement de la vente', 'error');
           setTimeout(() => navigate('/ventes'), 1500);
-        } finally {
-          setLoading(false);
         }
-      };
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    };
 
-      fetchVente();
-    }
-  }, [id, isEdit]);
+    fetchVente();
+
+    return () => { isMounted = false; };
+  }, [id, isEdit, navigate, showNotification]);
 
   // ============================================================
   // CALCUL DES TOTAUX
   // ============================================================
-  
-  const calculateTotals = useCallback((lines) => {
+  const totals = useMemo(() => {
     let subtotal = 0;
-    let totalDiscount = 0;
+    const lines = formData.lines || [];
 
-    (lines || []).forEach(line => {
-      const lineTotal = (line.quantity * line.unit_price) - line.discount;
-      subtotal += lineTotal;
-      totalDiscount += line.discount;
+    lines.forEach(line => {
+      const qty = parseFloat(line.quantity) || 0;
+      const price = parseFloat(line.unit_price) || 0;
+      const disc = parseFloat(line.discount) || 0;
+      subtotal += (qty * price) - disc;
     });
 
+    const discountValue = parseFloat(formData.discount_value) || 0;
     const discountAmount = formData.discount_type === 'percentage'
-      ? subtotal * (formData.discount_value / 100)
-      : formData.discount_value;
+      ? subtotal * (discountValue / 100)
+      : discountValue;
 
     const afterDiscount = subtotal - discountAmount;
-    const totalTax = afterDiscount * (formData.tax_rate / 100);
-    const total = afterDiscount + totalTax + formData.shipping_fee;
+    const taxRate = parseFloat(formData.tax_rate) || 0;
+    const totalTax = afterDiscount * (taxRate / 100);
+    const shippingFee = parseFloat(formData.shipping_fee) || 0;
+    const total = afterDiscount + totalTax + shippingFee;
 
-    return { subtotal, discountAmount, totalTax, total };
-  }, [formData.discount_type, formData.discount_value, formData.tax_rate, formData.shipping_fee]);
-
-  const totals = useMemo(() => calculateTotals(formData.lines), [calculateTotals, formData.lines]);
+    return {
+      subtotal: isFinite(subtotal) ? subtotal : 0,
+      discountAmount: isFinite(discountAmount) ? discountAmount : 0,
+      totalTax: isFinite(totalTax) ? totalTax : 0,
+      total: isFinite(total) ? total : 0
+    };
+  }, [formData.lines, formData.discount_type, formData.discount_value, formData.tax_rate, formData.shipping_fee]);
 
   // ============================================================
-  // GESTION DES PRODUITS ET PRIX
+  // GESTION DES PRODUITS
   // ============================================================
-  
-  const getProductPrices = (productId) => {
-    const product = products.find(p => p.id === parseInt(productId));
-    if (!product) {
-      return { selling_price: 0, wholesale_price: 0 };
-    }
+  const getProductById = useCallback((productId) => {
+    if (!productId) return null;
+    const idNum = parseInt(productId);
+    return products.find(p => p.id === idNum) || null;
+  }, [products]);
+
+  const getProductPrices = useCallback((productId) => {
+    const product = getProductById(productId);
+    if (!product) return { selling_price: 0, wholesale_price: 0 };
     return {
       selling_price: parseFloat(product.selling_price) || 0,
       wholesale_price: parseFloat(product.wholesale_price) || 0
     };
-  };
+  }, [getProductById]);
 
-  const getPriceByType = (productId, priceType) => {
+  const getPriceByType = useCallback((productId, priceType) => {
     const prices = getProductPrices(productId);
     if (priceType === 'gros') {
       return prices.wholesale_price > 0 ? prices.wholesale_price : prices.selling_price;
     }
     return prices.selling_price;
-  };
+  }, [getProductPrices]);
 
-  const hasWholesalePrice = (productId) => {
-    const prices = getProductPrices(productId);
-    return prices.wholesale_price > 0;
-  };
-
-  const getProductById = (productId) => {
-    return products.find(p => p.id === parseInt(productId)) || null;
-  };
+  const hasWholesalePrice = useCallback((productId) => {
+    return getProductPrices(productId).wholesale_price > 0;
+  }, [getProductPrices]);
 
   // ============================================================
-  // GESTION AUTOMATIQUE DES LOTS (comme PosForm)
+  // GESTION AUTOMATIQUE DES LOTS
   // ============================================================
-  
-  const getAvailableLotsForProduct = (productId) => {
+  const getAvailableLotsForProduct = useCallback((productId) => {
     if (!productId || !formData.warehouse) return [];
+    const idNum = parseInt(productId);
     return (lots || []).filter(lot =>
-      lot.product === parseInt(productId) &&
+      lot.product === idNum &&
       (lot.available_quantity || 0) > 0
     );
-  };
+  }, [lots, formData.warehouse]);
 
-  const getBestLotForProduct = (productId, quantity) => {
+  const getBestLotForProduct = useCallback((productId, quantity) => {
     const availableLots = getAvailableLotsForProduct(productId);
     if (availableLots.length === 0) return null;
-    
-    // Tri FIFO par date d'expiration
+
     const sortedLots = [...availableLots].sort((a, b) => {
       if (a.expiry_date && b.expiry_date) {
         return new Date(a.expiry_date) - new Date(b.expiry_date);
@@ -294,58 +397,52 @@ const VenteForm = () => {
       if (b.expiry_date) return 1;
       return a.id - b.id;
     });
-    
-    // Trouver un lot avec assez de stock
+
     for (const lot of sortedLots) {
-      if (lot.available_quantity >= quantity) {
-        return lot;
-      }
+      if (lot.available_quantity >= quantity) return lot;
     }
-    
-    // Si aucun lot n'a assez de stock, prendre celui avec le plus grand stock
-    return sortedLots.reduce((best, current) => 
+
+    return sortedLots.reduce((best, current) =>
       current.available_quantity > best.available_quantity ? current : best
     );
-  };
+  }, [getAvailableLotsForProduct]);
 
-  // VÉRIFICATION DU STOCK DISPONIBLE
-  const checkStockAvailability = (productId, quantity) => {
+  const checkStockAvailability = useCallback((productId, quantity) => {
     const product = getProductById(productId);
     if (!product) return { available: false, message: 'Produit non trouvé' };
-    
-    const availableStock = product.current_stock || 0;
+
+    const availableStock = parseFloat(product.current_stock) || 0;
     if (availableStock < quantity) {
-      return { 
-        available: false, 
+      return {
+        available: false,
         message: `Stock insuffisant pour ${product.name}. Disponible: ${availableStock}, Demandé: ${quantity}`
       };
     }
-    
-    // Vérifier les lots disponibles
+
     const availableLots = getAvailableLotsForProduct(productId);
     if (availableLots.length === 0) {
-      return { 
-        available: false, 
+      return {
+        available: false,
         message: `Aucun lot disponible pour ${product.name}`
       };
     }
-    
-    // Vérifier si la quantité totale est disponible dans les lots
-    const totalAvailableInLots = availableLots.reduce((sum, lot) => sum + lot.available_quantity, 0);
+
+    const totalAvailableInLots = availableLots.reduce(
+      (sum, lot) => sum + (parseFloat(lot.available_quantity) || 0), 0
+    );
     if (totalAvailableInLots < quantity) {
-      return { 
-        available: false, 
-        message: `Stock insuffisant dans les lots pour ${product.name}. Disponible: ${totalAvailableInLots}, Demandé: ${quantity}`
+      return {
+        available: false,
+        message: `Stock insuffisant dans les lots. Disponible: ${totalAvailableInLots}, Demandé: ${quantity}`
       };
     }
-    
+
     return { available: true };
-  };
+  }, [getProductById, getAvailableLotsForProduct]);
 
   // ============================================================
   // GESTION DES LIGNES
   // ============================================================
-  
   const addLine = () => {
     if (adding) return;
 
@@ -367,43 +464,38 @@ const VenteForm = () => {
       return;
     }
 
-    // VÉRIFICATION DU STOCK
     const stockCheck = checkStockAvailability(productId, quantity);
     if (!stockCheck.available) {
       showNotification(stockCheck.message, 'error');
       return;
     }
 
-    // Vérification des doublons
     const productExists = formData.lines.some(
       line => parseInt(line.product) === productId
     );
-    
     if (productExists) {
       showNotification(`Le produit "${product.name}" est déjà dans la liste`, 'warning');
       return;
     }
 
-    // SÉLECTION AUTOMATIQUE DU MEILLEUR LOT
     const bestLot = getBestLotForProduct(productId, quantity);
     const lotId = bestLot?.id || null;
     const lotNumber = bestLot?.lot_number || '';
 
-    // Gestion du prix
     const priceType = lineForm.price_type || 'detail';
     let unitPrice = parseFloat(lineForm.unit_price) || 0;
-    
+
     if (unitPrice <= 0) {
       unitPrice = getPriceByType(productId, priceType);
     }
-    
+
     if (unitPrice <= 0) {
       showNotification('Le prix unitaire doit être supérieur à 0', 'error');
       return;
     }
 
     if (priceType === 'gros' && !hasWholesalePrice(productId)) {
-      showNotification(`Le produit "${product.name}" n'a pas de prix de gros défini. Utilisation du prix de détail.`, 'warning');
+      showNotification(`Le produit "${product.name}" n'a pas de prix de gros. Utilisation du prix détail.`, 'warning');
       unitPrice = getPriceByType(productId, 'detail');
     }
 
@@ -425,12 +517,7 @@ const VenteForm = () => {
     };
 
     setAdding(true);
-
-    setFormData(prev => ({
-      ...prev,
-      lines: [...prev.lines, newLine]
-    }));
-
+    setFormData(prev => ({ ...prev, lines: [...prev.lines, newLine] }));
     setLineForm({
       product: '',
       quantity: 1,
@@ -439,7 +526,6 @@ const VenteForm = () => {
       tax_rate: 0,
       price_type: 'detail'
     });
-
     setTimeout(() => setAdding(false), 300);
   };
 
@@ -454,7 +540,10 @@ const VenteForm = () => {
 
     if (field === 'quantity' || field === 'unit_price' || field === 'discount') {
       newLines[index][field] = newValue;
-      newLines[index].total = (newLines[index].quantity * newLines[index].unit_price) - newLines[index].discount;
+      newLines[index].total =
+        (parseFloat(newLines[index].quantity) || 0) *
+        (parseFloat(newLines[index].unit_price) || 0) -
+        (parseFloat(newLines[index].discount) || 0);
     } else {
       newLines[index][field] = newValue;
     }
@@ -465,11 +554,10 @@ const VenteForm = () => {
   // ============================================================
   // GESTION DU FORMULAIRE DE LIGNE
   // ============================================================
-  
   const handleProductSelect = (productId) => {
-    const id = parseInt(productId);
-    const defaultPrice = getPriceByType(id, lineForm.price_type);
-    
+    const idNum = productId ? parseInt(productId) : null;
+    const defaultPrice = idNum ? getPriceByType(idNum, lineForm.price_type) : 0;
+
     setLineForm({
       ...lineForm,
       product: productId,
@@ -480,11 +568,11 @@ const VenteForm = () => {
   const handlePriceTypeChange = (type) => {
     const productId = lineForm.product ? parseInt(lineForm.product) : null;
     let newUnitPrice = lineForm.unit_price;
-    
+
     if (productId) {
       newUnitPrice = getPriceByType(productId, type);
     }
-    
+
     setLineForm({
       ...lineForm,
       price_type: type,
@@ -493,18 +581,18 @@ const VenteForm = () => {
   };
 
   const selectedProduct = lineForm.product ? getProductById(lineForm.product) : null;
-  
-  const availableLotsInfo = selectedProduct 
+  const availableLotsInfo = selectedProduct
     ? getAvailableLotsForProduct(selectedProduct.id)
     : [];
-  const totalLotsStock = availableLotsInfo.reduce((sum, lot) => sum + lot.available_quantity, 0);
+  const totalLotsStock = availableLotsInfo.reduce(
+    (sum, lot) => sum + (parseFloat(lot.available_quantity) || 0), 0
+  );
 
   // ============================================================
-  // SOUMISSION DU FORMULAIRE
+  // SOUMISSION
   // ============================================================
-  
   const handleSubmit = async (e) => {
-    e.preventDefault();
+    if (e) e.preventDefault();
     if (saving) return;
     setSaving(true);
 
@@ -528,7 +616,6 @@ const VenteForm = () => {
         return;
       }
 
-      // VÉRIFICATION GLOBALE DU STOCK
       for (const line of formData.lines) {
         const stockCheck = checkStockAvailability(line.product, line.quantity);
         if (!stockCheck.available) {
@@ -538,7 +625,6 @@ const VenteForm = () => {
         }
       }
 
-      // Date d'échéance automatique (30 jours)
       let paymentDueDate = formData.payment_due_date;
       if (!paymentDueDate) {
         const today = new Date();
@@ -553,7 +639,6 @@ const VenteForm = () => {
       const dataToSend = {
         client: formData.client || null,
         warehouse: formData.warehouse,
-        delivery_date: null, // ✅ Toujours null
         payment_due_date: paymentDueDate,
         discount_type: formData.discount_type,
         discount_value: parseFloat(formData.discount_value) || 0,
@@ -586,31 +671,24 @@ const VenteForm = () => {
         });
       }
 
-      showNotification(isEdit ? 'Vente modifiée avec succès' : 'Vente créée avec succès', 'success');
+      showNotification(isEdit ? 'Vente modifiée' : 'Vente créée', 'success');
       setTimeout(() => navigate(`/ventes/${response.data.id}`), 1500);
 
     } catch (error) {
-      console.error('Erreur sauvegarde:', error);
-      
+      console.error('❌ Erreur sauvegarde:', error);
       let errorMessage = 'Erreur lors de la sauvegarde';
-      
+
       if (error.response?.data) {
         const data = error.response.data;
-        
         if (data.lines && Array.isArray(data.lines)) {
-          errorMessage = data.lines[0] || 'Erreur de validation des produits';
+          errorMessage = data.lines[0] || 'Erreur de validation';
         } else if (data.detail) {
           errorMessage = data.detail;
-        } else if (data.message) {
-          errorMessage = data.message;
         } else if (typeof data === 'object') {
           const firstError = Object.values(data).flat()[0];
-          if (firstError) {
-            errorMessage = firstError;
-          }
+          if (firstError) errorMessage = String(firstError);
         }
       }
-      
       showNotification(errorMessage, 'error');
     } finally {
       setSaving(false);
@@ -620,13 +698,12 @@ const VenteForm = () => {
   // ============================================================
   // RENDU
   // ============================================================
-  
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[calc(100vh-200px)] bg-gray-50">
         <div className="text-center space-y-4">
           <Loader2 className="animate-spin text-primary w-12 h-12 mx-auto" />
-          <p className="text-base font-medium text-gray-500">Chargement de la vente...</p>
+          <p className="text-base font-medium text-gray-500">Chargement...</p>
         </div>
       </div>
     );
@@ -677,9 +754,7 @@ const VenteForm = () => {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
-        {/* ========================================================== */}
-        {/* INFORMATIONS GÉNÉRALES - ✅ SUPPRESSION DE LA DATE DE LIVRAISON */}
-        {/* ========================================================== */}
+        {/* INFOS GÉNÉRALES */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
           <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
             <FileText className="w-5 h-5 text-primary" /> Informations générales
@@ -725,10 +800,9 @@ const VenteForm = () => {
               )}
             </div>
 
-            {/* ✅ Seulement la date d'échéance - La date de livraison est supprimée */}
             <div className="form-control">
               <label className="label">
-                <span className="label-text font-medium">Date d'échéance paiement <span className="text-gray-400 text-xs">(optionnel - défaut 30 jours)</span></span>
+                <span className="label-text font-medium">Date d'échéance (défaut 30j)</span>
               </label>
               <input
                 type="date"
@@ -740,76 +814,32 @@ const VenteForm = () => {
           </div>
         </div>
 
-        {/* ========================================================== */}
-        {/* PRODUITS - AVEC GESTION AUTOMATIQUE DES LOTS */}
-        {/* ========================================================== */}
+        {/* PRODUITS */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
           <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
             <Package className="w-5 h-5 text-primary" /> Produits
           </h2>
 
-          {/* Affichage du stock et des lots disponibles */}
           {selectedProduct && (
             <div className="flex flex-wrap items-center gap-4 mb-4 p-3 bg-blue-50 rounded-lg border border-blue-100 text-sm">
               <div className="flex items-center gap-2">
                 <Package className="w-4 h-4 text-blue-600" />
-                <span className="font-medium text-gray-700">Stock total:</span>
+                <span className="font-medium">Stock:</span>
                 <span className={`font-bold ${(selectedProduct.current_stock || 0) > 0 ? 'text-green-600' : 'text-red-600'}`}>
                   {selectedProduct.current_stock || 0} unités
                 </span>
               </div>
               <div className="flex items-center gap-2">
                 <Layers className="w-4 h-4 text-blue-600" />
-                <span className="font-medium text-gray-700">Lots disponibles:</span>
+                <span className="font-medium">Lots:</span>
                 <span className="font-bold text-blue-600">
-                  {availableLotsInfo.length} lot(s)
-                  {availableLotsInfo.length > 0 && (
-                    <span className="text-xs text-gray-500 ml-1">
-                      ({totalLotsStock} unités)
-                    </span>
-                  )}
-                </span>
-              </div>
-              {availableLotsInfo.length > 0 && (
-                <div className="flex items-center gap-2">
-                  <span className="text-gray-500">Meilleur lot:</span>
-                  <span className="badge badge-primary badge-sm">
-                    {availableLotsInfo[0]?.lot_number} 
-                    (Dispo: {availableLotsInfo[0]?.available_quantity})
-                  </span>
-                </div>
-              )}
-              <div className="flex items-center gap-2 ml-auto">
-                <Tag className="w-4 h-4 text-blue-600" />
-                <span className="font-medium text-gray-700">Prix détail:</span>
-                <span className="font-bold text-blue-600">
-                  {selectedProduct.selling_price?.toLocaleString('fr-FR') || 0} FCFA
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Layers className="w-4 h-4 text-green-600" />
-                <span className="font-medium text-gray-700">Prix gros:</span>
-                <span className={`font-bold ${selectedProduct.wholesale_price > 0 ? 'text-green-600' : 'text-gray-400'}`}>
-                  {selectedProduct.wholesale_price > 0 
-                    ? selectedProduct.wholesale_price.toLocaleString('fr-FR') + ' FCFA'
-                    : 'Non défini'}
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-gray-500">Prix sélectionné:</span>
-                <span className="font-bold text-primary">
-                  {lineForm.unit_price.toLocaleString('fr-FR') || 0} FCFA
-                </span>
-                <span className={`badge ${lineForm.price_type === 'gros' ? 'badge-primary' : 'badge-ghost'}`}>
-                  {lineForm.price_type === 'gros' ? 'Gros' : 'Détail'}
+                  {availableLotsInfo.length} ({totalLotsStock} unités)
                 </span>
               </div>
             </div>
           )}
 
-          {/* Formulaire d'ajout de ligne */}
           <div className="grid grid-cols-2 md:grid-cols-8 gap-3 mb-4 p-4 bg-gray-50 rounded-xl">
-            {/* Produit */}
             <div className="col-span-2">
               <select
                 className="select select-bordered w-full"
@@ -819,14 +849,12 @@ const VenteForm = () => {
                 <option value="">Produit</option>
                 {products.map(product => (
                   <option key={product.id} value={product.id}>
-                    {product.code} - {product.name} 
-                    {product.current_stock !== undefined && ` (Stock: ${product.current_stock})`}
+                    {product.code} - {product.name}
                   </option>
                 ))}
               </select>
             </div>
 
-            {/* Quantité */}
             <div>
               <input
                 type="number"
@@ -838,54 +866,29 @@ const VenteForm = () => {
               />
             </div>
 
-            {/* TYPE DE PRIX - DÉTAIL / GROS */}
             <div className="col-span-2">
               <div className="flex rounded-lg border border-gray-200 overflow-hidden h-[42px]">
                 <button
                   type="button"
-                  className={`flex-1 px-3 py-2 text-sm font-medium transition-colors flex items-center justify-center gap-1 ${
-                    lineForm.price_type === 'detail'
-                      ? 'bg-primary text-white'
-                      : 'bg-white text-gray-600 hover:bg-gray-100'
-                  }`}
+                  className={`flex-1 px-3 py-2 text-sm font-medium ${lineForm.price_type === 'detail' ? 'bg-primary text-white' : 'bg-white text-gray-600'}`}
                   onClick={() => handlePriceTypeChange('detail')}
                 >
-                  <Tag className="w-4 h-4" />
                   Détail
-                  {selectedProduct && (
-                    <span className="text-xs opacity-75">
-                      ({selectedProduct.selling_price?.toLocaleString('fr-FR') || 0} FCFA)
-                    </span>
-                  )}
                 </button>
                 <button
                   type="button"
-                  className={`flex-1 px-3 py-2 text-sm font-medium transition-colors flex items-center justify-center gap-1 ${
-                    lineForm.price_type === 'gros'
-                      ? 'bg-primary text-white'
-                      : 'bg-white text-gray-600 hover:bg-gray-100'
-                  }`}
+                  className={`flex-1 px-3 py-2 text-sm font-medium ${lineForm.price_type === 'gros' ? 'bg-primary text-white' : 'bg-white text-gray-600'}`}
                   onClick={() => handlePriceTypeChange('gros')}
                 >
-                  <Layers className="w-4 h-4" />
                   Gros
-                  {selectedProduct && selectedProduct.wholesale_price > 0 && (
-                    <span className="text-xs opacity-75">
-                      ({selectedProduct.wholesale_price?.toLocaleString('fr-FR') || 0} FCFA)
-                    </span>
-                  )}
-                  {selectedProduct && (!selectedProduct.wholesale_price || selectedProduct.wholesale_price <= 0) && (
-                    <span className="text-xs text-warning">(Prix détail utilisé)</span>
-                  )}
                 </button>
               </div>
             </div>
 
-            {/* Prix unitaire */}
             <div>
               <input
                 type="number"
-                placeholder="Prix unit."
+                placeholder="Prix"
                 className="input input-bordered w-full"
                 value={lineForm.unit_price}
                 onChange={(e) => setLineForm({ ...lineForm, unit_price: parseFloat(e.target.value) || 0 })}
@@ -893,7 +896,6 @@ const VenteForm = () => {
               />
             </div>
 
-            {/* Remise */}
             <div>
               <input
                 type="number"
@@ -905,7 +907,6 @@ const VenteForm = () => {
               />
             </div>
 
-            {/* Bouton Ajouter */}
             <div>
               <button
                 type="button"
@@ -914,87 +915,76 @@ const VenteForm = () => {
                 disabled={adding}
               >
                 {adding ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-                {adding ? 'Ajout...' : 'Ajouter'}
+                Ajouter
               </button>
             </div>
           </div>
 
-          {/* Liste des lignes */}
           <div className="overflow-x-auto">
             <table className="table w-full">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="text-left">Produit</th>
+                  <th>Produit</th>
                   <th className="text-center">Lot</th>
                   <th className="text-center">Type</th>
                   <th className="text-center">Qté</th>
-                  <th className="text-right">Prix unit.</th>
+                  <th className="text-right">Prix</th>
                   <th className="text-right">Remise</th>
                   <th className="text-right">Total</th>
-                  <th className="text-center">Actions</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
-                {(formData.lines || []).map((line, index) => {
-                  const product = getProductById(line.product);
-                  return (
-                    <tr key={index} className="border-b hover:bg-gray-50">
-                      <td>
-                        <span className="font-medium">{line.product_name}</span>
-                      </td>
-                      <td className="text-center">
-                        <span className="text-sm text-gray-500">{line.lot_number || '-'}</span>
-                        {line.lot_number && (
-                          <span className="text-xs text-success ml-1">✅</span>
-                        )}
-                      </td>
-                      <td className="text-center">
-                        <span className={`badge ${line.price_type === 'gros' ? 'badge-primary' : 'badge-ghost'}`}>
-                          {line.price_type === 'gros' ? 'Gros' : 'Détail'}
-                        </span>
-                      </td>
-                      <td>
-                        <input
-                          type="number"
-                          className="input input-bordered input-sm w-16 text-center"
-                          value={line.quantity}
-                          onChange={(e) => updateLine(index, 'quantity', e.target.value)}
-                          min="1"
-                        />
-                      </td>
-                      <td>
-                        <input
-                          type="number"
-                          className="input input-bordered input-sm w-24 text-right"
-                          value={line.unit_price}
-                          onChange={(e) => updateLine(index, 'unit_price', e.target.value)}
-                          step="0.01"
-                        />
-                      </td>
-                      <td>
-                        <input
-                          type="number"
-                          className="input input-bordered input-sm w-20 text-right"
-                          value={line.discount}
-                          onChange={(e) => updateLine(index, 'discount', e.target.value)}
-                          step="0.01"
-                        />
-                      </td>
-                      <td className="text-right font-semibold text-primary">
-                        {line.total.toLocaleString('fr-FR')} FCFA
-                      </td>
-                      <td className="text-center">
-                        <button
-                          type="button"
-                          onClick={() => removeLine(index)}
-                          className="btn btn-ghost btn-sm btn-circle text-error"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
+                {(formData.lines || []).map((line, index) => (
+                  <tr key={index} className="border-b hover:bg-gray-50">
+                    <td><span className="font-medium">{line.product_name}</span></td>
+                    <td className="text-center text-sm text-gray-500">{line.lot_number || '-'}</td>
+                    <td className="text-center">
+                      <span className={`badge ${line.price_type === 'gros' ? 'badge-primary' : 'badge-ghost'}`}>
+                        {line.price_type === 'gros' ? 'Gros' : 'Détail'}
+                      </span>
+                    </td>
+                    <td>
+                      <input
+                        type="number"
+                        className="input input-bordered input-sm w-16 text-center"
+                        value={line.quantity}
+                        onChange={(e) => updateLine(index, 'quantity', e.target.value)}
+                        min="1"
+                      />
+                    </td>
+                    <td>
+                      <input
+                        type="number"
+                        className="input input-bordered input-sm w-24 text-right"
+                        value={line.unit_price}
+                        onChange={(e) => updateLine(index, 'unit_price', e.target.value)}
+                        step="0.01"
+                      />
+                    </td>
+                    <td>
+                      <input
+                        type="number"
+                        className="input input-bordered input-sm w-20 text-right"
+                        value={line.discount}
+                        onChange={(e) => updateLine(index, 'discount', e.target.value)}
+                        step="0.01"
+                      />
+                    </td>
+                    <td className="text-right font-semibold text-primary">
+                      {(parseFloat(line.total) || 0).toLocaleString('fr-FR')} FCFA
+                    </td>
+                    <td className="text-center">
+                      <button
+                        type="button"
+                        onClick={() => removeLine(index)}
+                        className="btn btn-ghost btn-sm btn-circle text-error"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
                 {(!formData.lines || formData.lines.length === 0) && (
                   <tr>
                     <td colSpan="8" className="text-center py-8 text-gray-400">
@@ -1006,26 +996,25 @@ const VenteForm = () => {
             </table>
           </div>
 
-          {/* Totaux */}
           {formData.lines && formData.lines.length > 0 && (
             <div className="mt-4 border-t pt-4">
               <div className="flex justify-end">
                 <div className="w-80 space-y-2">
                   <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Sous-total</span>
+                    <span>Sous-total</span>
                     <span className="font-semibold">{totals.subtotal.toLocaleString('fr-FR')} FCFA</span>
                   </div>
                   <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Remise</span>
-                    <span className="text-error font-semibold">-{totals.discountAmount.toLocaleString('fr-FR')} FCFA</span>
+                    <span>Remise</span>
+                    <span className="text-error">-{totals.discountAmount.toLocaleString('fr-FR')} FCFA</span>
                   </div>
                   <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">TVA ({formData.tax_rate}%)</span>
-                    <span className="font-semibold">{totals.totalTax.toLocaleString('fr-FR')} FCFA</span>
+                    <span>TVA ({formData.tax_rate}%)</span>
+                    <span>{totals.totalTax.toLocaleString('fr-FR')} FCFA</span>
                   </div>
                   <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Frais de livraison</span>
-                    <span className="font-semibold">{formData.shipping_fee.toLocaleString('fr-FR')} FCFA</span>
+                    <span>Livraison</span>
+                    <span>{(parseFloat(formData.shipping_fee) || 0).toLocaleString('fr-FR')} FCFA</span>
                   </div>
                   <div className="flex justify-between text-lg font-bold border-t pt-2">
                     <span>Total TTC</span>
@@ -1037,18 +1026,14 @@ const VenteForm = () => {
           )}
         </div>
 
-        {/* ========================================================== */}
         {/* REMISES ET TAXES */}
-        {/* ========================================================== */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
           <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
             <DollarSign className="w-5 h-5 text-primary" /> Remises et taxes
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="form-control">
-              <label className="label">
-                <span className="label-text font-medium">Type de remise</span>
-              </label>
+              <label className="label"><span className="label-text font-medium">Type de remise</span></label>
               <select
                 className="select select-bordered w-full"
                 value={formData.discount_type}
@@ -1059,9 +1044,7 @@ const VenteForm = () => {
               </select>
             </div>
             <div className="form-control">
-              <label className="label">
-                <span className="label-text font-medium">Valeur remise</span>
-              </label>
+              <label className="label"><span className="label-text font-medium">Valeur remise</span></label>
               <input
                 type="number"
                 className="input input-bordered w-full"
@@ -1072,9 +1055,7 @@ const VenteForm = () => {
               />
             </div>
             <div className="form-control">
-              <label className="label">
-                <span className="label-text font-medium">TVA (%)</span>
-              </label>
+              <label className="label"><span className="label-text font-medium">TVA (%)</span></label>
               <input
                 type="number"
                 className="input input-bordered w-full"
@@ -1086,9 +1067,7 @@ const VenteForm = () => {
               />
             </div>
             <div className="form-control">
-              <label className="label">
-                <span className="label-text font-medium">Frais de livraison</span>
-              </label>
+              <label className="label"><span className="label-text font-medium">Frais livraison</span></label>
               <input
                 type="number"
                 className="input input-bordered w-full"
@@ -1101,18 +1080,14 @@ const VenteForm = () => {
           </div>
         </div>
 
-        {/* ========================================================== */}
         {/* LIVRAISON ET PAIEMENT */}
-        {/* ========================================================== */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
           <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
             <Truck className="w-5 h-5 text-primary" /> Livraison et paiement
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="form-control">
-              <label className="label">
-                <span className="label-text font-medium">Méthode de livraison</span>
-              </label>
+              <label className="label"><span className="label-text font-medium">Méthode de livraison</span></label>
               <select
                 className="select select-bordered w-full"
                 value={formData.delivery_method}
@@ -1125,9 +1100,7 @@ const VenteForm = () => {
               </select>
             </div>
             <div className="form-control">
-              <label className="label">
-                <span className="label-text font-medium">Méthode de paiement</span>
-              </label>
+              <label className="label"><span className="label-text font-medium">Méthode de paiement</span></label>
               <select
                 className="select select-bordered w-full"
                 value={formData.payment_method}
@@ -1143,9 +1116,7 @@ const VenteForm = () => {
               </select>
             </div>
             <div className="form-control">
-              <label className="label">
-                <span className="label-text font-medium">Adresse de livraison</span>
-              </label>
+              <label className="label"><span className="label-text font-medium">Adresse de livraison</span></label>
               <input
                 type="text"
                 className="input input-bordered w-full"
@@ -1157,18 +1128,14 @@ const VenteForm = () => {
           </div>
         </div>
 
-        {/* ========================================================== */}
         {/* NOTES */}
-        {/* ========================================================== */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
           <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
             <FileText className="w-5 h-5 text-primary" /> Notes
           </h2>
           <div className="grid grid-cols-1 gap-4">
             <div className="form-control">
-              <label className="label">
-                <span className="label-text font-medium">Notes</span>
-              </label>
+              <label className="label"><span className="label-text font-medium">Notes</span></label>
               <textarea
                 className="textarea textarea-bordered w-full"
                 rows="3"
@@ -1178,36 +1145,24 @@ const VenteForm = () => {
               />
             </div>
             <div className="form-control">
-              <label className="label">
-                <span className="label-text font-medium">Notes internes</span>
-              </label>
+              <label className="label"><span className="label-text font-medium">Notes internes</span></label>
               <textarea
                 className="textarea textarea-bordered w-full"
                 rows="2"
                 value={formData.internal_notes}
                 onChange={(e) => setFormData({ ...formData, internal_notes: e.target.value })}
-                placeholder="Notes pour usage interne uniquement"
+                placeholder="Notes pour usage interne"
               />
             </div>
           </div>
         </div>
 
-        {/* ========================================================== */}
         {/* ACTIONS */}
-        {/* ========================================================== */}
         <div className="flex justify-end gap-3">
-          <button
-            type="button"
-            onClick={() => navigate('/ventes')}
-            className="btn btn-ghost"
-          >
+          <button type="button" onClick={() => navigate('/ventes')} className="btn btn-ghost">
             Annuler
           </button>
-          <button
-            type="submit"
-            className="btn btn-primary gap-2"
-            disabled={saving}
-          >
+          <button type="submit" className="btn btn-primary gap-2" disabled={saving}>
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
             {saving ? 'Enregistrement...' : 'Enregistrer la vente'}
           </button>
@@ -1216,5 +1171,14 @@ const VenteForm = () => {
     </div>
   );
 };
+
+// ============================================================
+// WRAPPER avec ErrorBoundary
+// ============================================================
+const VenteForm = () => (
+  <ErrorBoundary>
+    <VenteFormContent />
+  </ErrorBoundary>
+);
 
 export default VenteForm;

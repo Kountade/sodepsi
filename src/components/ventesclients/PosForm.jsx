@@ -1,13 +1,6 @@
 // src/components/pos/PosForm.jsx
 // ============================================================
-// VERSION PROFESSIONNELLE - CORRIGEE ET OPTIMISEE
-// - Scan multiple du même produit autorisé (1 scan = +1 quantité)
-// - Gestion robuste des erreurs
-// - Performance optimisée
-// - UI/UX améliorée
-// - Recherche client fonctionnelle dans le modal
-// - Création rapide de client directement dans le modal
-// - ✅ Gestion intelligente du prix de gros (masqué si indisponible)
+// VERSION PROFESSIONNELLE COMPLÈTE - CORRIGÉE
 // ============================================================
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
@@ -23,7 +16,61 @@ import {
   Save, Tag, Layers
 } from 'lucide-react';
 
-const PosForm = () => {
+// ============================================================
+// ✅ ERROR BOUNDARY
+// ============================================================
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error('❌ ErrorBoundary PosForm:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-base-200 p-6 flex items-center justify-center">
+          <div className="bg-base-100 rounded-2xl shadow-lg p-8 max-w-2xl w-full">
+            <div className="flex items-center gap-3 mb-4 text-error">
+              <AlertCircle className="w-8 h-8" />
+              <h2 className="text-2xl font-bold">Erreur dans le point de vente</h2>
+            </div>
+            <pre className="bg-base-200 p-4 rounded-lg text-sm overflow-auto max-h-64 text-red-600">
+              {this.state.error?.toString()}
+            </pre>
+            <div className="mt-6 flex gap-3">
+              <button
+                onClick={() => window.location.reload()}
+                className="btn btn-primary"
+              >
+                Recharger
+              </button>
+              <button
+                onClick={() => window.location.href = '/dashboard'}
+                className="btn btn-ghost"
+              >
+                Dashboard
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// ============================================================
+// COMPOSANT PRINCIPAL
+// ============================================================
+const PosFormContent = () => {
   const navigate = useNavigate();
   const searchInputRef = useRef(null);
   const barcodeInputRef = useRef(null);
@@ -62,13 +109,36 @@ const PosForm = () => {
   const [filteredCustomers, setFilteredCustomers] = useState([]);
 
   // États pour la création rapide de client
-  const [newCustomer, setNewCustomer] = useState({ first_name: '', last_name: '', phone: '', email: '' });
+  const [newCustomer, setNewCustomer] = useState({
+    name: '',
+    phone: '',
+    type: 'particulier'
+  });
   const [creatingCustomer, setCreatingCustomer] = useState(false);
 
   const getToken = () => localStorage.getItem('Token');
 
   // ============================================================
-  // ✅ CALCUL : Y A-T-IL DES PRODUITS AVEC PRIX DE GROS ?
+  // ✅ NOTIFICATION (déclarée AVANT utilisation)
+  // ============================================================
+  const showNotification = useCallback((message, type = 'success') => {
+    setNotification({ show: true, message, type });
+    setTimeout(() => {
+      setNotification({ show: false, message: '', type: 'success' });
+    }, 5000);
+  }, []);
+
+  // ============================================================
+  // ✅ NORMALISATION DES RÉPONSES API
+  // ============================================================
+  const normalizeData = (data) => {
+    if (Array.isArray(data)) return data;
+    if (data && Array.isArray(data.results)) return data.results;
+    return [];
+  };
+
+  // ============================================================
+  // ✅ CALCUL PRIX DE GROS DISPONIBLES
   // ============================================================
   const hasWholesaleProducts = useMemo(() => {
     return products.some(p => (parseFloat(p.wholesale_price) || 0) > 0);
@@ -79,7 +149,7 @@ const PosForm = () => {
   }, [products]);
 
   // ============================================================
-  // 1. CHARGEMENT DES DONNEES
+  // ✅ URL DES IMAGES
   // ============================================================
   const getImageUrl = useCallback((imagePath) => {
     if (!imagePath) return null;
@@ -95,6 +165,9 @@ const PosForm = () => {
     return `http://127.0.0.1:8000/media/${imagePath}`;
   }, []);
 
+  // ============================================================
+  // ✅ CHARGEMENT DES DONNÉES (sans dépendance cyclique)
+  // ============================================================
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
@@ -107,47 +180,69 @@ const PosForm = () => {
 
       const headers = { 'Authorization': `Token ${token}` };
 
+      console.log('🔍 Chargement des données POS...');
+
       const [productsRes, categoriesRes, customersRes, warehousesRes] = await Promise.all([
-        AxiosInstance.get('/products/?status=active&limit=1000', { headers }),
-        AxiosInstance.get('/categories/', { headers }),
-        AxiosInstance.get('/clients/?limit=500', { headers }),
-        AxiosInstance.get('/warehouses/?active=true', { headers })
+        AxiosInstance.get('/products/?status=active', { headers }).catch(err => {
+          console.warn('⚠️ Erreur products:', err.message);
+          return { data: [] };
+        }),
+        AxiosInstance.get('/categories/', { headers }).catch(err => {
+          console.warn('⚠️ Erreur categories:', err.message);
+          return { data: [] };
+        }),
+        AxiosInstance.get('/clients/', { headers }).catch(err => {
+          console.warn('⚠️ Erreur clients:', err.message);
+          return { data: [] };
+        }),
+        AxiosInstance.get('/warehouses/?active=true', { headers }).catch(err => {
+          console.warn('⚠️ Erreur warehouses:', err.message);
+          return { data: [] };
+        })
       ]);
 
-      const productsWithData = (productsRes.data || []).map(product => ({
+      // ✅ Normalisation
+      const productsData = normalizeData(productsRes.data);
+      const categoriesData = normalizeData(categoriesRes.data);
+      const customersData = normalizeData(customersRes.data);
+      const warehousesData = normalizeData(warehousesRes.data);
+
+      console.log('✅ Données chargées:', {
+        products: productsData.length,
+        categories: categoriesData.length,
+        customers: customersData.length,
+        warehouses: warehousesData.length
+      });
+
+      const productsWithData = productsData.map(product => ({
         ...product,
         image_url: product.image_url || getImageUrl(product.image),
-        stock_quantity: product.current_stock || 0,
+        stock_quantity: parseFloat(product.current_stock) || 0,
         selling_price: parseFloat(product.selling_price) || 0,
         wholesale_price: parseFloat(product.wholesale_price) || 0,
         barcode: product.barcode || '',
-        display_price: priceType === 'gros'
-          ? (parseFloat(product.wholesale_price) || parseFloat(product.selling_price) || 0)
-          : (parseFloat(product.selling_price) || 0)
+        display_price: parseFloat(product.selling_price) || 0
       }));
 
       setProducts(productsWithData);
-      setCategories(categoriesRes.data || []);
-
-      const customersData = customersRes.data || [];
+      setCategories(categoriesData);
       setCustomers(customersData);
       setFilteredCustomers(customersData);
+      setWarehouses(warehousesData);
 
-      setWarehouses(warehousesRes.data || []);
-
-      if (warehousesRes.data && warehousesRes.data.length > 0) {
-        setSelectedWarehouse(warehousesRes.data[0]);
+      if (warehousesData.length > 0) {
+        setSelectedWarehouse(warehousesData[0]);
       }
 
       setIsInitialized(true);
 
     } catch (error) {
-      console.error('Erreur chargement données:', error);
+      console.error('❌ Erreur chargement données:', error);
       showNotification('Erreur de chargement des données', 'error');
     } finally {
       setLoading(false);
     }
-  }, [getImageUrl, navigate, priceType]);
+  }, [getImageUrl, navigate, showNotification]);
 
   useEffect(() => {
     fetchData();
@@ -159,7 +254,9 @@ const PosForm = () => {
     return () => clearTimeout(timer);
   }, [fetchData]);
 
-  // Mise à jour des prix affichés selon le mode
+  // ============================================================
+  // ✅ MISE À JOUR DES PRIX AFFICHÉS SELON LE MODE
+  // ============================================================
   useEffect(() => {
     if (!isInitialized) return;
     setProducts(prevProducts =>
@@ -173,7 +270,7 @@ const PosForm = () => {
   }, [priceType, isInitialized]);
 
   // ============================================================
-  // ✅ SÉCURITÉ : FORCER LE MODE DÉTAIL SI AUCUN PRIX DE GROS
+  // ✅ FORCER MODE DÉTAIL SI AUCUN PRIX DE GROS
   // ============================================================
   useEffect(() => {
     if (!isInitialized) return;
@@ -191,26 +288,27 @@ const PosForm = () => {
         return prevCart;
       });
     }
-  }, [hasWholesaleProducts, priceType, isInitialized]);
+  }, [hasWholesaleProducts, priceType, isInitialized, showNotification]);
 
-  // Filtrer les clients selon la recherche
+  // ============================================================
+  // ✅ FILTRER LES CLIENTS SELON LA RECHERCHE
+  // ============================================================
   useEffect(() => {
     if (!customerSearchTerm.trim()) {
       setFilteredCustomers(customers);
     } else {
       const term = customerSearchTerm.toLowerCase();
       const filtered = customers.filter(c =>
-        c.name?.toLowerCase().includes(term) ||
-        c.phone?.includes(term) ||
-        c.email?.toLowerCase().includes(term) ||
-        c.code?.toLowerCase().includes(term)
+        (c.name || '').toLowerCase().includes(term) ||
+        (c.phone || '').includes(term) ||
+        (c.code || '').toLowerCase().includes(term)
       );
       setFilteredCustomers(filtered);
     }
   }, [customerSearchTerm, customers]);
 
   // ============================================================
-  // 2. GESTION DU CODE-BARRES - SCAN MULTIPLE AUTORISE
+  // ✅ GESTION DU CODE-BARRES
   // ============================================================
   const handleBarcodeScan = useCallback((e) => {
     const value = e.target.value.trim();
@@ -224,23 +322,18 @@ const PosForm = () => {
         setBarcodeValue('');
         e.target.value = '';
         showNotification(
-          `${product.name} ajouté au panier (${priceType === 'gros' ? 'Gros' : 'Détail'})`,
+          `${product.name} ajouté (${priceType === 'gros' ? 'Gros' : 'Détail'})`,
           'success'
         );
-
-        if (navigator.vibrate) {
-          navigator.vibrate(100);
-        }
+        if (navigator.vibrate) navigator.vibrate(100);
       } else {
         showNotification(`Code-barres "${value}" non trouvé`, 'error');
         setTimeout(() => {
-          if (barcodeInputRef.current) {
-            barcodeInputRef.current.select();
-          }
+          if (barcodeInputRef.current) barcodeInputRef.current.select();
         }, 100);
       }
     }
-  }, [products, priceType]);
+  }, [products, priceType, showNotification]);
 
   const handleBarcodeKeyDown = useCallback((e) => {
     if (e.key === 'Enter') {
@@ -251,26 +344,21 @@ const PosForm = () => {
         handleBarcodeScan(e);
       } else if (value.length > 0) {
         showNotification('Code-barres trop court (minimum 8 caractères)', 'error');
-        setTimeout(() => {
-          if (barcodeInputRef.current) {
-            barcodeInputRef.current.select();
-          }
-        }, 100);
       }
     }
-  }, [handleBarcodeScan]);
+  }, [handleBarcodeScan, showNotification]);
 
   // ============================================================
-  // 3. FILTRAGE ET TRI DES PRODUITS
+  // ✅ FILTRAGE ET TRI DES PRODUITS
   // ============================================================
   const filteredProducts = useMemo(() => {
     let filtered = products;
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
       filtered = filtered.filter(p =>
-        p.name?.toLowerCase().includes(term) ||
-        p.code?.toLowerCase().includes(term) ||
-        p.barcode?.toLowerCase().includes(term)
+        (p.name || '').toLowerCase().includes(term) ||
+        (p.code || '').toLowerCase().includes(term) ||
+        (p.barcode || '').toLowerCase().includes(term)
       );
     }
     if (selectedCategory) {
@@ -306,9 +394,7 @@ const PosForm = () => {
   );
 
   useEffect(() => {
-    if (currentPage > totalPages) {
-      setCurrentPage(totalPages);
-    }
+    if (currentPage > totalPages) setCurrentPage(totalPages);
   }, [currentPage, totalPages]);
 
   const paginatedProducts = useMemo(() => {
@@ -318,7 +404,7 @@ const PosForm = () => {
   }, [sortedProducts, currentPage, itemsPerPage]);
 
   // ============================================================
-  // 4. GESTION DU PANIER - AVEC PROTECTION PRIX DE GROS
+  // ✅ GESTION DU PANIER
   // ============================================================
   const addToCart = useCallback((product, quantity = 1) => {
     if (product.stock_quantity <= 0) {
@@ -329,7 +415,7 @@ const PosForm = () => {
     const wholesalePrice = parseFloat(product.wholesale_price) || 0;
     const sellingPrice = parseFloat(product.selling_price) || 0;
 
-    // ✅ Si mode Gros demandé mais produit sans prix de gros → forcer en détail
+    // Si mode Gros demandé mais produit sans prix de gros
     if (priceType === 'gros' && wholesalePrice <= 0) {
       showNotification(
         `${product.name} n'a pas de prix de gros. Ajouté au prix de détail.`,
@@ -375,7 +461,7 @@ const PosForm = () => {
       return;
     }
 
-    // --- Cas normal ---
+    // Cas normal
     const unitPrice = priceType === 'gros'
       ? (wholesalePrice || sellingPrice || 0)
       : (sellingPrice || 0);
@@ -392,7 +478,7 @@ const PosForm = () => {
 
       if (totalQty > product.stock_quantity) {
         showNotification(
-          `Stock insuffisant pour ${product.name} (${totalQty} demandé, ${product.stock_quantity} disponible)`,
+          `Stock insuffisant pour ${product.name} (${totalQty} demandé, ${product.stock_quantity} dispo)`,
           'error'
         );
         return prevCart;
@@ -419,7 +505,7 @@ const PosForm = () => {
         }];
       }
     });
-  }, [priceType]);
+  }, [priceType, showNotification]);
 
   const updateCartQuantityDirect = useCallback((itemId, newQuantity) => {
     const qty = Math.max(1, parseInt(newQuantity) || 1);
@@ -433,7 +519,7 @@ const PosForm = () => {
 
       if (qty > product.stock_quantity) {
         showNotification(
-          `Stock insuffisant pour ${product.name} (${qty} demandé, ${product.stock_quantity} disponible)`,
+          `Stock insuffisant pour ${product.name} (${qty} demandé, ${product.stock_quantity} dispo)`,
           'error'
         );
         return prevCart;
@@ -450,7 +536,7 @@ const PosForm = () => {
 
     setEditingQuantity(null);
     setQuantityInput('');
-  }, []);
+  }, [showNotification]);
 
   const updateCartQuantity = useCallback((itemId, delta) => {
     setCart(prevCart => {
@@ -478,7 +564,7 @@ const PosForm = () => {
       };
       return newCart;
     });
-  }, []);
+  }, [showNotification]);
 
   const removeCartItem = useCallback((itemId) => {
     setCart(prev => prev.filter(i => i.id !== itemId));
@@ -490,7 +576,7 @@ const PosForm = () => {
       setCart([]);
       showNotification('Panier vidé', 'success');
     }
-  }, [cart.length]);
+  }, [cart.length, showNotification]);
 
   const startQuantityEdit = useCallback((itemId, currentQuantity) => {
     setEditingQuantity(itemId);
@@ -517,7 +603,7 @@ const PosForm = () => {
   }, [updateCartQuantityDirect]);
 
   // ============================================================
-  // 5. CALCUL DES TOTAUX
+  // ✅ CALCUL DES TOTAUX
   // ============================================================
   const totals = useMemo(() => {
     const subtotal = cart.reduce((sum, item) => sum + (item.total || 0), 0);
@@ -527,7 +613,7 @@ const PosForm = () => {
   }, [cart]);
 
   // ============================================================
-  // 6. VALIDATION DE LA VENTE
+  // ✅ VALIDATION DE LA VENTE
   // ============================================================
   const validateSale = useCallback(async () => {
     if (barcodeInputRef.current) barcodeInputRef.current.blur();
@@ -543,7 +629,6 @@ const PosForm = () => {
       return;
     }
 
-    // ✅ Vérifier la cohérence des prix de gros
     if (priceType === 'gros') {
       const invalidGrosItems = cart.filter(item => {
         const wp = parseFloat(item.product.wholesale_price) || 0;
@@ -551,7 +636,7 @@ const PosForm = () => {
       });
       if (invalidGrosItems.length > 0) {
         showNotification(
-          `Impossible de valider : ${invalidGrosItems.length} produit(s) n'ont pas de prix de gros. Repassez en mode Détail.`,
+          `Impossible : ${invalidGrosItems.length} produit(s) sans prix de gros. Repassez en Détail.`,
           'error'
         );
         return;
@@ -561,7 +646,7 @@ const PosForm = () => {
     const stockErrors = cart.filter(item => item.quantity > item.product.stock_quantity);
     if (stockErrors.length > 0) {
       const errorMsg = stockErrors
-        .map(item => `${item.product.name}: ${item.quantity} demandé, ${item.product.stock_quantity} disponible`)
+        .map(item => `${item.product.name}: ${item.quantity}/${item.product.stock_quantity}`)
         .join(', ');
       showNotification(`Stock insuffisant: ${errorMsg}`, 'error');
       return;
@@ -580,12 +665,14 @@ const PosForm = () => {
       const today = new Date();
       const dueDate = new Date(today);
       dueDate.setDate(dueDate.getDate() + 30);
-      const paymentDueDate = dueDate.toISOString().split('T')[0];
+      const year = dueDate.getFullYear();
+      const month = String(dueDate.getMonth() + 1).padStart(2, '0');
+      const day = String(dueDate.getDate()).padStart(2, '0');
+      const paymentDueDate = `${year}-${month}-${day}`;
 
       const dataToSend = {
         client: selectedCustomer?.id || null,
         warehouse: selectedWarehouse.id,
-        delivery_date: null,
         payment_due_date: paymentDueDate,
         discount_type: 'percentage',
         discount_value: 0,
@@ -620,54 +707,39 @@ const PosForm = () => {
       setSelectedCustomer(null);
 
       setTimeout(() => {
-        if (barcodeInputRef.current) {
-          barcodeInputRef.current.focus();
-        }
+        if (barcodeInputRef.current) barcodeInputRef.current.focus();
       }, 500);
 
     } catch (error) {
-      console.error('Erreur validation:', error);
+      console.error('❌ Erreur validation:', error);
 
-      let errorMessage = 'Erreur lors de l\'enregistrement de la vente';
-
+      let errorMessage = 'Erreur lors de l\'enregistrement';
       if (error.response?.data) {
         const data = error.response.data;
-
-        if (typeof data === 'string') {
-          errorMessage = data;
-        } else if (data.lines && Array.isArray(data.lines)) {
-          errorMessage = data.lines[0] || 'Erreur de validation des produits';
-        } else if (data.detail) {
-          errorMessage = data.detail;
-        } else if (data.message) {
-          errorMessage = data.message;
-        } else if (typeof data === 'object') {
+        if (typeof data === 'string') errorMessage = data;
+        else if (data.lines && Array.isArray(data.lines)) errorMessage = data.lines[0];
+        else if (data.detail) errorMessage = data.detail;
+        else if (typeof data === 'object') {
           const errors = [];
           Object.entries(data).forEach(([key, value]) => {
-            if (Array.isArray(value)) {
-              errors.push(`${key}: ${value.join(', ')}`);
-            } else if (typeof value === 'string') {
-              errors.push(`${key}: ${value}`);
-            }
+            if (Array.isArray(value)) errors.push(`${key}: ${value.join(', ')}`);
+            else if (typeof value === 'string') errors.push(`${key}: ${value}`);
           });
-          if (errors.length > 0) {
-            errorMessage = errors.join('; ');
-          }
+          if (errors.length > 0) errorMessage = errors.join('; ');
         }
       }
-
       showNotification(errorMessage, 'error');
     } finally {
       setSubmitting(false);
     }
-  }, [cart, selectedWarehouse, selectedCustomer, navigate, priceType]);
+  }, [cart, selectedWarehouse, selectedCustomer, navigate, priceType, showNotification]);
 
   // ============================================================
-  // 7. GESTION DES CLIENTS - CREATION RAPIDE
+  // ✅ CRÉATION RAPIDE DE CLIENT (adaptée au modèle 7 champs)
   // ============================================================
   const handleCreateCustomer = useCallback(async () => {
-    if (!newCustomer.first_name || !newCustomer.last_name) {
-      showNotification('Nom et prénom requis', 'error');
+    if (!newCustomer.name || !newCustomer.phone) {
+      showNotification('Nom et téléphone requis', 'error');
       return;
     }
 
@@ -676,15 +748,12 @@ const PosForm = () => {
       const token = getToken();
       const response = await AxiosInstance.post('/clients/', {
         code: `CL-${Date.now().toString().slice(-6)}`,
-        name: `${newCustomer.first_name} ${newCustomer.last_name}`,
-        first_name: newCustomer.first_name,
-        last_name: newCustomer.last_name,
-        phone: newCustomer.phone || '',
-        email: newCustomer.email || '',
+        name: newCustomer.name,
+        phone: newCustomer.phone,
+        type: newCustomer.type || 'particulier',
         address: '',
-        city: '',
-        type: 'particulier',
-        statut: 'actif'
+        statut: 'actif',
+        notes: ''
       }, {
         headers: { 'Authorization': `Token ${token}` }
       });
@@ -694,11 +763,11 @@ const PosForm = () => {
       setFilteredCustomers(prev => [...prev, createdCustomer]);
       setSelectedCustomer(createdCustomer);
       setShowCustomerModal(false);
-      setNewCustomer({ first_name: '', last_name: '', phone: '', email: '' });
+      setNewCustomer({ name: '', phone: '', type: 'particulier' });
       setCustomerSearchTerm('');
       showNotification(`Client ${createdCustomer.name} créé et sélectionné`, 'success');
     } catch (error) {
-      console.error('Erreur création client:', error);
+      console.error('❌ Erreur création client:', error);
       let errorMsg = 'Erreur lors de la création du client';
       if (error.response?.data) {
         const data = error.response.data;
@@ -717,25 +786,15 @@ const PosForm = () => {
     } finally {
       setCreatingCustomer(false);
     }
-  }, [newCustomer]);
+  }, [newCustomer, showNotification]);
 
   // ============================================================
-  // 8. NOTIFICATION
-  // ============================================================
-  const showNotification = useCallback((message, type = 'success') => {
-    setNotification({ show: true, message, type });
-    const timer = setTimeout(() => {
-      setNotification({ show: false, message: '', type: 'success' });
-    }, 5000);
-    return () => clearTimeout(timer);
-  }, []);
-
-  // ============================================================
-  // 9. FORMATAGE
+  // ✅ FORMATAGE
   // ============================================================
   const formatPrice = useCallback((price) => {
     if (!price && price !== 0) return '0 FCFA';
-    return new Intl.NumberFormat('fr-FR').format(price) + ' FCFA';
+    const num = parseFloat(price) || 0;
+    return new Intl.NumberFormat('fr-FR').format(num) + ' FCFA';
   }, []);
 
   const getStatusBadge = useCallback((product) => {
@@ -744,8 +803,7 @@ const PosForm = () => {
     if (stock <= 0) {
       return (
         <div className="badge badge-error gap-1 text-xs">
-          <AlertTriangle className="w-3 h-3" />
-          Rupture
+          <AlertTriangle className="w-3 h-3" /> Rupture
         </div>
       );
     }
@@ -753,22 +811,20 @@ const PosForm = () => {
     if (product.min_stock > 0 && stock <= product.min_stock) {
       return (
         <div className="badge badge-warning gap-1 text-xs">
-          <AlertCircle className="w-3 h-3" />
-          Stock faible
+          <AlertCircle className="w-3 h-3" /> Stock faible
         </div>
       );
     }
 
     return (
       <div className="badge badge-success gap-1 text-xs">
-        <CheckCircle className="w-3 h-3" />
-        En stock
+        <CheckCircle className="w-3 h-3" /> En stock
       </div>
     );
   }, []);
 
   // ============================================================
-  // 10. RENDU
+  // ✅ RENDU
   // ============================================================
   if (loading && !isInitialized) {
     return (
@@ -824,7 +880,7 @@ const PosForm = () => {
                 <input
                   type="text"
                   className="input input-bordered w-full pl-10"
-                  placeholder="Rechercher par nom, téléphone, email..."
+                  placeholder="Rechercher par nom, téléphone, code..."
                   value={customerSearchTerm}
                   onChange={(e) => setCustomerSearchTerm(e.target.value)}
                   autoFocus
@@ -841,7 +897,7 @@ const PosForm = () => {
               {customerSearchTerm && (
                 <label className="label">
                   <span className="label-text-alt text-base-content/50">
-                    {filteredCustomers.length} résultat(s) trouvé(s)
+                    {filteredCustomers.length} résultat(s)
                   </span>
                 </label>
               )}
@@ -852,9 +908,6 @@ const PosForm = () => {
                 <div className="text-center py-8 text-base-content/50">
                   <User className="w-12 h-12 mx-auto mb-2 opacity-30" />
                   <p className="text-sm">Aucun client trouvé</p>
-                  {customerSearchTerm && (
-                    <p className="text-xs mt-1">pour "{customerSearchTerm}"</p>
-                  )}
                 </div>
               ) : (
                 filteredCustomers.map(customer => (
@@ -876,7 +929,7 @@ const PosForm = () => {
                     <div className="flex-1 min-w-0">
                       <div className="font-medium truncate">{customer.name}</div>
                       <div className="text-xs text-base-content/60 truncate">
-                        {customer.phone || customer.email || 'Aucun contact'}
+                        {customer.phone || customer.code || 'Aucun contact'}
                       </div>
                     </div>
                     {selectedCustomer?.id === customer.id && (
@@ -889,35 +942,31 @@ const PosForm = () => {
 
             <div className="divider text-xs text-base-content/50">Créer un nouveau client</div>
 
-            <div className="grid grid-cols-2 gap-2 mb-3">
+            <div className="space-y-2 mb-3">
               <input
                 type="text"
-                className="input input-bordered input-sm"
-                placeholder="Prénom *"
-                value={newCustomer.first_name}
-                onChange={(e) => setNewCustomer({ ...newCustomer, first_name: e.target.value })}
+                className="input input-bordered input-sm w-full"
+                placeholder="Nom / Raison sociale *"
+                value={newCustomer.name}
+                onChange={(e) => setNewCustomer({ ...newCustomer, name: e.target.value })}
               />
               <input
                 type="text"
-                className="input input-bordered input-sm"
-                placeholder="Nom *"
-                value={newCustomer.last_name}
-                onChange={(e) => setNewCustomer({ ...newCustomer, last_name: e.target.value })}
-              />
-              <input
-                type="text"
-                className="input input-bordered input-sm col-span-2"
-                placeholder="Téléphone"
+                className="input input-bordered input-sm w-full"
+                placeholder="Téléphone *"
                 value={newCustomer.phone}
                 onChange={(e) => setNewCustomer({ ...newCustomer, phone: e.target.value })}
               />
-              <input
-                type="email"
-                className="input input-bordered input-sm col-span-2"
-                placeholder="Email"
-                value={newCustomer.email}
-                onChange={(e) => setNewCustomer({ ...newCustomer, email: e.target.value })}
-              />
+              <select
+                className="select select-bordered select-sm w-full"
+                value={newCustomer.type}
+                onChange={(e) => setNewCustomer({ ...newCustomer, type: e.target.value })}
+              >
+                <option value="particulier">Particulier</option>
+                <option value="entreprise">Entreprise</option>
+                <option value="revendeur">Revendeur</option>
+                <option value="grossiste">Grossiste</option>
+              </select>
             </div>
 
             <div className="modal-action">
@@ -940,14 +989,13 @@ const PosForm = () => {
                     showNotification('Client retiré', 'success');
                   }}
                 >
-                  <X className="w-4 h-4" />
-                  Retirer
+                  <X className="w-4 h-4" /> Retirer
                 </button>
               )}
               <button
                 className="btn btn-primary gap-2"
                 onClick={handleCreateCustomer}
-                disabled={creatingCustomer || !newCustomer.first_name || !newCustomer.last_name}
+                disabled={creatingCustomer || !newCustomer.name || !newCustomer.phone}
               >
                 {creatingCustomer ? (
                   <Loader className="w-4 h-4 animate-spin" />
@@ -981,7 +1029,7 @@ const PosForm = () => {
         </div>
       </div>
 
-      {/* SCANNER DE CODE-BARRES + SÉLECTEUR PRIX */}
+      {/* Scanner + Sélecteur prix */}
       <div className="bg-base-100 rounded-xl shadow-md border border-base-300 p-4 lg:p-6">
         <div className="flex flex-col lg:flex-row gap-4">
           <div className="flex-1">
@@ -1023,7 +1071,6 @@ const PosForm = () => {
                 {isBarcodeFocused ? 'Prêt à scanner' : 'Cliquez pour scanner'}
               </span>
               <span className="badge badge-ghost">Support lecteurs USB</span>
-              <span className="badge badge-ghost">Entrée pour valider</span>
               <span className="badge badge-primary">Scan multiple autorisé</span>
             </div>
           </div>
@@ -1039,11 +1086,9 @@ const PosForm = () => {
                 }`}
                 onClick={() => setPriceType('detail')}
               >
-                <Tag className="w-4 h-4" />
-                Détail
+                <Tag className="w-4 h-4" /> Détail
               </button>
 
-              {/* ✅ BOUTON GROS - AFFICHÉ UNIQUEMENT SI AU MOINS UN PRODUIT A UN PRIX DE GROS */}
               {hasWholesaleProducts ? (
                 <button
                   type="button"
@@ -1055,8 +1100,7 @@ const PosForm = () => {
                   onClick={() => setPriceType('gros')}
                   title={`${wholesaleProductsCount} produit(s) avec prix de gros`}
                 >
-                  <Layers className="w-4 h-4" />
-                  Gros
+                  <Layers className="w-4 h-4" /> Gros
                   <span className="badge badge-xs badge-primary ml-1">
                     {wholesaleProductsCount}
                   </span>
@@ -1066,10 +1110,9 @@ const PosForm = () => {
                   type="button"
                   disabled
                   className="px-4 py-2 text-sm font-medium bg-gray-100 text-gray-400 cursor-not-allowed flex items-center gap-1"
-                  title="Aucun produit n'a de prix de gros défini"
+                  title="Aucun produit n'a de prix de gros"
                 >
-                  <Layers className="w-4 h-4" />
-                  Gros
+                  <Layers className="w-4 h-4" /> Gros
                   <span className="text-[10px] ml-1">(indispo)</span>
                 </button>
               )}
@@ -1078,7 +1121,7 @@ const PosForm = () => {
         </div>
       </div>
 
-      {/* Sélection entrepôt et client */}
+      {/* Entrepôt + Client */}
       <div className="bg-base-100 rounded-xl shadow-md border border-base-300 p-4 lg:p-6">
         <div className="flex flex-col lg:flex-row gap-4">
           <div className="flex-1 flex items-center gap-3">
@@ -1100,7 +1143,7 @@ const PosForm = () => {
               ))}
             </select>
             {!selectedWarehouse && !loading && (
-              <span className="text-xs text-error">Entrepôt requis</span>
+              <span className="text-xs text-error">Requis</span>
             )}
           </div>
 
@@ -1111,11 +1154,7 @@ const PosForm = () => {
               onClick={() => setShowCustomerModal(true)}
               disabled={loading}
             >
-              {selectedCustomer ? (
-                <span>{selectedCustomer.name}</span>
-              ) : (
-                'Client anonyme'
-              )}
+              {selectedCustomer ? selectedCustomer.name : 'Client anonyme'}
             </button>
             {selectedCustomer && (
               <button
@@ -1129,7 +1168,7 @@ const PosForm = () => {
         </div>
       </div>
 
-      {/* Filtres et recherche */}
+      {/* Filtres */}
       <div className="bg-base-100 rounded-xl shadow-md border border-base-300 p-4 lg:p-6">
         <div className="flex flex-col lg:flex-row gap-4">
           <div className="flex-1">
@@ -1170,17 +1209,16 @@ const PosForm = () => {
               onChange={(e) => setSortField(e.target.value)}
             >
               <option value="name">Trier par nom</option>
-              <option value="selling_price">Trier par prix détail</option>
+              <option value="selling_price">Prix détail</option>
               {hasWholesaleProducts && (
-                <option value="wholesale_price">Trier par prix gros</option>
+                <option value="wholesale_price">Prix gros</option>
               )}
-              <option value="stock_quantity">Trier par stock</option>
+              <option value="stock_quantity">Stock</option>
             </select>
 
             <button
               className="btn btn-ghost"
               onClick={() => setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')}
-              title={`Tri ${sortDirection === 'asc' ? 'croissant' : 'décroissant'}`}
             >
               <ArrowUpDown className="w-4 h-4" />
             </button>
@@ -1193,8 +1231,7 @@ const PosForm = () => {
                 setCurrentPage(1);
               }}
             >
-              <Filter className="w-4 h-4" />
-              Réinitialiser
+              <Filter className="w-4 h-4" /> Réinitialiser
             </button>
 
             <div className="join">
@@ -1215,7 +1252,7 @@ const PosForm = () => {
         </div>
       </div>
 
-      {/* Contenu principal - Panier et produits */}
+      {/* Contenu principal */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         {/* Produits */}
         <div className="lg:col-span-3 bg-base-100 rounded-xl shadow-xl border border-base-300 overflow-hidden">
@@ -1224,12 +1261,11 @@ const PosForm = () => {
               <Tag className="w-4 h-4 inline mr-2 text-primary" />
               Prix affiché : <strong>{priceType === 'gros' ? 'Gros' : 'Détail'}</strong>
               <span className="ml-4 text-xs text-base-content/40">
-                ({sortedProducts.length} produits disponibles)
+                ({sortedProducts.length} produits)
               </span>
             </span>
             <span className="text-xs text-base-content/60">
-              <Barcode className="w-3 h-3 inline mr-1" />
-              Scan rapide avec le champ ci-dessus
+              <Barcode className="w-3 h-3 inline mr-1" /> Scan rapide
             </span>
           </div>
 
@@ -1242,9 +1278,7 @@ const PosForm = () => {
                 onClick={() => {
                   setSearchTerm('');
                   setSelectedCategory('');
-                  if (barcodeInputRef.current) {
-                    barcodeInputRef.current.focus();
-                  }
+                  if (barcodeInputRef.current) barcodeInputRef.current.focus();
                 }}
               >
                 Voir tous les produits
@@ -1266,9 +1300,7 @@ const PosForm = () => {
                           alt={product.name}
                           className="h-full w-full object-contain"
                           loading="lazy"
-                          onError={(e) => {
-                            e.target.style.display = 'none';
-                          }}
+                          onError={(e) => { e.target.style.display = 'none'; }}
                         />
                       ) : (
                         <Package className="w-12 h-12 text-base-content/30" />
@@ -1282,7 +1314,6 @@ const PosForm = () => {
                     <div className="font-medium text-sm truncate" title={product.name}>{product.name}</div>
                     <div className="text-xs text-base-content/40 truncate">{product.code}</div>
 
-                    {/* Prix détail + prix gros */}
                     <div className="text-xs text-base-content/50 flex flex-wrap justify-center gap-1">
                       <span className={priceType === 'detail' ? 'font-bold text-primary' : ''}>
                         Détail: {formatPrice(product.selling_price)}
@@ -1298,7 +1329,6 @@ const PosForm = () => {
                       {formatPrice(product.display_price)}
                     </div>
 
-                    {/* Badge prix gros dispo */}
                     <div className="flex justify-center mt-1">
                       {product.wholesale_price > 0 ? (
                         <span className="badge badge-xs badge-primary gap-1">
@@ -1313,14 +1343,11 @@ const PosForm = () => {
 
                     <div className="flex items-center justify-center gap-2 mt-1 flex-wrap">
                       {getStatusBadge(product)}
-                      <span className="text-xs text-base-content/40">{product.stock_quantity} unités</span>
+                      <span className="text-xs text-base-content/40">{product.stock_quantity} u.</span>
                     </div>
                     <button
                       className="btn btn-primary btn-sm w-full mt-2 gap-1"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        addToCart(product);
-                      }}
+                      onClick={(e) => { e.stopPropagation(); addToCart(product); }}
                       disabled={product.stock_quantity <= 0}
                     >
                       <Plus className="w-3 h-3" /> Ajouter
@@ -1356,9 +1383,7 @@ const PosForm = () => {
                                 alt={product.name}
                                 className="h-full w-full object-contain"
                                 loading="lazy"
-                                onError={(e) => {
-                                  e.target.style.display = 'none';
-                                }}
+                                onError={(e) => { e.target.style.display = 'none'; }}
                               />
                             ) : (
                               <Package className="w-6 h-6 text-base-content/30" />
@@ -1403,11 +1428,10 @@ const PosForm = () => {
             </div>
           )}
 
-          {/* Pagination */}
           {totalPages > 1 && (
             <div className="flex flex-wrap items-center justify-between gap-3 p-4 border-t border-base-300">
               <div className="text-sm text-base-content/60">
-                Affichage de {((currentPage - 1) * itemsPerPage) + 1} à {Math.min(currentPage * itemsPerPage, sortedProducts.length)} sur {sortedProducts.length}
+                {((currentPage - 1) * itemsPerPage) + 1} à {Math.min(currentPage * itemsPerPage, sortedProducts.length)} sur {sortedProducts.length}
               </div>
               <div className="join">
                 <button
@@ -1474,7 +1498,7 @@ const PosForm = () => {
                     </div>
                   </div>
                   <p className="text-base-content/40 text-base">Panier vide</p>
-                  <p className="text-xs text-base-content/30 mt-1">Scannez un produit ou ajoutez-le manuellement</p>
+                  <p className="text-xs text-base-content/30 mt-1">Scannez un produit</p>
                 </div>
               ) : (
                 cart.map((item, index) => (
@@ -1527,7 +1551,6 @@ const PosForm = () => {
                             <span
                               className="font-bold w-10 text-center text-sm cursor-pointer hover:text-primary transition-colors"
                               onClick={() => startQuantityEdit(item.id, item.quantity)}
-                              title="Cliquer pour modifier"
                             >
                               {item.quantity}
                             </span>
@@ -1601,11 +1624,6 @@ const PosForm = () => {
                 <User className="w-4 h-4" />
                 {selectedCustomer ? 'Changer de client' : 'Ajouter un client'}
               </button>
-
-              <div className="mt-2 flex items-center justify-center gap-2 text-xs text-base-content/30">
-                <div className={`w-2 h-2 rounded-full ${isBarcodeFocused ? 'bg-success animate-pulse' : 'bg-base-content/20'}`}></div>
-                <span>{isBarcodeFocused ? 'Prêt à scanner' : 'Cliquez sur le champ de scan'}</span>
-              </div>
             </div>
           </div>
         </div>
@@ -1614,13 +1632,22 @@ const PosForm = () => {
       {/* Raccourcis clavier */}
       <div className="fixed bottom-4 right-4 bg-base-100/90 backdrop-blur rounded-2xl shadow-lg p-3 text-xs text-base-content/60 border border-base-300 hidden lg:block">
         <div className="flex items-center gap-4">
-          <span><kbd className="px-2 py-1 bg-base-200 rounded">Barcode</kbd> Scan automatique</span>
+          <span><kbd className="px-2 py-1 bg-base-200 rounded">Barcode</kbd> Scan auto</span>
           <span><kbd className="px-2 py-1 bg-base-200 rounded">Esc</kbd> Fermer</span>
-          <span><kbd className="px-2 py-1 bg-base-200 rounded">Click quantité</kbd> Modifier</span>
+          <span><kbd className="px-2 py-1 bg-base-200 rounded">Click qté</kbd> Modifier</span>
         </div>
       </div>
     </div>
   );
 };
+
+// ============================================================
+// WRAPPER avec ErrorBoundary
+// ============================================================
+const PosForm = () => (
+  <ErrorBoundary>
+    <PosFormContent />
+  </ErrorBoundary>
+);
 
 export default PosForm;
