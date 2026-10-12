@@ -1,6 +1,6 @@
 // src/components/ventes/VentesList.jsx
 // ============================================================
-// VERSION COMPLÈTE CORRIGÉE - Pagination serveur + 10 000 lignes
+// VERSION COMPLÈTE CORRIGÉE - Pagination serveur + filtres dates
 // ============================================================
 
 import React, { useEffect, useState, useCallback } from 'react';
@@ -39,6 +39,8 @@ const VentesList = () => {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [isFirstLoad, setIsFirstLoad] = useState(true);
+  // ✅ Flag pour empêcher le rechargement automatique en mode range
+  const [rangeReady, setRangeReady] = useState(false);
 
   // ============================================================
   // FORMATAGE
@@ -58,7 +60,6 @@ const VentesList = () => {
     }
   };
 
-  // ✅ CORRECTION : utiliser la date locale (pas UTC)
   const formatDateInput = (date) => {
     if (!date) return '';
     try {
@@ -114,12 +115,14 @@ const VentesList = () => {
         url = `/sales/by-date/?${params.toString()}`;
       } else if (viewMode === 'range') {
         if (!dateFrom || !dateTo) {
+          console.warn('⚠️ Mode range sans dates, annulation');
           setLoading(false);
           return;
         }
         params.append('date_from', dateFrom);
         params.append('date_to', dateTo);
         url = `/sales/date-range/?${params.toString()}`;
+        console.log('📅 URL date-range:', url);
       } else {
         url = `/sales/?${params.toString()}`;
       }
@@ -150,11 +153,9 @@ const VentesList = () => {
       setVentes(results);
       setTotalCount(count);
 
-      // ✅ totalPages minimum = 1 (jamais 0)
       const pages = count > 0 ? Math.ceil(count / itemsPerPage) : 1;
       setTotalPages(pages);
 
-      // ✅ Stats
       if (data && data.stats) {
         setStats(data.stats);
       } else {
@@ -211,15 +212,44 @@ const VentesList = () => {
     setSelectedDate(new Date());
     setViewMode('today');
     setCurrentPage(1);
+    setRangeReady(false);
   };
 
   // ============================================================
-  // ✅ UN SEUL useEffect (évite double appel)
+  // ✅ GESTION DES CHANGEMENTS DE MODE
+  // ============================================================
+  const handleModeChange = (mode) => {
+    setViewMode(mode);
+    setCurrentPage(1);
+
+    if (mode === 'range') {
+      setRangeReady(false);
+      if (dateFrom && dateTo) {
+        setRangeReady(true);
+      }
+    } else {
+      setRangeReady(false);
+    }
+  };
+
+  // ============================================================
+  // ✅ UN SEUL useEffect - gère TOUS les cas
   // ============================================================
   useEffect(() => {
+    if (viewMode === 'range' && (!dateFrom || !dateTo)) {
+      console.log('⏸️ Mode range : en attente des dates');
+      return;
+    }
+
+    if (viewMode === 'range' && !rangeReady) {
+      console.log('⏸️ Mode range : dates prêtes, attente validation');
+      return;
+    }
+
+    console.log('🚀 Chargement automatique:', { viewMode, currentPage, dateFrom, dateTo });
     fetchVentes(currentPage);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewMode, selectedDate, statusFilter, paymentFilter, searchTerm, itemsPerPage, currentPage]);
+  }, [viewMode, selectedDate, dateFrom, dateTo, statusFilter, paymentFilter, searchTerm, itemsPerPage, currentPage, rangeReady]);
 
   // ============================================================
   // RECHARGEMENT POUR MODE 'range'
@@ -232,6 +262,12 @@ const VentesList = () => {
 
     const from = new Date(dateFrom);
     const to = new Date(dateTo);
+
+    if (to < from) {
+      showNotification('La date de fin doit être après la date de début', 'warning');
+      return;
+    }
+
     const diffDays = Math.ceil((to - from) / (1000 * 60 * 60 * 24));
 
     if (diffDays > 365) {
@@ -239,8 +275,9 @@ const VentesList = () => {
       return;
     }
 
+    console.log('🔘 Bouton Charger cliqué:', { dateFrom, dateTo });
+    setRangeReady(true);
     setCurrentPage(1);
-    fetchVentes(1);
   };
 
   // ============================================================
@@ -523,7 +560,7 @@ const VentesList = () => {
             </div>
             <p className="text-sm text-gray-500 ml-1">
               {viewMode === 'today' ? `Ventes du ${formatDate(selectedDate)}` :
-               viewMode === 'range' ? `Période du ${formatDate(dateFrom)} au ${formatDate(dateTo)}` :
+               viewMode === 'range' ? (dateFrom && dateTo ? `Période du ${formatDate(dateFrom)} au ${formatDate(dateTo)}` : 'Sélectionnez une plage de dates') :
                `Toutes les ventes`}
               {totalCount > 0 && ` • ${totalCount.toLocaleString('fr-FR')} vente(s)`}
             </p>
@@ -549,19 +586,19 @@ const VentesList = () => {
           <div className="flex gap-2 flex-wrap">
             <button
               className={`btn btn-sm ${viewMode === 'today' ? 'btn-primary' : 'btn-ghost'}`}
-              onClick={() => { setViewMode('today'); goToToday(); }}
+              onClick={() => handleModeChange('today')}
             >
               Aujourd'hui
             </button>
             <button
               className={`btn btn-sm ${viewMode === 'range' ? 'btn-primary' : 'btn-ghost'}`}
-              onClick={() => setViewMode('range')}
+              onClick={() => handleModeChange('range')}
             >
               Plage de dates
             </button>
             <button
               className={`btn btn-sm ${viewMode === 'all' ? 'btn-primary' : 'btn-ghost'}`}
-              onClick={() => setViewMode('all')}
+              onClick={() => handleModeChange('all')}
             >
               Toutes
             </button>
@@ -593,27 +630,39 @@ const VentesList = () => {
           )}
 
           {viewMode === 'range' && (
-            <div className="flex items-center gap-2 flex-1 justify-center sm:justify-end flex-wrap">
-              <input
-                type="date"
-                className="input input-bordered input-sm"
-                value={dateFrom}
-                onChange={(e) => setDateFrom(e.target.value)}
-              />
-              <span className="text-sm text-gray-500">à</span>
-              <input
-                type="date"
-                className="input input-bordered input-sm"
-                value={dateTo}
-                onChange={(e) => setDateTo(e.target.value)}
-              />
-              <button
-                className="btn btn-primary btn-sm"
-                onClick={handleDateRangeSearch}
-                disabled={!dateFrom || !dateTo || loading}
-              >
-                <Search className="w-3 h-3" /> Charger
-              </button>
+            <div className="flex flex-col sm:flex-row items-center gap-2 flex-1 justify-center sm:justify-end flex-wrap">
+              <div className="flex items-center gap-2">
+                <input
+                  type="date"
+                  className="input input-bordered input-sm"
+                  value={dateFrom}
+                  onChange={(e) => setDateFrom(e.target.value)}
+                />
+                <span className="text-sm text-gray-500">à</span>
+                <input
+                  type="date"
+                  className="input input-bordered input-sm"
+                  value={dateTo}
+                  onChange={(e) => setDateTo(e.target.value)}
+                />
+                <button
+                  className="btn btn-primary btn-sm"
+                  onClick={handleDateRangeSearch}
+                  disabled={!dateFrom || !dateTo || loading}
+                >
+                  <Search className="w-3 h-3" /> Charger
+                </button>
+              </div>
+              {(!dateFrom || !dateTo) && (
+                <span className="text-xs text-warning">
+                  ⚠️ Sélectionnez les deux dates puis cliquez sur Charger
+                </span>
+              )}
+              {dateFrom && dateTo && !loading && rangeReady && (
+                <span className="text-xs text-success">
+                  ✅ {totalCount} vente(s) trouvée(s)
+                </span>
+              )}
             </div>
           )}
         </div>
@@ -732,7 +781,11 @@ const VentesList = () => {
                   <td colSpan="7" className="text-center py-16">
                     <div className="flex flex-col items-center gap-3">
                       <ShoppingCart className="w-16 h-16 text-gray-300" />
-                      <p className="text-gray-500 font-medium">Aucune vente trouvée</p>
+                      <p className="text-gray-500 font-medium">
+                        {viewMode === 'range' && (!dateFrom || !dateTo)
+                          ? 'Sélectionnez une plage de dates'
+                          : 'Aucune vente trouvée'}
+                      </p>
                       <button onClick={() => navigate('/ventes/nouveau')} className="btn btn-primary btn-sm gap-2">
                         <Plus className="w-4 h-4" /> Créer une vente
                       </button>

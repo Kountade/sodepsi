@@ -1,15 +1,73 @@
 // src/components/devis/DevisForm.jsx
-import React, { useEffect, useState } from 'react';
+// ============================================================
+// VERSION COMPLÈTE CORRIGÉE - Compatible API DRF
+// ============================================================
+
+import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import AxiosInstance from '../AxiosInstance';
 import {
-  ArrowLeft, Plus, Trash2, Save, X, 
+  ArrowLeft, Plus, Trash2, Save, X,
   User, Calendar, DollarSign, FileText,
   Loader2, AlertCircle, CheckCircle, Package,
   Percent, Truck, Receipt, Warehouse
 } from 'lucide-react';
 
-const DevisForm = () => {
+// ============================================================
+// ✅ ERROR BOUNDARY
+// ============================================================
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error('❌ ErrorBoundary DevisForm:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-gray-50 p-6 flex items-center justify-center">
+          <div className="bg-white rounded-2xl shadow-lg p-8 max-w-2xl w-full">
+            <div className="flex items-center gap-3 mb-4 text-error">
+              <AlertCircle className="w-8 h-8" />
+              <h2 className="text-2xl font-bold">Erreur dans le formulaire de devis</h2>
+            </div>
+            <pre className="bg-gray-100 p-4 rounded-lg text-sm overflow-auto max-h-64 text-red-600">
+              {this.state.error?.toString()}
+            </pre>
+            <div className="mt-6 flex gap-3">
+              <button
+                onClick={() => window.location.reload()}
+                className="btn btn-primary"
+              >
+                Recharger
+              </button>
+              <button
+                onClick={() => window.location.href = '/devis'}
+                className="btn btn-ghost"
+              >
+                Retour aux devis
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// ============================================================
+// COMPOSANT PRINCIPAL
+// ============================================================
+const DevisFormContent = () => {
   const navigate = useNavigate();
   const { id } = useParams();
   const isEdit = !!id;
@@ -42,15 +100,29 @@ const DevisForm = () => {
     tax_rate: 0
   });
 
+  // ============================================================
+  // UTILITAIRES
+  // ============================================================
   const getToken = () => localStorage.getItem('Token');
 
-  const showNotification = (message, type) => {
+  const showNotification = useCallback((message, type) => {
     setNotification({ message, type });
     setTimeout(() => setNotification(null), 4000);
+  }, []);
+
+  // ✅ Normalisation des réponses API
+  const normalizeData = (data) => {
+    if (Array.isArray(data)) return data;
+    if (data && Array.isArray(data.results)) return data.results;
+    return [];
   };
 
-  // Charger les données initiales
+  // ============================================================
+  // CHARGEMENT DES DONNÉES INITIALES
+  // ============================================================
   useEffect(() => {
+    let isMounted = true;
+
     const fetchData = async () => {
       try {
         const token = getToken();
@@ -60,96 +132,169 @@ const DevisForm = () => {
           return;
         }
 
+        console.log('🔍 Chargement des données DevisForm...');
+
         const [clientsRes, productsRes, warehousesRes] = await Promise.all([
-          AxiosInstance.get('/clients/', { headers: { 'Authorization': `Token ${token}` } }),
-          AxiosInstance.get('/products/', { headers: { 'Authorization': `Token ${token}` } }),
-          AxiosInstance.get('/warehouses/?active=true', { headers: { 'Authorization': `Token ${token}` } })
+          AxiosInstance.get('/clients/', {
+            headers: { 'Authorization': `Token ${token}` }
+          }).catch(err => {
+            console.warn('⚠️ Erreur clients:', err.message);
+            return { data: [] };
+          }),
+          AxiosInstance.get('/products/', {
+            headers: { 'Authorization': `Token ${token}` }
+          }).catch(err => {
+            console.warn('⚠️ Erreur products:', err.message);
+            return { data: [] };
+          }),
+          AxiosInstance.get('/warehouses/?active=true', {
+            headers: { 'Authorization': `Token ${token}` }
+          }).catch(err => {
+            console.warn('⚠️ Erreur warehouses:', err.message);
+            return { data: [] };
+          })
         ]);
 
-        setClients(clientsRes.data);
-        setProducts(productsRes.data);
-        setWarehouses(warehousesRes.data);
+        if (!isMounted) return;
+
+        const clientsData = normalizeData(clientsRes.data);
+        const productsData = normalizeData(productsRes.data);
+        const warehousesData = normalizeData(warehousesRes.data);
+
+        console.log('✅ Données chargées:', {
+          clients: clientsData.length,
+          products: productsData.length,
+          warehouses: warehousesData.length
+        });
+
+        setClients(clientsData);
+        setProducts(productsData);
+        setWarehouses(warehousesData);
+
+        // Sélection automatique de l'entrepôt si un seul
+        if (warehousesData.length === 1) {
+          setFormData(prev => ({
+            ...prev,
+            warehouse: warehousesData[0].id
+          }));
+        }
+
       } catch (error) {
-        console.error('Erreur chargement données:', error);
-        showNotification('Erreur de chargement des données', 'error');
+        console.error('❌ Erreur chargement données:', error);
+        if (isMounted) {
+          showNotification('Erreur de chargement des données', 'error');
+        }
       }
     };
 
     fetchData();
-  }, []);
 
-  // Charger le devis si en mode édition
+    return () => { isMounted = false; };
+  }, [navigate, showNotification]);
+
+  // ============================================================
+  // CHARGEMENT DU DEVIS EN MODE ÉDITION
+  // ============================================================
   useEffect(() => {
-    if (isEdit && id) {
-      const fetchDevis = async () => {
-        setLoading(true);
-        try {
-          const token = getToken();
-          const response = await AxiosInstance.get(`/devis/${id}/`, {
-            headers: { 'Authorization': `Token ${token}` }
-          });
+    if (!isEdit || !id) return;
 
-          const data = response.data;
-          setFormData({
-            client: data.client?.id || '',
-            warehouse: data.warehouse || '',
-            valid_until: data.valid_until || '',
-            discount_type: data.discount_type || 'percentage',
-            discount_value: data.discount_value || 0,
-            tax_rate: data.tax_rate || 0,
-            shipping_fee: data.shipping_fee || 0,
-            notes: data.notes || '',
-            internal_notes: data.internal_notes || '',
-            lines: data.lignes.map(line => ({
-              id: line.id,
-              product: line.product,
-              product_name: line.product_name,
-              quantity: line.quantity,
-              unit_price: line.unit_price,
-              discount: line.discount,
-              tax_rate: line.tax_rate,
-              total: line.total
-            }))
-          });
-        } catch (error) {
-          console.error('Erreur chargement devis:', error);
+    let isMounted = true;
+
+    const fetchDevis = async () => {
+      setLoading(true);
+      try {
+        const token = getToken();
+        if (!token) {
+          showNotification('Session expirée', 'error');
+          return;
+        }
+
+        const response = await AxiosInstance.get(`/devis/${id}/`, {
+          headers: { 'Authorization': `Token ${token}` }
+        });
+
+        if (!isMounted) return;
+
+        const data = response.data || {};
+
+        // ✅ Normaliser les lignes
+        const lignesData = normalizeData(data.lignes);
+
+        setFormData({
+          client: data.client?.id || data.client || '',
+          warehouse: data.warehouse || '',
+          valid_until: data.valid_until || '',
+          discount_type: data.discount_type || 'percentage',
+          discount_value: parseFloat(data.discount_value) || 0,
+          tax_rate: parseFloat(data.tax_rate) || 0,
+          shipping_fee: parseFloat(data.shipping_fee) || 0,
+          notes: data.notes || '',
+          internal_notes: data.internal_notes || '',
+          lines: lignesData.map(line => ({
+            id: line.id,
+            product: line.product,
+            product_name: line.product_name || '',
+            quantity: parseInt(line.quantity) || 0,
+            unit_price: parseFloat(line.unit_price) || 0,
+            discount: parseFloat(line.discount) || 0,
+            tax_rate: parseFloat(line.tax_rate) || 0,
+            total: parseFloat(line.total) || 0
+          }))
+        });
+
+      } catch (error) {
+        console.error('❌ Erreur chargement devis:', error);
+        if (isMounted) {
           showNotification('Erreur de chargement du devis', 'error');
           setTimeout(() => navigate('/devis'), 1500);
-        } finally {
-          setLoading(false);
         }
-      };
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    };
 
-      fetchDevis();
-    }
-  }, [id, isEdit]);
+    fetchDevis();
 
-  // Calculer les totaux
+    return () => { isMounted = false; };
+  }, [id, isEdit, navigate, showNotification]);
+
+  // ============================================================
+  // CALCUL DES TOTAUX
+  // ============================================================
   const calculateTotals = (lines) => {
     let subtotal = 0;
-    let totalDiscount = 0;
-    let totalTax = 0;
 
-    lines.forEach(line => {
-      const lineTotal = (line.quantity * line.unit_price) - line.discount;
-      subtotal += lineTotal;
-      totalDiscount += line.discount;
+    (lines || []).forEach(line => {
+      const qty = parseFloat(line.quantity) || 0;
+      const price = parseFloat(line.unit_price) || 0;
+      const disc = parseFloat(line.discount) || 0;
+      subtotal += (qty * price) - disc;
     });
 
-    const discountAmount = formData.discount_type === 'percentage' 
-      ? subtotal * (formData.discount_value / 100) 
-      : formData.discount_value;
+    const discountValue = parseFloat(formData.discount_value) || 0;
+    const discountAmount = formData.discount_type === 'percentage'
+      ? subtotal * (discountValue / 100)
+      : discountValue;
 
     const afterDiscount = subtotal - discountAmount;
-    totalTax = afterDiscount * (formData.tax_rate / 100);
-    const total = afterDiscount + totalTax + formData.shipping_fee;
+    const taxRate = parseFloat(formData.tax_rate) || 0;
+    const totalTax = afterDiscount * (taxRate / 100);
+    const shippingFee = parseFloat(formData.shipping_fee) || 0;
+    const total = afterDiscount + totalTax + shippingFee;
 
-    return { subtotal, discountAmount, totalTax, total };
+    return {
+      subtotal: isFinite(subtotal) ? subtotal : 0,
+      discountAmount: isFinite(discountAmount) ? discountAmount : 0,
+      totalTax: isFinite(totalTax) ? totalTax : 0,
+      total: isFinite(total) ? total : 0
+    };
   };
 
   const totals = calculateTotals(formData.lines);
 
-  // Ajouter une ligne
+  // ============================================================
+  // AJOUTER UNE LIGNE
+  // ============================================================
   const addLine = () => {
     if (!lineForm.product) {
       showNotification('Veuillez sélectionner un produit', 'error');
@@ -161,23 +306,42 @@ const DevisForm = () => {
       return;
     }
 
-    const product = products.find(p => p.id === parseInt(lineForm.product));
-    if (!product) return;
+    const productId = parseInt(lineForm.product);
+    const product = products.find(p => p.id === productId);
+    if (!product) {
+      showNotification('Produit non trouvé', 'error');
+      return;
+    }
+
+    // Vérifier les doublons
+    const productExists = formData.lines.some(
+      line => parseInt(line.product) === productId
+    );
+    if (productExists) {
+      showNotification(`Le produit "${product.name}" est déjà dans la liste`, 'warning');
+      return;
+    }
+
+    const quantity = parseInt(lineForm.quantity) || 0;
+    const unitPrice = parseFloat(lineForm.unit_price) || 0;
+    const discount = parseFloat(lineForm.discount) || 0;
+    const taxRate = parseFloat(lineForm.tax_rate) || 0;
+    const total = (quantity * unitPrice) - discount;
 
     const newLine = {
-      product: parseInt(lineForm.product),
+      product: productId,
       product_name: product.name,
-      quantity: parseInt(lineForm.quantity),
-      unit_price: parseFloat(lineForm.unit_price) || 0,
-      discount: parseFloat(lineForm.discount) || 0,
-      tax_rate: parseFloat(lineForm.tax_rate) || 0,
-      total: (parseFloat(lineForm.quantity) * parseFloat(lineForm.unit_price)) - parseFloat(lineForm.discount)
+      quantity: quantity,
+      unit_price: unitPrice,
+      discount: discount,
+      tax_rate: taxRate,
+      total: total
     };
 
-    setFormData({
-      ...formData,
-      lines: [...formData.lines, newLine]
-    });
+    setFormData(prev => ({
+      ...prev,
+      lines: [...prev.lines, newLine]
+    }));
 
     // Réinitialiser le formulaire de ligne
     setLineForm({
@@ -189,35 +353,61 @@ const DevisForm = () => {
     });
   };
 
-  // Supprimer une ligne
+  // ============================================================
+  // SUPPRIMER UNE LIGNE
+  // ============================================================
   const removeLine = (index) => {
-    const newLines = formData.lines.filter((_, i) => i !== index);
+    const newLines = (formData.lines || []).filter((_, i) => i !== index);
     setFormData({ ...formData, lines: newLines });
   };
 
-  // Mettre à jour une ligne
+  // ============================================================
+  // METTRE À JOUR UNE LIGNE
+  // ============================================================
   const updateLine = (index, field, value) => {
     const newLines = [...formData.lines];
-    newLines[index][field] = parseFloat(value) || 0;
-    newLines[index].total = (newLines[index].quantity * newLines[index].unit_price) - newLines[index].discount;
+    const numericFields = ['quantity', 'unit_price', 'discount', 'tax_rate'];
+    const newValue = numericFields.includes(field)
+      ? (parseFloat(value) || 0)
+      : value;
+
+    newLines[index][field] = newValue;
+    newLines[index].total =
+      (parseFloat(newLines[index].quantity) || 0) *
+      (parseFloat(newLines[index].unit_price) || 0) -
+      (parseFloat(newLines[index].discount) || 0);
+
     setFormData({ ...formData, lines: newLines });
   };
 
-  // Sélectionner un produit
+  // ============================================================
+  // SÉLECTIONNER UN PRODUIT
+  // ============================================================
   const handleProductSelect = (productId) => {
-    const product = products.find(p => p.id === parseInt(productId));
+    const id = parseInt(productId);
+    const product = products.find(p => p.id === id);
+
     if (product) {
       setLineForm({
         ...lineForm,
         product: productId,
-        unit_price: product.selling_price || 0
+        unit_price: parseFloat(product.selling_price) || 0
+      });
+    } else {
+      setLineForm({
+        ...lineForm,
+        product: productId,
+        unit_price: 0
       });
     }
   };
 
-  // Soumettre le formulaire
+  // ============================================================
+  // SOUMISSION DU FORMULAIRE
+  // ============================================================
   const handleSubmit = async (e) => {
-    e.preventDefault();
+    if (e) e.preventDefault();
+    if (saving) return;
     setSaving(true);
 
     try {
@@ -228,29 +418,41 @@ const DevisForm = () => {
         return;
       }
 
+      if (!formData.client) {
+        showNotification('Veuillez sélectionner un client', 'error');
+        setSaving(false);
+        return;
+      }
+
       if (!formData.warehouse) {
         showNotification('Veuillez sélectionner un entrepôt', 'error');
         setSaving(false);
         return;
       }
 
-      if (formData.lines.length === 0) {
+      if (!formData.valid_until) {
+        showNotification('Veuillez définir la date de validité', 'error');
+        setSaving(false);
+        return;
+      }
+
+      if (!formData.lines || formData.lines.length === 0) {
         showNotification('Ajoutez au moins un produit', 'error');
         setSaving(false);
         return;
       }
 
       const dataToSend = {
-        client: formData.client,
+        client: formData.client || null,
         warehouse: formData.warehouse,
         valid_until: formData.valid_until,
         discount_type: formData.discount_type,
         discount_value: parseFloat(formData.discount_value) || 0,
         tax_rate: parseFloat(formData.tax_rate) || 0,
         shipping_fee: parseFloat(formData.shipping_fee) || 0,
-        notes: formData.notes,
-        internal_notes: formData.internal_notes,
-        lignes: formData.lines.map(line => ({
+        notes: formData.notes || '',
+        internal_notes: formData.internal_notes || '',
+        lignes: (formData.lines || []).map(line => ({
           product: line.product,
           quantity: line.quantity,
           unit_price: line.unit_price,
@@ -258,6 +460,8 @@ const DevisForm = () => {
           tax_rate: line.tax_rate
         }))
       };
+
+      console.log('📤 Envoi devis:', dataToSend);
 
       let response;
       if (isEdit) {
@@ -270,17 +474,47 @@ const DevisForm = () => {
         });
       }
 
-      showNotification(isEdit ? 'Devis modifié avec succès' : 'Devis créé avec succès', 'success');
+      showNotification(
+        isEdit ? 'Devis modifié avec succès' : 'Devis créé avec succès',
+        'success'
+      );
       setTimeout(() => navigate(`/devis/${response.data.id}`), 1500);
 
     } catch (error) {
-      console.error('Erreur sauvegarde:', error);
-      showNotification('Erreur lors de la sauvegarde', 'error');
+      console.error('❌ Erreur sauvegarde:', error);
+
+      let errorMessage = 'Erreur lors de la sauvegarde';
+
+      if (error.response?.data) {
+        const data = error.response.data;
+        if (typeof data === 'string') {
+          errorMessage = data;
+        } else if (data.lignes && Array.isArray(data.lignes)) {
+          errorMessage = data.lignes[0];
+        } else if (data.detail) {
+          errorMessage = data.detail;
+        } else if (typeof data === 'object') {
+          const errors = [];
+          Object.entries(data).forEach(([key, value]) => {
+            if (Array.isArray(value)) {
+              errors.push(`${key}: ${value.join(', ')}`);
+            } else if (typeof value === 'string') {
+              errors.push(`${key}: ${value}`);
+            }
+          });
+          if (errors.length > 0) errorMessage = errors.join('; ');
+        }
+      }
+
+      showNotification(errorMessage, 'error');
     } finally {
       setSaving(false);
     }
   };
 
+  // ============================================================
+  // RENDU
+  // ============================================================
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[calc(100vh-200px)] bg-gray-50">
@@ -325,8 +559,8 @@ const DevisForm = () => {
               </h1>
             </div>
           </div>
-          <button 
-            onClick={handleSubmit} 
+          <button
+            onClick={handleSubmit}
             className="btn btn-primary gap-2"
             disabled={saving}
           >
@@ -347,7 +581,7 @@ const DevisForm = () => {
               <label className="label">
                 <span className="label-text font-medium">Client <span className="text-error">*</span></span>
               </label>
-              <select 
+              <select
                 className="select select-bordered w-full"
                 value={formData.client}
                 onChange={(e) => setFormData({ ...formData, client: e.target.value })}
@@ -366,7 +600,7 @@ const DevisForm = () => {
               <label className="label">
                 <span className="label-text font-medium">Entrepôt <span className="text-error">*</span></span>
               </label>
-              <select 
+              <select
                 className="select select-bordered w-full"
                 value={formData.warehouse}
                 onChange={(e) => setFormData({ ...formData, warehouse: e.target.value })}
@@ -379,14 +613,17 @@ const DevisForm = () => {
                   </option>
                 ))}
               </select>
+              {warehouses.length === 1 && (
+                <span className="text-xs text-success mt-1">✅ Entrepôt sélectionné automatiquement</span>
+              )}
             </div>
 
             <div className="form-control">
               <label className="label">
                 <span className="label-text font-medium">Valable jusqu'au <span className="text-error">*</span></span>
               </label>
-              <input 
-                type="date" 
+              <input
+                type="date"
                 className="input input-bordered w-full"
                 value={formData.valid_until}
                 onChange={(e) => setFormData({ ...formData, valid_until: e.target.value })}
@@ -405,7 +642,7 @@ const DevisForm = () => {
           {/* Formulaire d'ajout de ligne */}
           <div className="grid grid-cols-2 md:grid-cols-6 gap-3 mb-4 p-4 bg-gray-50 rounded-xl">
             <div className="col-span-2">
-              <select 
+              <select
                 className="select select-bordered w-full"
                 value={lineForm.product}
                 onChange={(e) => handleProductSelect(e.target.value)}
@@ -419,19 +656,19 @@ const DevisForm = () => {
               </select>
             </div>
             <div>
-              <input 
-                type="number" 
-                placeholder="Qté" 
+              <input
+                type="number"
+                placeholder="Qté"
                 className="input input-bordered w-full"
                 value={lineForm.quantity}
-                onChange={(e) => setLineForm({ ...lineForm, quantity: parseInt(e.target.value) || 0 })}
+                onChange={(e) => setLineForm({ ...lineForm, quantity: parseInt(e.target.value) || 1 })}
                 min="1"
               />
             </div>
             <div>
-              <input 
-                type="number" 
-                placeholder="Prix" 
+              <input
+                type="number"
+                placeholder="Prix"
                 className="input input-bordered w-full"
                 value={lineForm.unit_price}
                 onChange={(e) => setLineForm({ ...lineForm, unit_price: parseFloat(e.target.value) || 0 })}
@@ -439,9 +676,9 @@ const DevisForm = () => {
               />
             </div>
             <div>
-              <input 
-                type="number" 
-                placeholder="Remise" 
+              <input
+                type="number"
+                placeholder="Remise"
                 className="input input-bordered w-full"
                 value={lineForm.discount}
                 onChange={(e) => setLineForm({ ...lineForm, discount: parseFloat(e.target.value) || 0 })}
@@ -449,9 +686,9 @@ const DevisForm = () => {
               />
             </div>
             <div>
-              <button 
+              <button
                 type="button"
-                onClick={addLine} 
+                onClick={addLine}
                 className="btn btn-primary w-full gap-2"
               >
                 <Plus className="w-4 h-4" /> Ajouter
@@ -473,14 +710,14 @@ const DevisForm = () => {
                 </tr>
               </thead>
               <tbody>
-                {formData.lines.map((line, index) => (
+                {(formData.lines || []).map((line, index) => (
                   <tr key={index} className="border-b">
                     <td>
                       <span className="font-medium">{line.product_name}</span>
                     </td>
                     <td>
-                      <input 
-                        type="number" 
+                      <input
+                        type="number"
                         className="input input-bordered input-sm w-16 text-center"
                         value={line.quantity}
                         onChange={(e) => updateLine(index, 'quantity', e.target.value)}
@@ -488,8 +725,8 @@ const DevisForm = () => {
                       />
                     </td>
                     <td>
-                      <input 
-                        type="number" 
+                      <input
+                        type="number"
                         className="input input-bordered input-sm w-24 text-right"
                         value={line.unit_price}
                         onChange={(e) => updateLine(index, 'unit_price', e.target.value)}
@@ -497,8 +734,8 @@ const DevisForm = () => {
                       />
                     </td>
                     <td>
-                      <input 
-                        type="number" 
+                      <input
+                        type="number"
                         className="input input-bordered input-sm w-20 text-right"
                         value={line.discount}
                         onChange={(e) => updateLine(index, 'discount', e.target.value)}
@@ -506,12 +743,12 @@ const DevisForm = () => {
                       />
                     </td>
                     <td className="text-right font-semibold text-primary">
-                      {line.total.toLocaleString('fr-FR')} FCFA
+                      {(parseFloat(line.total) || 0).toLocaleString('fr-FR')} FCFA
                     </td>
                     <td className="text-center">
-                      <button 
+                      <button
                         type="button"
-                        onClick={() => removeLine(index)} 
+                        onClick={() => removeLine(index)}
                         className="btn btn-ghost btn-sm btn-circle text-error"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -519,7 +756,7 @@ const DevisForm = () => {
                     </td>
                   </tr>
                 ))}
-                {formData.lines.length === 0 && (
+                {(!formData.lines || formData.lines.length === 0) && (
                   <tr>
                     <td colSpan="6" className="text-center py-8 text-gray-400">
                       Aucun produit ajouté
@@ -531,7 +768,7 @@ const DevisForm = () => {
           </div>
 
           {/* Totaux */}
-          {formData.lines.length > 0 && (
+          {formData.lines && formData.lines.length > 0 && (
             <div className="mt-4 border-t pt-4">
               <div className="flex justify-end">
                 <div className="w-72 space-y-2">
@@ -541,7 +778,9 @@ const DevisForm = () => {
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600">Remise</span>
-                    <span className="text-error font-semibold">-{totals.discountAmount.toLocaleString('fr-FR')} FCFA</span>
+                    <span className="text-error font-semibold">
+                      -{totals.discountAmount.toLocaleString('fr-FR')} FCFA
+                    </span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600">TVA ({formData.tax_rate}%)</span>
@@ -549,7 +788,9 @@ const DevisForm = () => {
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600">Frais de livraison</span>
-                    <span className="font-semibold">{formData.shipping_fee.toLocaleString('fr-FR')} FCFA</span>
+                    <span className="font-semibold">
+                      {(parseFloat(formData.shipping_fee) || 0).toLocaleString('fr-FR')} FCFA
+                    </span>
                   </div>
                   <div className="flex justify-between text-lg font-bold border-t pt-2">
                     <span>Total TTC</span>
@@ -571,7 +812,7 @@ const DevisForm = () => {
               <label className="label">
                 <span className="label-text font-medium">Type de remise</span>
               </label>
-              <select 
+              <select
                 className="select select-bordered w-full"
                 value={formData.discount_type}
                 onChange={(e) => setFormData({ ...formData, discount_type: e.target.value })}
@@ -584,8 +825,8 @@ const DevisForm = () => {
               <label className="label">
                 <span className="label-text font-medium">Valeur remise</span>
               </label>
-              <input 
-                type="number" 
+              <input
+                type="number"
                 className="input input-bordered w-full"
                 value={formData.discount_value}
                 onChange={(e) => setFormData({ ...formData, discount_value: parseFloat(e.target.value) || 0 })}
@@ -597,8 +838,8 @@ const DevisForm = () => {
               <label className="label">
                 <span className="label-text font-medium">TVA (%)</span>
               </label>
-              <input 
-                type="number" 
+              <input
+                type="number"
                 className="input input-bordered w-full"
                 value={formData.tax_rate}
                 onChange={(e) => setFormData({ ...formData, tax_rate: parseFloat(e.target.value) || 0 })}
@@ -611,8 +852,8 @@ const DevisForm = () => {
               <label className="label">
                 <span className="label-text font-medium">Frais de livraison</span>
               </label>
-              <input 
-                type="number" 
+              <input
+                type="number"
                 className="input input-bordered w-full"
                 value={formData.shipping_fee}
                 onChange={(e) => setFormData({ ...formData, shipping_fee: parseFloat(e.target.value) || 0 })}
@@ -631,9 +872,9 @@ const DevisForm = () => {
           <div className="grid grid-cols-1 gap-4">
             <div className="form-control">
               <label className="label">
-                <span className="label-text font-medium">Notes (visible sur le devis)</span>
+                <span className="label-text font-medium">Notes (visibles sur le devis)</span>
               </label>
-              <textarea 
+              <textarea
                 className="textarea textarea-bordered w-full"
                 rows="3"
                 value={formData.notes}
@@ -645,7 +886,7 @@ const DevisForm = () => {
               <label className="label">
                 <span className="label-text font-medium">Notes internes</span>
               </label>
-              <textarea 
+              <textarea
                 className="textarea textarea-bordered w-full"
                 rows="2"
                 value={formData.internal_notes}
@@ -658,15 +899,15 @@ const DevisForm = () => {
 
         {/* Actions */}
         <div className="flex justify-end gap-3">
-          <button 
-            type="button" 
-            onClick={() => navigate('/devis')} 
+          <button
+            type="button"
+            onClick={() => navigate('/devis')}
             className="btn btn-ghost"
           >
             Annuler
           </button>
-          <button 
-            type="submit" 
+          <button
+            type="submit"
             className="btn btn-primary gap-2"
             disabled={saving}
           >
@@ -678,5 +919,14 @@ const DevisForm = () => {
     </div>
   );
 };
+
+// ============================================================
+// WRAPPER avec ErrorBoundary
+// ============================================================
+const DevisForm = () => (
+  <ErrorBoundary>
+    <DevisFormContent />
+  </ErrorBoundary>
+);
 
 export default DevisForm;
