@@ -1,6 +1,6 @@
 // src/components/ventes/VenteForm.jsx
 // ============================================================
-// VERSION FINALE — Sélecteur intelligent + modification fiable
+// VERSION FINALE - Selecteur intelligent + modification fiable
 // ============================================================
 
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 
 // ============================================================
-// ✅ ERROR BOUNDARY
+// ERROR BOUNDARY
 // ============================================================
 class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -28,7 +28,7 @@ class ErrorBoundary extends React.Component {
   }
 
   componentDidCatch(error, errorInfo) {
-    console.error('❌ ErrorBoundary a capturé:', error, errorInfo);
+    console.error('ErrorBoundary a capture:', error, errorInfo);
   }
 
   render() {
@@ -68,7 +68,7 @@ const VenteFormContent = () => {
   const isEdit = !!id;
 
   // ============================================================
-  // ÉTATS
+  // ETATS
   // ============================================================
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -124,7 +124,7 @@ const VenteFormContent = () => {
   };
 
   // ============================================================
-  // ✅ CHARGEMENT DES DONNÉES INITIALES
+  // CHARGEMENT DES DONNEES INITIALES
   // ============================================================
   useEffect(() => {
     let isMounted = true;
@@ -133,31 +133,30 @@ const VenteFormContent = () => {
       try {
         const token = getToken();
         if (!token) {
-          showNotification('Session expirée', 'error');
+          showNotification('Session expiree', 'error');
           setTimeout(() => navigate('/login'), 2000);
           return;
         }
 
-        console.log('🔍 Chargement des données initiales...');
+        console.log('Chargement des donnees initiales...');
 
         const [clientsRes, warehousesRes, productsRes] = await Promise.all([
           AxiosInstance.get('/clients/?page_size=2000', {
             headers: { 'Authorization': `Token ${token}` }
           }).catch(err => {
-            console.warn('⚠️ Erreur clients:', err.message);
+            console.warn('Erreur clients:', err.message);
             return { data: [] };
           }),
           AxiosInstance.get('/warehouses/?active=true', {
             headers: { 'Authorization': `Token ${token}` }
           }).catch(err => {
-            console.warn('⚠️ Erreur warehouses:', err.message);
+            console.warn('Erreur warehouses:', err.message);
             return { data: [] };
           }),
-          // ✅ CHARGER TOUS LES PRODUITS D'UN COUP
           AxiosInstance.get('/products/?status=active&page_size=5000', {
             headers: { 'Authorization': `Token ${token}` }
           }).catch(err => {
-            console.warn('⚠️ Erreur products:', err.message);
+            console.warn('Erreur products:', err.message);
             return { data: [] };
           })
         ]);
@@ -168,7 +167,7 @@ const VenteFormContent = () => {
         const warehousesData = normalize(warehousesRes.data);
         const productsData = normalize(productsRes.data);
 
-        console.log('✅ Données chargées:', {
+        console.log('Donnees chargees:', {
           clients: clientsData.length,
           products: productsData.length,
           warehouses: warehousesData.length
@@ -178,7 +177,6 @@ const VenteFormContent = () => {
         setProducts(productsData);
         setWarehouses(warehousesData);
 
-        // Sélection automatique de l'entrepôt
         if (warehousesData.length === 1 && !isEdit) {
           setFormData(prev => ({
             ...prev,
@@ -186,9 +184,9 @@ const VenteFormContent = () => {
           }));
         }
       } catch (error) {
-        console.error('❌ Erreur chargement données:', error);
+        console.error('Erreur chargement donnees:', error);
         if (isMounted) {
-          showNotification('Erreur de chargement des données', 'error');
+          showNotification('Erreur de chargement des donnees', 'error');
         }
       }
     };
@@ -199,7 +197,7 @@ const VenteFormContent = () => {
   }, [navigate, showNotification, isEdit]);
 
   // ============================================================
-  // ✅ CHARGEMENT DES LOTS
+  // CHARGEMENT DES LOTS
   // ============================================================
   useEffect(() => {
     if (!formData.warehouse) {
@@ -224,7 +222,7 @@ const VenteFormContent = () => {
         const lotsData = normalize(response.data);
         setLots(lotsData);
       } catch (error) {
-        console.error('❌ Erreur chargement lots:', error);
+        console.error('Erreur chargement lots:', error);
         if (isMounted) setLots([]);
       }
     };
@@ -235,7 +233,7 @@ const VenteFormContent = () => {
   }, [formData.warehouse]);
 
   // ============================================================
-  // ✅ CHARGEMENT DE LA VENTE EN MODIFICATION
+  // CHARGEMENT DE LA VENTE EN MODIFICATION
   // ============================================================
   useEffect(() => {
     if (!isEdit || !id) return;
@@ -247,7 +245,7 @@ const VenteFormContent = () => {
       try {
         const token = getToken();
         if (!token) {
-          showNotification('Session expirée', 'error');
+          showNotification('Session expiree', 'error');
           return;
         }
 
@@ -258,7 +256,7 @@ const VenteFormContent = () => {
         if (!isMounted) return;
 
         const data = response.data || {};
-        console.log('📥 Vente chargée:', data);
+        console.log('Vente chargee:', data);
 
         setFormData({
           client: data.client?.id || data.client_id || data.client || '',
@@ -289,7 +287,6 @@ const VenteFormContent = () => {
           }))
         });
 
-        // ✅ Charger les produits manquants (au cas où ils n'auraient pas été chargés)
         const lineProductIds = (data.lines || [])
           .map(l => l.product)
           .filter(Boolean);
@@ -300,7 +297,7 @@ const VenteFormContent = () => {
           );
 
           if (missingIds.length > 0) {
-            console.log('📦 Chargement des produits manquants:', missingIds);
+            console.log('Chargement des produits manquants:', missingIds);
             const missingProductsRes = await Promise.all(
               missingIds.map(pid =>
                 AxiosInstance.get(`/products/${pid}/`, {
@@ -323,7 +320,7 @@ const VenteFormContent = () => {
           }
         }
       } catch (error) {
-        console.error('❌ Erreur chargement vente:', error);
+        console.error('Erreur chargement vente:', error);
         if (isMounted) {
           showNotification('Erreur de chargement de la vente', 'error');
           setTimeout(() => navigate('/ventes'), 1500);
@@ -339,7 +336,7 @@ const VenteFormContent = () => {
   }, [id, isEdit, navigate, showNotification, products]);
 
   // ============================================================
-  // ✅ CALCUL DES TOTAUX
+  // CALCUL DES TOTAUX
   // ============================================================
   const totals = useMemo(() => {
     let subtotal = 0;
@@ -372,7 +369,7 @@ const VenteFormContent = () => {
   }, [formData.lines, formData.discount_type, formData.discount_value, formData.tax_rate, formData.shipping_fee]);
 
   // ============================================================
-  // ✅ GESTION DES PRODUITS
+  // GESTION DES PRODUITS
   // ============================================================
   const getProductById = useCallback((productId) => {
     if (!productId) return null;
@@ -402,7 +399,7 @@ const VenteFormContent = () => {
   }, [getProductPrices]);
 
   // ============================================================
-  // ✅ GESTION DES LOTS
+  // GESTION DES LOTS
   // ============================================================
   const getAvailableLotsForProduct = useCallback((productId) => {
     if (!productId || !formData.warehouse) return [];
@@ -438,13 +435,13 @@ const VenteFormContent = () => {
 
   const checkStockAvailability = useCallback((productId, quantity) => {
     const product = getProductById(productId);
-    if (!product) return { available: false, message: 'Produit non trouvé' };
+    if (!product) return { available: false, message: 'Produit non trouve' };
 
     const availableStock = parseFloat(product.current_stock) || 0;
     if (availableStock < quantity) {
       return {
         available: false,
-        message: `Stock insuffisant pour ${product.name}. Disponible: ${availableStock}, Demandé: ${quantity}`
+        message: `Stock insuffisant pour ${product.name}. Disponible: ${availableStock}, Demande: ${quantity}`
       };
     }
 
@@ -452,26 +449,26 @@ const VenteFormContent = () => {
   }, [getProductById]);
 
   // ============================================================
-  // ✅ AJOUTER UNE LIGNE
+  // AJOUTER UNE LIGNE
   // ============================================================
   const addLine = () => {
     if (adding) return;
 
     if (!lineForm.product) {
-      showNotification('Veuillez sélectionner un produit', 'error');
+      showNotification('Veuillez selectionner un produit', 'error');
       return;
     }
 
     const quantity = parseInt(lineForm.quantity) || 0;
     if (quantity <= 0) {
-      showNotification('La quantité doit être supérieure à 0', 'error');
+      showNotification('La quantite doit etre superieure a 0', 'error');
       return;
     }
 
     const productId = parseInt(lineForm.product);
     const product = getProductById(productId);
     if (!product) {
-      showNotification('Produit non trouvé', 'error');
+      showNotification('Produit non trouve', 'error');
       return;
     }
 
@@ -485,11 +482,10 @@ const VenteFormContent = () => {
       line => parseInt(line.product) === productId
     );
     if (productExists) {
-      showNotification(`Le produit "${product.name}" est déjà dans la liste`, 'warning');
+      showNotification(`Le produit "${product.name}" est deja dans la liste`, 'warning');
       return;
     }
 
-    // ✅ Sélection automatique du meilleur lot
     let lotId = lineForm.lot;
     let lotNumber = '';
 
@@ -510,12 +506,12 @@ const VenteFormContent = () => {
     }
 
     if (unitPrice <= 0) {
-      showNotification('Le prix unitaire doit être supérieur à 0', 'error');
+      showNotification('Le prix unitaire doit etre superieur a 0', 'error');
       return;
     }
 
     if (priceType === 'gros' && !hasWholesalePrice(productId)) {
-      showNotification(`Le produit "${product.name}" n'a pas de prix de gros. Utilisation du prix détail.`, 'warning');
+      showNotification(`Le produit "${product.name}" n'a pas de prix de gros. Utilisation du prix detail.`, 'warning');
       unitPrice = getPriceByType(productId, 'detail');
     }
 
@@ -556,7 +552,6 @@ const VenteFormContent = () => {
     setFormData({ ...formData, lines: newLines });
   };
 
-  // ✅ Modification corrigée
   const updateLine = (index, field, value) => {
     const newLines = [...(formData.lines || [])];
     const line = { ...newLines[index] };
@@ -565,11 +560,9 @@ const VenteFormContent = () => {
       const newValue = parseFloat(value) || 0;
       line[field] = newValue;
 
-      // Recalcul du total
       line.total = (parseFloat(line.quantity) || 0) * (parseFloat(line.unit_price) || 0)
         - (parseFloat(line.discount) || 0);
 
-      // Si la quantité change, réassigner le lot si nécessaire
       if (field === 'quantity') {
         const availableLots = getAvailableLotsForProduct(line.product);
         const currentLot = availableLots.find(l => l.id === line.lot);
@@ -590,7 +583,6 @@ const VenteFormContent = () => {
     setFormData({ ...formData, lines: newLines });
   };
 
-  // ✅ Modifier le type de prix d'une ligne
   const updateLinePriceType = (index, newPriceType) => {
     const newLines = [...(formData.lines || [])];
     const line = { ...newLines[index] };
@@ -611,7 +603,7 @@ const VenteFormContent = () => {
   };
 
   // ============================================================
-  // ✅ GESTION DU FORMULAIRE DE LIGNE
+  // GESTION DU FORMULAIRE DE LIGNE
   // ============================================================
   const handleProductSelect = (productId) => {
     const idNum = productId ? parseInt(productId) : null;
@@ -660,7 +652,7 @@ const VenteFormContent = () => {
   );
 
   // ============================================================
-  // ✅ SOUMISSION
+  // SOUMISSION
   // ============================================================
   const handleSubmit = async (e) => {
     if (e) e.preventDefault();
@@ -670,13 +662,13 @@ const VenteFormContent = () => {
     try {
       const token = getToken();
       if (!token) {
-        showNotification('Session expirée', 'error');
+        showNotification('Session expiree', 'error');
         setTimeout(() => navigate('/login'), 2000);
         return;
       }
 
       if (!formData.warehouse) {
-        showNotification('Veuillez sélectionner un entrepôt', 'error');
+        showNotification('Veuillez selectionner un entrepot', 'error');
         setSaving(false);
         return;
       }
@@ -742,11 +734,11 @@ const VenteFormContent = () => {
         });
       }
 
-      showNotification(isEdit ? '✅ Vente modifiée' : '✅ Vente créée', 'success');
+      showNotification(isEdit ? 'Vente modifiee' : 'Vente creee', 'success');
       setTimeout(() => navigate(`/ventes/${response.data.id}`), 1500);
 
     } catch (error) {
-      console.error('❌ Erreur sauvegarde:', error);
+      console.error('Erreur sauvegarde:', error);
       let errorMessage = 'Erreur lors de la sauvegarde';
 
       if (error.response?.data) {
@@ -769,7 +761,7 @@ const VenteFormContent = () => {
   };
 
   // ============================================================
-  // ✅ RENDU
+  // RENDU
   // ============================================================
   if (loadingVente && isEdit) {
     return (
@@ -827,10 +819,10 @@ const VenteFormContent = () => {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
-        {/* INFOS GÉNÉRALES */}
+        {/* INFOS GENERALES */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
           <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-            <FileText className="w-5 h-5 text-primary" /> Informations générales
+            <FileText className="w-5 h-5 text-primary" /> Informations generales
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="form-control">
@@ -842,7 +834,7 @@ const VenteFormContent = () => {
                 value={formData.client}
                 onChange={(e) => setFormData({ ...formData, client: e.target.value })}
               >
-                <option value="">Sélectionner un client</option>
+                <option value="">Selectionner un client</option>
                 {clients.map(client => (
                   <option key={client.id} value={client.id}>
                     {client.code} - {client.name}
@@ -853,7 +845,7 @@ const VenteFormContent = () => {
 
             <div className="form-control">
               <label className="label">
-                <span className="label-text font-medium">Entrepôt <span className="text-error">*</span></span>
+                <span className="label-text font-medium">Entrepot <span className="text-error">*</span></span>
               </label>
               <select
                 className="select select-bordered w-full"
@@ -861,7 +853,7 @@ const VenteFormContent = () => {
                 onChange={(e) => setFormData({ ...formData, warehouse: e.target.value })}
                 required
               >
-                <option value="">Sélectionner un entrepôt</option>
+                <option value="">Selectionner un entrepot</option>
                 {warehouses.map(wh => (
                   <option key={wh.id} value={wh.id}>
                     {wh.name} - {wh.code}
@@ -872,7 +864,7 @@ const VenteFormContent = () => {
 
             <div className="form-control">
               <label className="label">
-                <span className="label-text font-medium">Date d'échéance (défaut 30j)</span>
+                <span className="label-text font-medium">Date d'echeance (defaut 30j)</span>
               </label>
               <input
                 type="date"
@@ -891,7 +883,7 @@ const VenteFormContent = () => {
               <Package className="w-5 h-5 text-primary" /> Produits
             </h2>
             <span className="text-sm text-gray-500">
-              {products.length} produit(s) disponible(s) — tapez une lettre dans la liste pour y accéder directement
+              {products.length} produit(s) disponible(s) - tapez une lettre dans la liste pour y acceder directement
             </span>
           </div>
 
@@ -901,25 +893,25 @@ const VenteFormContent = () => {
                 <Package className="w-4 h-4 text-blue-600" />
                 <span className="font-medium">Stock:</span>
                 <span className={`font-bold ${(selectedProduct.current_stock || 0) > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                  {selectedProduct.current_stock || 0} unités
+                  {selectedProduct.current_stock || 0} unites
                 </span>
               </div>
               <div className="flex items-center gap-2">
                 <Layers className="w-4 h-4 text-blue-600" />
                 <span className="font-medium">Lots:</span>
                 <span className="font-bold text-blue-600">
-                  {availableLotsInfo.length} ({totalLotsStock} unités)
+                  {availableLotsInfo.length} ({totalLotsStock} unites)
                 </span>
               </div>
             </div>
           )}
 
-          {/* ✅ Barre d'ajout - SANS CHAMP DE RECHERCHE */}
+          {/* Barre d'ajout - SANS CHAMP DE RECHERCHE */}
           <div className="grid grid-cols-2 md:grid-cols-7 gap-3 mb-4 p-4 bg-gray-50 rounded-xl">
-            {/* ✅ SELECTEUR INTELLIGENT : tapez une lettre pour naviguer */}
+            {/* SELECTEUR INTELLIGENT : tapez une lettre pour naviguer */}
             <div className="col-span-2">
               <label className="label-text text-xs text-gray-500 mb-1 block">
-                💡 Tapez une lettre pour sauter au produit
+                Tapez une lettre pour sauter au produit
               </label>
               <select
                 className="select select-bordered w-full"
@@ -927,7 +919,7 @@ const VenteFormContent = () => {
                 onChange={(e) => handleProductSelect(e.target.value)}
                 size="1"
               >
-                <option value="">-- Sélectionner un produit --</option>
+                <option value="">-- Selectionner un produit --</option>
                 {products.map(product => (
                   <option key={product.id} value={product.id}>
                     {product.name} ({product.code})
@@ -937,10 +929,10 @@ const VenteFormContent = () => {
             </div>
 
             <div>
-              <label className="label-text text-xs text-gray-500 mb-1 block">Quantité</label>
+              <label className="label-text text-xs text-gray-500 mb-1 block">Quantite</label>
               <input
                 type="number"
-                placeholder="Qté"
+                placeholder="Qte"
                 className="input input-bordered w-full"
                 value={lineForm.quantity}
                 onChange={(e) => setLineForm({ ...lineForm, quantity: parseInt(e.target.value) || 1 })}
@@ -956,7 +948,7 @@ const VenteFormContent = () => {
                   className={`flex-1 px-3 py-2 text-sm font-medium ${lineForm.price_type === 'detail' ? 'bg-primary text-white' : 'bg-white text-gray-600'}`}
                   onClick={() => handlePriceTypeChange('detail')}
                 >
-                  <Tag className="w-3 h-3 inline mr-1" /> Détail
+                  <Tag className="w-3 h-3 inline mr-1" /> Detail
                 </button>
                 <button
                   type="button"
@@ -1014,7 +1006,7 @@ const VenteFormContent = () => {
                   <th>Produit</th>
                   <th className="text-center">Lot</th>
                   <th className="text-center">Type prix</th>
-                  <th className="text-center">Qté</th>
+                  <th className="text-center">Qte</th>
                   <th className="text-right">Prix</th>
                   <th className="text-right">Remise</th>
                   <th className="text-right">Total</th>
@@ -1038,7 +1030,7 @@ const VenteFormContent = () => {
                         onClick={() => updateLinePriceType(index, line.price_type === 'gros' ? 'detail' : 'gros')}
                         title="Cliquer pour changer le type de prix"
                       >
-                        {line.price_type === 'gros' ? 'Gros' : 'Détail'}
+                        {line.price_type === 'gros' ? 'Gros' : 'Detail'}
                       </button>
                     </td>
                     <td>
@@ -1085,7 +1077,7 @@ const VenteFormContent = () => {
                 {(!formData.lines || formData.lines.length === 0) && (
                   <tr>
                     <td colSpan="8" className="text-center py-8 text-gray-400">
-                      Aucun produit ajouté
+                      Aucun produit ajoute
                     </td>
                   </tr>
                 )}
@@ -1185,32 +1177,32 @@ const VenteFormContent = () => {
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="form-control">
-              <label className="label"><span className="label-text font-medium">Méthode de livraison</span></label>
+              <label className="label"><span className="label-text font-medium">Methode de livraison</span></label>
               <select
                 className="select select-bordered w-full"
                 value={formData.delivery_method}
                 onChange={(e) => setFormData({ ...formData, delivery_method: e.target.value })}
               >
-                <option value="">Sélectionner</option>
+                <option value="">Selectionner</option>
                 <option value="retrait">Retrait en magasin</option>
-                <option value="livraison">Livraison à domicile</option>
+                <option value="livraison">Livraison a domicile</option>
                 <option value="transporteur">Transporteur</option>
               </select>
             </div>
             <div className="form-control">
-              <label className="label"><span className="label-text font-medium">Méthode de paiement</span></label>
+              <label className="label"><span className="label-text font-medium">Methode de paiement</span></label>
               <select
                 className="select select-bordered w-full"
                 value={formData.payment_method}
                 onChange={(e) => setFormData({ ...formData, payment_method: e.target.value })}
               >
-                <option value="">Sélectionner</option>
-                <option value="cash">Espèces</option>
+                <option value="">Selectionner</option>
+                <option value="cash">Especes</option>
                 <option value="card">Carte bancaire</option>
-                <option value="check">Chèque</option>
+                <option value="check">Cheque</option>
                 <option value="transfer">Virement</option>
                 <option value="mobile_money">Mobile Money</option>
-                <option value="credit">Crédit</option>
+                <option value="credit">Credit</option>
               </select>
             </div>
             <div className="form-control">
@@ -1220,7 +1212,7 @@ const VenteFormContent = () => {
                 className="input input-bordered w-full"
                 value={formData.delivery_address}
                 onChange={(e) => setFormData({ ...formData, delivery_address: e.target.value })}
-                placeholder="Adresse complète"
+                placeholder="Adresse complete"
               />
             </div>
           </div>
@@ -1262,7 +1254,7 @@ const VenteFormContent = () => {
           </button>
           <button type="submit" className="btn btn-primary gap-2" disabled={saving}>
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-            {saving ? 'Enregistrement...' : isEdit ? 'Enregistrer les modifications' : 'Créer la vente'}
+            {saving ? 'Enregistrement...' : isEdit ? 'Enregistrer les modifications' : 'Creer la vente'}
           </button>
         </div>
       </form>
