@@ -1,6 +1,6 @@
 // src/components/ventes/VenteForm.jsx
 // ============================================================
-// VERSION CORRIGÉE AVEC GARDE-FOUS (anti-page blanche)
+// VERSION FINALE — Sélecteur intelligent + modification fiable
 // ============================================================
 
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 
 // ============================================================
-// ✅ ERROR BOUNDARY (affiche l'erreur au lieu d'une page blanche)
+// ✅ ERROR BOUNDARY
 // ============================================================
 class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -40,23 +40,14 @@ class ErrorBoundary extends React.Component {
               <AlertCircle className="w-8 h-8" />
               <h2 className="text-2xl font-bold">Erreur dans le formulaire</h2>
             </div>
-            <p className="text-gray-600 mb-4">
-              Une erreur est survenue lors du rendu du composant :
-            </p>
             <pre className="bg-gray-100 p-4 rounded-lg text-sm overflow-auto max-h-64 text-red-600">
               {this.state.error?.toString()}
             </pre>
             <div className="mt-6 flex gap-3">
-              <button
-                onClick={() => window.location.reload()}
-                className="btn btn-primary"
-              >
+              <button onClick={() => window.location.reload()} className="btn btn-primary">
                 Recharger la page
               </button>
-              <button
-                onClick={() => window.location.href = '/ventes'}
-                className="btn btn-ghost"
-              >
+              <button onClick={() => window.location.href = '/ventes'} className="btn btn-ghost">
                 Retour aux ventes
               </button>
             </div>
@@ -82,11 +73,13 @@ const VenteFormContent = () => {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [adding, setAdding] = useState(false);
+  const [loadingProducts, setLoadingProducts] = useState(false);
   const [clients, setClients] = useState([]);
   const [products, setProducts] = useState([]);
   const [warehouses, setWarehouses] = useState([]);
   const [lots, setLots] = useState([]);
   const [notification, setNotification] = useState(null);
+  const [loadingVente, setLoadingVente] = useState(false);
 
   const [formData, setFormData] = useState({
     client: '',
@@ -110,7 +103,8 @@ const VenteFormContent = () => {
     unit_price: 0,
     discount: 0,
     tax_rate: 0,
-    price_type: 'detail'
+    price_type: 'detail',
+    lot: null
   });
 
   // ============================================================
@@ -123,8 +117,14 @@ const VenteFormContent = () => {
     setTimeout(() => setNotification(null), 4000);
   }, []);
 
+  const normalize = (data) => {
+    if (Array.isArray(data)) return data;
+    if (data && Array.isArray(data.results)) return data.results;
+    return [];
+  };
+
   // ============================================================
-  // ✅ CHARGEMENT DES DONNÉES INITIALES (avec garde-fous)
+  // ✅ CHARGEMENT DES DONNÉES INITIALES
   // ============================================================
   useEffect(() => {
     let isMounted = true;
@@ -140,17 +140,11 @@ const VenteFormContent = () => {
 
         console.log('🔍 Chargement des données initiales...');
 
-        const [clientsRes, productsRes, warehousesRes] = await Promise.all([
-          AxiosInstance.get('/clients/', {
+        const [clientsRes, warehousesRes, productsRes] = await Promise.all([
+          AxiosInstance.get('/clients/?page_size=2000', {
             headers: { 'Authorization': `Token ${token}` }
           }).catch(err => {
             console.warn('⚠️ Erreur clients:', err.message);
-            return { data: [] };
-          }),
-          AxiosInstance.get('/products/?status=active', {
-            headers: { 'Authorization': `Token ${token}` }
-          }).catch(err => {
-            console.warn('⚠️ Erreur products:', err.message);
             return { data: [] };
           }),
           AxiosInstance.get('/warehouses/?active=true', {
@@ -158,21 +152,21 @@ const VenteFormContent = () => {
           }).catch(err => {
             console.warn('⚠️ Erreur warehouses:', err.message);
             return { data: [] };
+          }),
+          // ✅ CHARGER TOUS LES PRODUITS D'UN COUP
+          AxiosInstance.get('/products/?status=active&page_size=5000', {
+            headers: { 'Authorization': `Token ${token}` }
+          }).catch(err => {
+            console.warn('⚠️ Erreur products:', err.message);
+            return { data: [] };
           })
         ]);
 
         if (!isMounted) return;
 
-        // ✅ Normalisation (peut être un tableau OU un objet paginé DRF)
-        const normalize = (data) => {
-          if (Array.isArray(data)) return data;
-          if (data && Array.isArray(data.results)) return data.results;
-          return [];
-        };
-
         const clientsData = normalize(clientsRes.data);
-        const productsData = normalize(productsRes.data);
         const warehousesData = normalize(warehousesRes.data);
+        const productsData = normalize(productsRes.data);
 
         console.log('✅ Données chargées:', {
           clients: clientsData.length,
@@ -185,7 +179,7 @@ const VenteFormContent = () => {
         setWarehouses(warehousesData);
 
         // Sélection automatique de l'entrepôt
-        if (warehousesData.length === 1) {
+        if (warehousesData.length === 1 && !isEdit) {
           setFormData(prev => ({
             ...prev,
             warehouse: warehousesData[0].id
@@ -202,10 +196,10 @@ const VenteFormContent = () => {
     fetchData();
 
     return () => { isMounted = false; };
-  }, [navigate, showNotification]);
+  }, [navigate, showNotification, isEdit]);
 
   // ============================================================
-  // CHARGEMENT DES LOTS
+  // ✅ CHARGEMENT DES LOTS
   // ============================================================
   useEffect(() => {
     if (!formData.warehouse) {
@@ -221,16 +215,13 @@ const VenteFormContent = () => {
         if (!token) return;
 
         const response = await AxiosInstance.get(
-          `/lots/?warehouse=${formData.warehouse}&available=true`,
+          `/lots/?warehouse=${formData.warehouse}&page_size=5000`,
           { headers: { 'Authorization': `Token ${token}` } }
         );
 
         if (!isMounted) return;
 
-        const lotsData = Array.isArray(response.data)
-          ? response.data
-          : (response.data?.results || []);
-
+        const lotsData = normalize(response.data);
         setLots(lotsData);
       } catch (error) {
         console.error('❌ Erreur chargement lots:', error);
@@ -244,7 +235,7 @@ const VenteFormContent = () => {
   }, [formData.warehouse]);
 
   // ============================================================
-  // CHARGEMENT DE LA VENTE EN MODIFICATION
+  // ✅ CHARGEMENT DE LA VENTE EN MODIFICATION
   // ============================================================
   useEffect(() => {
     if (!isEdit || !id) return;
@@ -252,7 +243,7 @@ const VenteFormContent = () => {
     let isMounted = true;
 
     const fetchVente = async () => {
-      setLoading(true);
+      setLoadingVente(true);
       try {
         const token = getToken();
         if (!token) {
@@ -267,8 +258,10 @@ const VenteFormContent = () => {
         if (!isMounted) return;
 
         const data = response.data || {};
+        console.log('📥 Vente chargée:', data);
+
         setFormData({
-          client: data.client?.id || data.client_id || '',
+          client: data.client?.id || data.client_id || data.client || '',
           warehouse: data.warehouse || data.warehouse_id || '',
           payment_due_date: data.payment_due_date || '',
           discount_type: data.discount_type || 'percentage',
@@ -284,9 +277,10 @@ const VenteFormContent = () => {
             id: line.id,
             product: line.product,
             product_name: line.product_name || '',
-            lot: line.lot || '',
+            product_code: line.product_code || '',
+            lot: line.lot || null,
             lot_number: line.lot_number || '',
-            quantity: line.quantity || 0,
+            quantity: line.quantity || 1,
             unit_price: parseFloat(line.unit_price) || 0,
             discount: parseFloat(line.discount) || 0,
             tax_rate: parseFloat(line.tax_rate) || 0,
@@ -294,6 +288,40 @@ const VenteFormContent = () => {
             price_type: line.price_type || 'detail'
           }))
         });
+
+        // ✅ Charger les produits manquants (au cas où ils n'auraient pas été chargés)
+        const lineProductIds = (data.lines || [])
+          .map(l => l.product)
+          .filter(Boolean);
+
+        if (lineProductIds.length > 0) {
+          const missingIds = lineProductIds.filter(
+            pid => !products.some(p => p.id === pid)
+          );
+
+          if (missingIds.length > 0) {
+            console.log('📦 Chargement des produits manquants:', missingIds);
+            const missingProductsRes = await Promise.all(
+              missingIds.map(pid =>
+                AxiosInstance.get(`/products/${pid}/`, {
+                  headers: { 'Authorization': `Token ${token}` }
+                }).catch(() => null)
+              )
+            );
+
+            const missingProducts = missingProductsRes
+              .filter(r => r && r.data)
+              .map(r => r.data);
+
+            if (missingProducts.length > 0 && isMounted) {
+              setProducts(prev => {
+                const existingIds = new Set(prev.map(p => p.id));
+                const newOnes = missingProducts.filter(p => !existingIds.has(p.id));
+                return [...prev, ...newOnes];
+              });
+            }
+          }
+        }
       } catch (error) {
         console.error('❌ Erreur chargement vente:', error);
         if (isMounted) {
@@ -301,17 +329,17 @@ const VenteFormContent = () => {
           setTimeout(() => navigate('/ventes'), 1500);
         }
       } finally {
-        if (isMounted) setLoading(false);
+        if (isMounted) setLoadingVente(false);
       }
     };
 
     fetchVente();
 
     return () => { isMounted = false; };
-  }, [id, isEdit, navigate, showNotification]);
+  }, [id, isEdit, navigate, showNotification, products]);
 
   // ============================================================
-  // CALCUL DES TOTAUX
+  // ✅ CALCUL DES TOTAUX
   // ============================================================
   const totals = useMemo(() => {
     let subtotal = 0;
@@ -344,7 +372,7 @@ const VenteFormContent = () => {
   }, [formData.lines, formData.discount_type, formData.discount_value, formData.tax_rate, formData.shipping_fee]);
 
   // ============================================================
-  // GESTION DES PRODUITS
+  // ✅ GESTION DES PRODUITS
   // ============================================================
   const getProductById = useCallback((productId) => {
     if (!productId) return null;
@@ -374,14 +402,14 @@ const VenteFormContent = () => {
   }, [getProductPrices]);
 
   // ============================================================
-  // GESTION AUTOMATIQUE DES LOTS
+  // ✅ GESTION DES LOTS
   // ============================================================
   const getAvailableLotsForProduct = useCallback((productId) => {
     if (!productId || !formData.warehouse) return [];
     const idNum = parseInt(productId);
     return (lots || []).filter(lot =>
       lot.product === idNum &&
-      (lot.available_quantity || 0) > 0
+      (parseFloat(lot.available_quantity) || 0) > 0
     );
   }, [lots, formData.warehouse]);
 
@@ -399,11 +427,12 @@ const VenteFormContent = () => {
     });
 
     for (const lot of sortedLots) {
-      if (lot.available_quantity >= quantity) return lot;
+      if ((parseFloat(lot.available_quantity) || 0) >= quantity) return lot;
     }
 
     return sortedLots.reduce((best, current) =>
-      current.available_quantity > best.available_quantity ? current : best
+      (parseFloat(current.available_quantity) || 0) > (parseFloat(best.available_quantity) || 0)
+        ? current : best
     );
   }, [getAvailableLotsForProduct]);
 
@@ -419,29 +448,11 @@ const VenteFormContent = () => {
       };
     }
 
-    const availableLots = getAvailableLotsForProduct(productId);
-    if (availableLots.length === 0) {
-      return {
-        available: false,
-        message: `Aucun lot disponible pour ${product.name}`
-      };
-    }
-
-    const totalAvailableInLots = availableLots.reduce(
-      (sum, lot) => sum + (parseFloat(lot.available_quantity) || 0), 0
-    );
-    if (totalAvailableInLots < quantity) {
-      return {
-        available: false,
-        message: `Stock insuffisant dans les lots. Disponible: ${totalAvailableInLots}, Demandé: ${quantity}`
-      };
-    }
-
     return { available: true };
-  }, [getProductById, getAvailableLotsForProduct]);
+  }, [getProductById]);
 
   // ============================================================
-  // GESTION DES LIGNES
+  // ✅ AJOUTER UNE LIGNE
   // ============================================================
   const addLine = () => {
     if (adding) return;
@@ -478,9 +489,18 @@ const VenteFormContent = () => {
       return;
     }
 
-    const bestLot = getBestLotForProduct(productId, quantity);
-    const lotId = bestLot?.id || null;
-    const lotNumber = bestLot?.lot_number || '';
+    // ✅ Sélection automatique du meilleur lot
+    let lotId = lineForm.lot;
+    let lotNumber = '';
+
+    if (!lotId) {
+      const bestLot = getBestLotForProduct(productId, quantity);
+      lotId = bestLot?.id || null;
+      lotNumber = bestLot?.lot_number || '';
+    } else {
+      const selectedLot = lots.find(l => l.id === parseInt(lotId));
+      lotNumber = selectedLot?.lot_number || '';
+    }
 
     const priceType = lineForm.price_type || 'detail';
     let unitPrice = parseFloat(lineForm.unit_price) || 0;
@@ -506,6 +526,7 @@ const VenteFormContent = () => {
     const newLine = {
       product: productId,
       product_name: product.name || 'Produit',
+      product_code: product.code || '',
       lot: lotId,
       lot_number: lotNumber,
       quantity: quantity,
@@ -524,7 +545,8 @@ const VenteFormContent = () => {
       unit_price: 0,
       discount: 0,
       tax_rate: 0,
-      price_type: 'detail'
+      price_type: 'detail',
+      lot: null
     });
     setTimeout(() => setAdding(false), 300);
   };
@@ -534,34 +556,83 @@ const VenteFormContent = () => {
     setFormData({ ...formData, lines: newLines });
   };
 
+  // ✅ Modification corrigée
   const updateLine = (index, field, value) => {
     const newLines = [...(formData.lines || [])];
-    const newValue = parseFloat(value) || 0;
+    const line = { ...newLines[index] };
 
     if (field === 'quantity' || field === 'unit_price' || field === 'discount') {
-      newLines[index][field] = newValue;
-      newLines[index].total =
-        (parseFloat(newLines[index].quantity) || 0) *
-        (parseFloat(newLines[index].unit_price) || 0) -
-        (parseFloat(newLines[index].discount) || 0);
+      const newValue = parseFloat(value) || 0;
+      line[field] = newValue;
+
+      // Recalcul du total
+      line.total = (parseFloat(line.quantity) || 0) * (parseFloat(line.unit_price) || 0)
+        - (parseFloat(line.discount) || 0);
+
+      // Si la quantité change, réassigner le lot si nécessaire
+      if (field === 'quantity') {
+        const availableLots = getAvailableLotsForProduct(line.product);
+        const currentLot = availableLots.find(l => l.id === line.lot);
+
+        if (!currentLot || (parseFloat(currentLot.available_quantity) || 0) < newValue) {
+          const bestLot = getBestLotForProduct(line.product, newValue);
+          if (bestLot) {
+            line.lot = bestLot.id;
+            line.lot_number = bestLot.lot_number || '';
+          }
+        }
+      }
     } else {
-      newLines[index][field] = newValue;
+      line[field] = value;
     }
 
+    newLines[index] = line;
+    setFormData({ ...formData, lines: newLines });
+  };
+
+  // ✅ Modifier le type de prix d'une ligne
+  const updateLinePriceType = (index, newPriceType) => {
+    const newLines = [...(formData.lines || [])];
+    const line = { ...newLines[index] };
+
+    const prices = getProductPrices(line.product);
+    if (newPriceType === 'gros' && prices.wholesale_price <= 0) {
+      showNotification(`Ce produit n'a pas de prix de gros`, 'error');
+      return;
+    }
+
+    line.price_type = newPriceType;
+    line.unit_price = newPriceType === 'gros' ? prices.wholesale_price : prices.selling_price;
+    line.total = (parseFloat(line.quantity) || 0) * line.unit_price
+      - (parseFloat(line.discount) || 0);
+
+    newLines[index] = line;
     setFormData({ ...formData, lines: newLines });
   };
 
   // ============================================================
-  // GESTION DU FORMULAIRE DE LIGNE
+  // ✅ GESTION DU FORMULAIRE DE LIGNE
   // ============================================================
   const handleProductSelect = (productId) => {
     const idNum = productId ? parseInt(productId) : null;
-    const defaultPrice = idNum ? getPriceByType(idNum, lineForm.price_type) : 0;
+
+    let defaultPrice = 0;
+    let lotId = null;
+
+    if (idNum) {
+      defaultPrice = getPriceByType(idNum, lineForm.price_type);
+
+      const bestLot = getBestLotForProduct(idNum, lineForm.quantity || 1);
+      if (bestLot) {
+        lotId = bestLot.id;
+      }
+    }
 
     setLineForm({
       ...lineForm,
       product: productId,
-      unit_price: defaultPrice
+      unit_price: defaultPrice,
+      lot: lotId
     });
   };
 
@@ -589,7 +660,7 @@ const VenteFormContent = () => {
   );
 
   // ============================================================
-  // SOUMISSION
+  // ✅ SOUMISSION
   // ============================================================
   const handleSubmit = async (e) => {
     if (e) e.preventDefault();
@@ -652,10 +723,10 @@ const VenteFormContent = () => {
         lines: (formData.lines || []).map(line => ({
           product: line.product,
           lot: line.lot || null,
-          quantity: line.quantity,
-          unit_price: line.unit_price,
-          discount: line.discount,
-          tax_rate: line.tax_rate,
+          quantity: parseInt(line.quantity),
+          unit_price: parseFloat(line.unit_price),
+          discount: parseFloat(line.discount) || 0,
+          tax_rate: parseFloat(line.tax_rate) || 0,
           price_type: line.price_type || 'detail'
         }))
       };
@@ -671,7 +742,7 @@ const VenteFormContent = () => {
         });
       }
 
-      showNotification(isEdit ? 'Vente modifiée' : 'Vente créée', 'success');
+      showNotification(isEdit ? '✅ Vente modifiée' : '✅ Vente créée', 'success');
       setTimeout(() => navigate(`/ventes/${response.data.id}`), 1500);
 
     } catch (error) {
@@ -687,6 +758,8 @@ const VenteFormContent = () => {
         } else if (typeof data === 'object') {
           const firstError = Object.values(data).flat()[0];
           if (firstError) errorMessage = String(firstError);
+        } else if (typeof data === 'string') {
+          errorMessage = data;
         }
       }
       showNotification(errorMessage, 'error');
@@ -696,14 +769,14 @@ const VenteFormContent = () => {
   };
 
   // ============================================================
-  // RENDU
+  // ✅ RENDU
   // ============================================================
-  if (loading) {
+  if (loadingVente && isEdit) {
     return (
       <div className="flex items-center justify-center min-h-[calc(100vh-200px)] bg-gray-50">
         <div className="text-center space-y-4">
           <Loader2 className="animate-spin text-primary w-12 h-12 mx-auto" />
-          <p className="text-base font-medium text-gray-500">Chargement...</p>
+          <p className="text-base font-medium text-gray-500">Chargement de la vente...</p>
         </div>
       </div>
     );
@@ -795,9 +868,6 @@ const VenteFormContent = () => {
                   </option>
                 ))}
               </select>
-              {warehouses.length === 1 && (
-                <span className="text-xs text-success mt-1">✅ Entrepôt sélectionné automatiquement</span>
-              )}
             </div>
 
             <div className="form-control">
@@ -816,9 +886,14 @@ const VenteFormContent = () => {
 
         {/* PRODUITS */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-          <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-            <Package className="w-5 h-5 text-primary" /> Produits
-          </h2>
+          <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+            <h2 className="text-lg font-semibold flex items-center gap-2">
+              <Package className="w-5 h-5 text-primary" /> Produits
+            </h2>
+            <span className="text-sm text-gray-500">
+              {products.length} produit(s) disponible(s) — tapez une lettre dans la liste pour y accéder directement
+            </span>
+          </div>
 
           {selectedProduct && (
             <div className="flex flex-wrap items-center gap-4 mb-4 p-3 bg-blue-50 rounded-lg border border-blue-100 text-sm">
@@ -839,23 +914,30 @@ const VenteFormContent = () => {
             </div>
           )}
 
-          <div className="grid grid-cols-2 md:grid-cols-8 gap-3 mb-4 p-4 bg-gray-50 rounded-xl">
+          {/* ✅ Barre d'ajout - SANS CHAMP DE RECHERCHE */}
+          <div className="grid grid-cols-2 md:grid-cols-7 gap-3 mb-4 p-4 bg-gray-50 rounded-xl">
+            {/* ✅ SELECTEUR INTELLIGENT : tapez une lettre pour naviguer */}
             <div className="col-span-2">
+              <label className="label-text text-xs text-gray-500 mb-1 block">
+                💡 Tapez une lettre pour sauter au produit
+              </label>
               <select
                 className="select select-bordered w-full"
                 value={lineForm.product}
                 onChange={(e) => handleProductSelect(e.target.value)}
+                size="1"
               >
-                <option value="">Produit</option>
+                <option value="">-- Sélectionner un produit --</option>
                 {products.map(product => (
                   <option key={product.id} value={product.id}>
-                    {product.code} - {product.name}
+                    {product.name} ({product.code})
                   </option>
                 ))}
               </select>
             </div>
 
             <div>
+              <label className="label-text text-xs text-gray-500 mb-1 block">Quantité</label>
               <input
                 type="number"
                 placeholder="Qté"
@@ -867,25 +949,27 @@ const VenteFormContent = () => {
             </div>
 
             <div className="col-span-2">
+              <label className="label-text text-xs text-gray-500 mb-1 block">Type de prix</label>
               <div className="flex rounded-lg border border-gray-200 overflow-hidden h-[42px]">
                 <button
                   type="button"
                   className={`flex-1 px-3 py-2 text-sm font-medium ${lineForm.price_type === 'detail' ? 'bg-primary text-white' : 'bg-white text-gray-600'}`}
                   onClick={() => handlePriceTypeChange('detail')}
                 >
-                  Détail
+                  <Tag className="w-3 h-3 inline mr-1" /> Détail
                 </button>
                 <button
                   type="button"
                   className={`flex-1 px-3 py-2 text-sm font-medium ${lineForm.price_type === 'gros' ? 'bg-primary text-white' : 'bg-white text-gray-600'}`}
                   onClick={() => handlePriceTypeChange('gros')}
                 >
-                  Gros
+                  <Layers className="w-3 h-3 inline mr-1" /> Gros
                 </button>
               </div>
             </div>
 
             <div>
+              <label className="label-text text-xs text-gray-500 mb-1 block">Prix</label>
               <input
                 type="number"
                 placeholder="Prix"
@@ -897,6 +981,7 @@ const VenteFormContent = () => {
             </div>
 
             <div>
+              <label className="label-text text-xs text-gray-500 mb-1 block">Remise</label>
               <input
                 type="number"
                 placeholder="Remise"
@@ -908,6 +993,7 @@ const VenteFormContent = () => {
             </div>
 
             <div>
+              <label className="label-text text-xs text-gray-500 mb-1 block">&nbsp;</label>
               <button
                 type="button"
                 onClick={addLine}
@@ -920,13 +1006,14 @@ const VenteFormContent = () => {
             </div>
           </div>
 
+          {/* Table des lignes */}
           <div className="overflow-x-auto">
             <table className="table w-full">
               <thead className="bg-gray-50">
                 <tr>
                   <th>Produit</th>
                   <th className="text-center">Lot</th>
-                  <th className="text-center">Type</th>
+                  <th className="text-center">Type prix</th>
                   <th className="text-center">Qté</th>
                   <th className="text-right">Prix</th>
                   <th className="text-right">Remise</th>
@@ -937,12 +1024,22 @@ const VenteFormContent = () => {
               <tbody>
                 {(formData.lines || []).map((line, index) => (
                   <tr key={index} className="border-b hover:bg-gray-50">
-                    <td><span className="font-medium">{line.product_name}</span></td>
-                    <td className="text-center text-sm text-gray-500">{line.lot_number || '-'}</td>
+                    <td>
+                      <div className="font-medium">{line.product_name}</div>
+                      <div className="text-xs text-gray-400">{line.product_code}</div>
+                    </td>
+                    <td className="text-center text-sm text-gray-500">
+                      {line.lot_number || '-'}
+                    </td>
                     <td className="text-center">
-                      <span className={`badge ${line.price_type === 'gros' ? 'badge-primary' : 'badge-ghost'}`}>
+                      <button
+                        type="button"
+                        className={`badge cursor-pointer ${line.price_type === 'gros' ? 'badge-primary' : 'badge-ghost'}`}
+                        onClick={() => updateLinePriceType(index, line.price_type === 'gros' ? 'detail' : 'gros')}
+                        title="Cliquer pour changer le type de prix"
+                      >
                         {line.price_type === 'gros' ? 'Gros' : 'Détail'}
-                      </span>
+                      </button>
                     </td>
                     <td>
                       <input
@@ -996,6 +1093,7 @@ const VenteFormContent = () => {
             </table>
           </div>
 
+          {/* Totaux */}
           {formData.lines && formData.lines.length > 0 && (
             <div className="mt-4 border-t pt-4">
               <div className="flex justify-end">
@@ -1164,7 +1262,7 @@ const VenteFormContent = () => {
           </button>
           <button type="submit" className="btn btn-primary gap-2" disabled={saving}>
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-            {saving ? 'Enregistrement...' : 'Enregistrer la vente'}
+            {saving ? 'Enregistrement...' : isEdit ? 'Enregistrer les modifications' : 'Créer la vente'}
           </button>
         </div>
       </form>
@@ -1173,7 +1271,7 @@ const VenteFormContent = () => {
 };
 
 // ============================================================
-// WRAPPER avec ErrorBoundary
+// WRAPPER
 // ============================================================
 const VenteForm = () => (
   <ErrorBoundary>
