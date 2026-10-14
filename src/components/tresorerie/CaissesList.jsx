@@ -32,15 +32,25 @@ const CaissesList = () => {
 
   const getToken = () => localStorage.getItem('Token');
 
+  // ✅ NORMALISATION : tableau direct OU reponse paginee DRF
+  const normalizeData = (data) => {
+    if (Array.isArray(data)) return data;
+    if (data && Array.isArray(data.results)) return data.results;
+    return [];
+  };
+
   const fetchCaisses = async () => {
     setLoading(true);
     try {
       const token = getToken();
       let url = '/caisses/';
       const params = new URLSearchParams();
-      
+
+      // ✅ Charger un maximum de caisses d'un coup
+      params.append('page_size', '1000');
+
       if (typeFilter !== 'all') {
-        params.append('type', typeFilter);
+        params.append('type_caisse', typeFilter);  // ✅ Corrige 'type' -> 'type_caisse'
       }
       if (statusFilter !== 'all') {
         params.append('is_active', statusFilter === 'active' ? 'true' : 'false');
@@ -48,18 +58,19 @@ const CaissesList = () => {
       if (searchTerm) {
         params.append('search', searchTerm);
       }
-      
-      if (params.toString()) {
-        url += `?${params.toString()}`;
-      }
-      
+
+      url += `?${params.toString()}`;
+
       const response = await AxiosInstance.get(url, {
         headers: { 'Authorization': `Token ${token}` }
       });
-      setCaisses(response.data);
+
+      // ✅ NORMALISATION
+      setCaisses(normalizeData(response.data));
     } catch (error) {
       console.error('Erreur:', error);
       showNotification('Erreur de chargement des caisses', 'error');
+      setCaisses([]);  // ✅ Eviter undefined
     } finally {
       setLoading(false);
     }
@@ -76,7 +87,7 @@ const CaissesList = () => {
       await AxiosInstance.delete(`/caisses/${caisseToDelete.id}/`, {
         headers: { 'Authorization': `Token ${token}` }
       });
-      showNotification('Caisse supprimée avec succès', 'success');
+      showNotification('Caisse supprimee avec succes', 'success');
       fetchCaisses();
       setShowDeleteModal(false);
       setCaisseToDelete(null);
@@ -85,29 +96,32 @@ const CaissesList = () => {
     }
   };
 
-  const filteredCaisses = caisses.filter(caisse => {
-    const matchesSearch = !searchTerm || 
+  // ✅ Protection contre caisses non tableau
+  const safeCaisses = Array.isArray(caisses) ? caisses : [];
+
+  const filteredCaisses = safeCaisses.filter(caisse => {
+    const matchesSearch = !searchTerm ||
       (caisse.nom?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
       (caisse.code?.toLowerCase() || '').includes(searchTerm.toLowerCase());
-    
+
     const matchesType = typeFilter === 'all' || caisse.type_caisse === typeFilter;
-    const matchesStatus = statusFilter === 'all' || 
+    const matchesStatus = statusFilter === 'all' ||
       (statusFilter === 'active' ? caisse.is_active : !caisse.is_active);
-    
+
     return matchesSearch && matchesType && matchesStatus;
   });
 
-  const totalPages = Math.ceil(filteredCaisses.length / itemsPerPage);
+  const totalPages = Math.max(1, Math.ceil(filteredCaisses.length / itemsPerPage));
   const startIndex = (currentPage - 1) * itemsPerPage;
   const paginatedCaisses = filteredCaisses.slice(startIndex, startIndex + itemsPerPage);
 
   const stats = {
-    total: caisses.length,
-    actives: caisses.filter(c => c.is_active).length,
-    inactives: caisses.filter(c => !c.is_active).length,
-    sous_seuil: caisses.filter(c => c.est_sous_seuil_min).length,
-    sur_seuil: caisses.filter(c => c.est_sur_seuil_max).length,
-    solde_total: caisses.reduce((acc, c) => acc + parseFloat(c.solde_actuel || 0), 0)
+    total: safeCaisses.length,
+    actives: safeCaisses.filter(c => c.is_active).length,
+    inactives: safeCaisses.filter(c => !c.is_active).length,
+    sous_seuil: safeCaisses.filter(c => c.est_sous_seuil_min).length,
+    sur_seuil: safeCaisses.filter(c => c.est_sur_seuil_max).length,
+    solde_total: safeCaisses.reduce((acc, c) => acc + parseFloat(c.solde_actuel || 0), 0)
   };
 
   const getTypeBadge = (type) => {
@@ -122,7 +136,7 @@ const CaissesList = () => {
   };
 
   const getStatusBadge = (isActive) => {
-    return isActive 
+    return isActive
       ? <span className="badge badge-success gap-1"><Check className="w-3 h-3" /> Active</span>
       : <span className="badge badge-error gap-1"><X className="w-3 h-3" /> Inactive</span>;
   };
@@ -175,7 +189,7 @@ const CaissesList = () => {
               <p className="text-gray-600">Voulez-vous vraiment supprimer cette caisse ?</p>
               <p className="font-semibold text-error mt-2">{caisseToDelete.nom}</p>
               {parseFloat(caisseToDelete.solde_actuel || 0) > 0 && (
-                <p className="text-warning text-sm mt-2">⚠️ Solde: {parseFloat(caisseToDelete.solde_actuel || 0).toLocaleString()} FCFA</p>
+                <p className="text-warning text-sm mt-2">Solde: {parseFloat(caisseToDelete.solde_actuel || 0).toLocaleString()} FCFA</p>
               )}
             </div>
             <div className="flex gap-3 p-4 bg-gray-50">
@@ -188,7 +202,7 @@ const CaissesList = () => {
         </div>
       )}
 
-      {/* En-tête */}
+      {/* En-tete */}
       <div className="relative overflow-hidden bg-gradient-to-r from-primary/10 via-primary/5 to-transparent rounded-2xl p-5">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
@@ -199,7 +213,7 @@ const CaissesList = () => {
               <h1 className="text-2xl sm:text-3xl font-black text-primary">Caisses</h1>
             </div>
             <p className="text-sm text-gray-500 ml-1">
-              Gestion des caisses – {stats.total} caisse(s)
+              Gestion des caisses - {stats.total} caisse(s)
             </p>
           </div>
           <div className="flex flex-wrap gap-3">
@@ -252,12 +266,12 @@ const CaissesList = () => {
         <div className="flex flex-col gap-3">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input 
-              type="text" 
-              placeholder="Rechercher par nom, code..." 
-              className="input input-bordered w-full pl-9" 
-              value={searchTerm} 
-              onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }} 
+            <input
+              type="text"
+              placeholder="Rechercher par nom, code..."
+              className="input input-bordered w-full pl-9"
+              value={searchTerm}
+              onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
             />
           </div>
           <button onClick={() => setShowFilters(!showFilters)} className="btn btn-outline btn-sm sm:hidden gap-2">
@@ -277,7 +291,7 @@ const CaissesList = () => {
               <option value="inactive">Inactives</option>
             </select>
             <button className="btn btn-outline gap-2" onClick={() => { setTypeFilter('all'); setStatusFilter('all'); setSearchTerm(''); setCurrentPage(1); }}>
-              <RefreshCw className="w-4 h-4" /> Réinitialiser
+              <RefreshCw className="w-4 h-4" /> Reinitialiser
             </button>
           </div>
         </div>
@@ -303,7 +317,7 @@ const CaissesList = () => {
                   <td colSpan="6" className="text-center py-16">
                     <div className="flex flex-col items-center gap-3">
                       <Wallet className="w-16 h-16 text-gray-300" />
-                      <p className="text-gray-500 font-medium">Aucune caisse trouvée</p>
+                      <p className="text-gray-500 font-medium">Aucune caisse trouvee</p>
                       <button onClick={() => navigate('/caisses/nouveau')} className="btn btn-primary btn-sm gap-2">
                         <Plus className="w-4 h-4" /> Ajouter une caisse
                       </button>
@@ -386,7 +400,7 @@ const CaissesList = () => {
         {filteredCaisses.length > 0 && (
           <div className="px-6 py-4 border-t flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="text-sm text-gray-500">
-              Affichage de {startIndex + 1} à {Math.min(currentPage * itemsPerPage, filteredCaisses.length)} sur {filteredCaisses.length}
+              Affichage de {startIndex + 1} a {Math.min(currentPage * itemsPerPage, filteredCaisses.length)} sur {filteredCaisses.length}
             </div>
             <div className="flex items-center gap-3">
               <select className="select select-bordered select-sm" value={itemsPerPage} onChange={(e) => { setItemsPerPage(parseInt(e.target.value)); setCurrentPage(1); }}>

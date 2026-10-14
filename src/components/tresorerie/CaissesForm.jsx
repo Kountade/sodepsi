@@ -46,32 +46,34 @@ const CaissesForm = () => {
     }
   };
 
+  // ✅ NORMALISATION : tableau direct OU reponse paginee DRF
+  const normalizeData = (data) => {
+    if (Array.isArray(data)) return data;
+    if (data && Array.isArray(data.results)) return data.results;
+    return [];
+  };
+
   const showNotification = (message, type) => {
     setNotification({ message, type });
     setTimeout(() => setNotification(null), 4000);
   };
 
-  // Charger les utilisateurs avec gestion d'erreur
+  // Charger les utilisateurs
   const fetchUsers = async () => {
     setLoadingUsers(true);
     try {
       const token = getToken();
-      // Essayer plusieurs endpoints possibles
       let response;
       try {
         response = await AxiosInstance.get('/users/?is_active=true', {
           headers: { 'Authorization': `Token ${token}` }
         });
-        setUsers(response.data || []);
+        // ✅ NORMALISATION
+        setUsers(normalizeData(response.data));
       } catch (e) {
-        console.warn('Endpoint /users/ non disponible, utilisation de l\'utilisateur connecté');
-        // Fallback: utiliser l'utilisateur connecté uniquement
+        console.warn('Endpoint /users/ non disponible');
         const user = getUser();
-        if (user) {
-          setUsers([user]);
-        } else {
-          setUsers([]);
-        }
+        setUsers(user ? [user] : []);
       }
     } catch (error) {
       console.error('Erreur chargement utilisateurs:', error);
@@ -81,31 +83,37 @@ const CaissesForm = () => {
     }
   };
 
-  // Charger les entrepôts
+  // Charger les entrepots
   const fetchWarehouses = async () => {
     setLoadingWarehouses(true);
     try {
       const token = getToken();
-      const response = await AxiosInstance.get('/warehouses/?is_active=true', {
-        headers: { 'Authorization': `Token ${token}` }
-      });
-      setWarehouses(response.data || []);
+      // ✅ Utiliser is_active (plus courant) + page_size eleve
+      const response = await AxiosInstance.get(
+        '/warehouses/?is_active=true&page_size=1000',
+        { headers: { 'Authorization': `Token ${token}` } }
+      );
+      // ✅ NORMALISATION
+      setWarehouses(normalizeData(response.data));
     } catch (error) {
-      console.error('Erreur chargement entrepôts:', error);
-      showNotification('Erreur de chargement des entrepôts', 'error');
+      console.error('Erreur chargement entrepots:', error);
+      showNotification('Erreur de chargement des entrepots', 'error');
+      setWarehouses([]);
     } finally {
       setLoadingWarehouses(false);
     }
   };
 
-  // Générer un code automatique en création
+  // Generer un code automatique en creation
   const generateCaisseCode = async () => {
     try {
       const token = getToken();
-      const response = await AxiosInstance.get('/caisses/', {
-        headers: { 'Authorization': `Token ${token}` }
-      });
-      const caisses = response.data || [];
+      const response = await AxiosInstance.get(
+        '/caisses/?page_size=1000',
+        { headers: { 'Authorization': `Token ${token}` } }
+      );
+      // ✅ NORMALISATION
+      const caisses = normalizeData(response.data);
       const count = caisses.length + 1;
       return `CAISSE-${String(count).padStart(4, '0')}`;
     } catch {
@@ -113,7 +121,7 @@ const CaissesForm = () => {
     }
   };
 
-  // Charger la caisse en édition
+  // Charger la caisse en edition
   const fetchCaisse = async () => {
     if (!isEdit) {
       const code = await generateCaisseCode();
@@ -145,7 +153,7 @@ const CaissesForm = () => {
       });
     } catch (error) {
       console.error('Erreur chargement caisse:', error);
-      showNotification('Erreur de chargement des données', 'error');
+      showNotification('Erreur de chargement des donnees', 'error');
       setTimeout(() => navigate('/caisses'), 2000);
     } finally {
       setLoading(false);
@@ -163,7 +171,7 @@ const CaissesForm = () => {
     const { name, value, type, checked } = e.target;
     setFormData(prev => ({
       ...prev,
-      [name]: type === 'checkbox' ? checked : 
+      [name]: type === 'checkbox' ? checked :
               type === 'number' ? (value === '' ? '' : parseFloat(value) || 0) : value
     }));
     if (errors[name]) {
@@ -173,34 +181,34 @@ const CaissesForm = () => {
 
   const validate = () => {
     const newErrors = {};
-    
+
     if (!formData.code || !formData.code.trim()) {
       newErrors.code = 'Le code est requis';
     }
-    
+
     if (!formData.nom || !formData.nom.trim()) {
       newErrors.nom = 'Le nom est requis';
     }
-    
+
     if (!formData.warehouse) {
-      newErrors.warehouse = "L'entrepôt est requis";
+      newErrors.warehouse = "L'entrepot est requis";
     }
 
     const soldeInitial = parseFloat(formData.solde_initial) || 0;
     if (soldeInitial < 0) {
-      newErrors.solde_initial = 'Le solde initial ne peut pas être négatif';
+      newErrors.solde_initial = 'Le solde initial ne peut pas etre negatif';
     }
 
     const seuilMin = parseFloat(formData.seuil_min) || 0;
     const seuilMax = parseFloat(formData.seuil_max) || 0;
     if (seuilMin < 0) {
-      newErrors.seuil_min = 'Le seuil minimum ne peut pas être négatif';
+      newErrors.seuil_min = 'Le seuil minimum ne peut pas etre negatif';
     }
     if (seuilMax < 0) {
-      newErrors.seuil_max = 'Le seuil maximum ne peut pas être négatif';
+      newErrors.seuil_max = 'Le seuil maximum ne peut pas etre negatif';
     }
     if (seuilMin > seuilMax && seuilMax > 0) {
-      newErrors.seuil_min = 'Le seuil minimum ne peut pas être supérieur au maximum';
+      newErrors.seuil_min = 'Le seuil minimum ne peut pas etre superieur au maximum';
     }
 
     setErrors(newErrors);
@@ -219,8 +227,7 @@ const CaissesForm = () => {
     try {
       const token = getToken();
       const user = getUser();
-      
-      // Préparer les données à envoyer
+
       const dataToSend = {
         code: formData.code.trim(),
         nom: formData.nom.trim(),
@@ -236,12 +243,11 @@ const CaissesForm = () => {
         description: formData.description || '',
       };
 
-      // Ajouter created_by si disponible
       if (user && user.id) {
         dataToSend.created_by = user.id;
       }
 
-      console.log('Données envoyées:', dataToSend);
+      console.log('Donnees envoyees:', dataToSend);
 
       const url = isEdit ? `/caisses/${id}/` : '/caisses/';
       const method = isEdit ? 'put' : 'post';
@@ -251,7 +257,7 @@ const CaissesForm = () => {
       });
 
       showNotification(
-        isEdit ? 'Caisse modifiée avec succès' : 'Caisse créée avec succès',
+        isEdit ? 'Caisse modifiee avec succes' : 'Caisse creee avec succes',
         'success'
       );
 
@@ -260,13 +266,13 @@ const CaissesForm = () => {
       }, 1500);
 
     } catch (error) {
-      console.error('Erreur complète:', error);
+      console.error('Erreur complete:', error);
       console.error('Response data:', error.response?.data);
-      
+
       if (error.response?.data) {
         const backendErrors = error.response.data;
         const newErrors = {};
-        
+
         if (typeof backendErrors === 'string') {
           showNotification(backendErrors, 'error');
         } else if (Array.isArray(backendErrors)) {
@@ -294,7 +300,7 @@ const CaissesForm = () => {
             }
           });
         }
-        
+
         setErrors(newErrors);
         showNotification('Erreur lors de l\'enregistrement', 'error');
       } else {
@@ -351,8 +357,8 @@ const CaissesForm = () => {
         <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
             <div className="flex items-center gap-4">
-              <button 
-                onClick={() => navigate('/caisses')} 
+              <button
+                onClick={() => navigate('/caisses')}
                 className="btn btn-ghost btn-sm gap-2"
                 disabled={submitting}
               >
@@ -367,7 +373,7 @@ const CaissesForm = () => {
                     {isEdit ? 'Modifier la caisse' : 'Nouvelle caisse'}
                   </h1>
                   <p className="text-sm text-gray-500">
-                    {isEdit ? 'Modifiez les informations de la caisse' : 'Créez une nouvelle caisse'}
+                    {isEdit ? 'Modifiez les informations de la caisse' : 'Creez une nouvelle caisse'}
                   </p>
                 </div>
               </div>
@@ -380,11 +386,11 @@ const CaissesForm = () => {
       <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
         <form onSubmit={handleSubmit} className="space-y-6">
 
-          {/* SECTION : Informations générales */}
+          {/* SECTION : Informations generales */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
             <div className="bg-gray-50 px-6 py-3 border-b">
               <h3 className="font-semibold flex items-center gap-2">
-                <Layers className="w-4 h-4 text-primary" /> Informations générales
+                <Layers className="w-4 h-4 text-primary" /> Informations generales
               </h3>
             </div>
             <div className="p-6">
@@ -441,10 +447,10 @@ const CaissesForm = () => {
                   </select>
                 </div>
 
-                {/* Entrepôt */}
+                {/* Entrepot */}
                 <div>
                   <label className="label text-sm font-medium text-gray-700">
-                    Entrepôt <span className="text-error">*</span>
+                    Entrepot <span className="text-error">*</span>
                   </label>
                   <select
                     name="warehouse"
@@ -453,7 +459,7 @@ const CaissesForm = () => {
                     className={`select select-bordered w-full ${errors.warehouse ? 'select-error' : ''}`}
                     disabled={loadingWarehouses || submitting}
                   >
-                    <option value="">Sélectionner un entrepôt</option>
+                    <option value="">Selectionner un entrepot</option>
                     {warehouses.map(w => (
                       <option key={w.id} value={w.id}>{w.name} ({w.code})</option>
                     ))}
@@ -473,7 +479,7 @@ const CaissesForm = () => {
                     className="select select-bordered w-full"
                     disabled={loadingUsers || submitting}
                   >
-                    <option value="">Sélectionner un responsable</option>
+                    <option value="">Selectionner un responsable</option>
                     {users.map(user => (
                       <option key={user.id} value={user.id}>
                         {user.username} {user.first_name && `(${user.first_name} ${user.last_name})`}
@@ -504,11 +510,11 @@ const CaissesForm = () => {
             </div>
           </div>
 
-          {/* SECTION : Paramètres financiers */}
+          {/* SECTION : Parametres financiers */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
             <div className="bg-gray-50 px-6 py-3 border-b">
               <h3 className="font-semibold flex items-center gap-2">
-                <DollarSign className="w-4 h-4 text-primary" /> Paramètres financiers
+                <DollarSign className="w-4 h-4 text-primary" /> Parametres financiers
               </h3>
             </div>
             <div className="p-6">
@@ -617,7 +623,7 @@ const CaissesForm = () => {
                     className="checkbox checkbox-primary"
                     disabled={submitting}
                   />
-                  <label className="text-sm font-medium text-gray-700">Caisse par défaut</label>
+                  <label className="text-sm font-medium text-gray-700">Caisse par defaut</label>
                 </div>
               </div>
 
@@ -660,7 +666,7 @@ const CaissesForm = () => {
               ) : (
                 <>
                   <Save className="w-4 h-4" />
-                  {isEdit ? 'Modifier' : 'Créer'}
+                  {isEdit ? 'Modifier' : 'Creer'}
                 </>
               )}
             </button>
