@@ -19,34 +19,67 @@ const CompteBancaireDetail = () => {
 
   const getToken = () => localStorage.getItem('Token');
 
+  // ============================================================
+  // FORMATAGE DES NOMBRES
+  // ============================================================
+  const formatNumber = (value, devise = 'XOF') => {
+    const num = parseFloat(value);
+    if (isNaN(num)) return `0 ${devise}`;
+    return `${num.toLocaleString('fr-FR')} ${devise}`;
+  };
+
+  // ============================================================
+  // CHARGEMENT DU COMPTE
+  // ============================================================
   useEffect(() => {
+    let isMounted = true;
+
     const fetchCompte = async () => {
       setLoading(true);
       setError(null);
       try {
         const token = getToken();
+        if (!token) {
+          navigate('/login');
+          return;
+        }
+
         const response = await AxiosInstance.get(`/comptes-bancaires/${id}/`, {
           headers: { 'Authorization': `Token ${token}` }
         });
+
+        if (!isMounted) return;
         setCompte(response.data);
       } catch (err) {
         console.error('Erreur chargement compte:', err);
-        setError(
-          err.response?.status === 404
-            ? 'Compte bancaire introuvable'
-            : 'Erreur de chargement des données'
-        );
-        if (err.response?.status === 401) {
+
+        if (!isMounted) return;
+
+        if (err.response?.status === 404) {
+          setError('Compte bancaire introuvable');
+        } else if (err.response?.status === 401 || err.response?.status === 403) {
           navigate('/login');
+          return;
+        } else {
+          setError('Erreur de chargement des donnees');
         }
       } finally {
-        setLoading(false);
+        if (isMounted) setLoading(false);
       }
     };
 
-    fetchCompte();
+    if (id) {
+      fetchCompte();
+    }
+
+    return () => {
+      isMounted = false;
+    };
   }, [id, navigate]);
 
+  // ============================================================
+  // CHARGEMENT
+  // ============================================================
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[calc(100vh-200px)] bg-gray-50">
@@ -58,6 +91,9 @@ const CompteBancaireDetail = () => {
     );
   }
 
+  // ============================================================
+  // ERREUR
+  // ============================================================
   if (error) {
     return (
       <div className="flex items-center justify-center min-h-[calc(100vh-200px)] bg-gray-50">
@@ -68,24 +104,56 @@ const CompteBancaireDetail = () => {
             onClick={() => navigate('/comptes-bancaires')}
             className="btn btn-primary gap-2"
           >
-            <ArrowLeft className="w-4 h-4" /> Retour à la liste
+            <ArrowLeft className="w-4 h-4" /> Retour a la liste
           </button>
         </div>
       </div>
     );
   }
 
+  // ============================================================
+  // COMPTE NULL
+  // ============================================================
   if (!compte) {
     return (
       <div className="flex items-center justify-center min-h-[calc(100vh-200px)] bg-gray-50">
-        <p className="text-gray-500">Aucune donnée disponible</p>
+        <div className="text-center space-y-4">
+          <AlertCircle className="text-warning w-16 h-16 mx-auto" />
+          <p className="text-gray-500">Aucune donnee disponible</p>
+          <button
+            onClick={() => navigate('/comptes-bancaires')}
+            className="btn btn-primary gap-2"
+          >
+            <ArrowLeft className="w-4 h-4" /> Retour a la liste
+          </button>
+        </div>
       </div>
     );
   }
 
+  // ============================================================
+  // VALEURS DERIVEES (safe)
+  // ============================================================
+  const devise = compte.devise || 'XOF';
+
+  const warehouseLabel = compte.warehouse_name
+    ? `${compte.warehouse_name}${compte.warehouse_code ? ` (${compte.warehouse_code})` : ''}`
+    : (typeof compte.warehouse === 'object' && compte.warehouse !== null
+        ? compte.warehouse.name
+        : compte.warehouse || 'Non defini');
+
+  const createdByLabel = compte.created_by_name
+    || (typeof compte.created_by === 'object' && compte.created_by !== null
+        ? compte.created_by.full_name || compte.created_by.username
+        : compte.created_by)
+    || '-';
+
+  // ============================================================
+  // RENDU
+  // ============================================================
   return (
     <div className="w-full min-h-screen bg-gray-50">
-      {/* Header */}
+      {/* ================= HEADER ================= */}
       <div className="w-full bg-gradient-to-r from-primary/10 via-primary/5 to-transparent border-b border-primary/10">
         <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
@@ -102,10 +170,10 @@ const CompteBancaireDetail = () => {
                 </div>
                 <div>
                   <h1 className="text-2xl font-bold text-gray-800">
-                    {compte.nom}
+                    {compte.nom || 'Compte sans nom'}
                   </h1>
                   <p className="text-sm text-gray-500">
-                    {compte.banque} • {compte.code} • {compte.warehouse_name || 'Entrepôt inconnu'}
+                    {compte.banque || '-'} • {compte.code || '-'} • {warehouseLabel}
                   </p>
                 </div>
               </div>
@@ -122,44 +190,43 @@ const CompteBancaireDetail = () => {
         </div>
       </div>
 
-      {/* Contenu */}
+      {/* ================= CONTENU ================= */}
       <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
         <div className="space-y-6">
 
-          {/* Carte 1 : Informations générales */}
+          {/* ---------- Carte 1 : Informations generales ---------- */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
             <div className="bg-gray-50 px-6 py-3 border-b">
               <h3 className="font-semibold flex items-center gap-2">
-                <Layers className="w-4 h-4 text-primary" /> Informations générales
+                <Layers className="w-4 h-4 text-primary" />
+                Informations generales
               </h3>
             </div>
             <div className="p-6">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 <div>
                   <p className="text-sm text-gray-500">Code</p>
-                  <p className="font-medium">{compte.code}</p>
+                  <p className="font-medium">{compte.code || '-'}</p>
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">Banque</p>
-                  <p className="font-medium">{compte.banque}</p>
+                  <p className="font-medium">{compte.banque || '-'}</p>
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">Nom du compte</p>
-                  <p className="font-medium">{compte.nom}</p>
+                  <p className="font-medium">{compte.nom || '-'}</p>
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">Type</p>
-                  <p className="font-medium capitalize">{compte.type_compte}</p>
+                  <p className="font-medium capitalize">{compte.type_compte || '-'}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-gray-500">Entrepôt</p>
-                  <p className="font-medium">
-                    {compte.warehouse_name || compte.warehouse || 'Non défini'}
-                  </p>
+                  <p className="text-sm text-gray-500">Entrepot</p>
+                  <p className="font-medium">{warehouseLabel}</p>
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">Devise</p>
-                  <p className="font-medium">{compte.devise || 'XOF'}</p>
+                  <p className="font-medium">{devise}</p>
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">Statut</p>
@@ -176,7 +243,7 @@ const CompteBancaireDetail = () => {
                   </p>
                 </div>
                 <div>
-                  <p className="text-sm text-gray-500">Compte par défaut</p>
+                  <p className="text-sm text-gray-500">Compte par defaut</p>
                   <p className="font-medium">
                     {compte.is_default ? (
                       <span className="badge badge-primary">Oui</span>
@@ -188,25 +255,28 @@ const CompteBancaireDetail = () => {
                 <div>
                   <p className="text-sm text-gray-500">Date d'ouverture</p>
                   <p className="font-medium">
-                    {compte.date_ouverture ? new Date(compte.date_ouverture).toLocaleDateString() : '-'}
+                    {compte.date_ouverture
+                      ? new Date(compte.date_ouverture).toLocaleDateString('fr-FR')
+                      : '-'}
                   </p>
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Carte 2 : Détails bancaires */}
+          {/* ---------- Carte 2 : Details bancaires ---------- */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
             <div className="bg-gray-50 px-6 py-3 border-b">
               <h3 className="font-semibold flex items-center gap-2">
-                <CreditCard className="w-4 h-4 text-primary" /> Détails bancaires
+                <CreditCard className="w-4 h-4 text-primary" />
+                Details bancaires
               </h3>
             </div>
             <div className="p-6">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
-                  <p className="text-sm text-gray-500">Numéro de compte</p>
-                  <p className="font-mono font-medium">{compte.numero_compte}</p>
+                  <p className="text-sm text-gray-500">Numero de compte</p>
+                  <p className="font-mono font-medium">{compte.numero_compte || '-'}</p>
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">IBAN</p>
@@ -220,11 +290,12 @@ const CompteBancaireDetail = () => {
             </div>
           </div>
 
-          {/* Carte 3 : Solde et métadonnées */}
+          {/* ---------- Carte 3 : Solde et metadonnees ---------- */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
             <div className="bg-gray-50 px-6 py-3 border-b">
               <h3 className="font-semibold flex items-center gap-2">
-                <DollarSign className="w-4 h-4 text-primary" /> Solde et métadonnées
+                <DollarSign className="w-4 h-4 text-primary" />
+                Solde et metadonnees
               </h3>
             </div>
             <div className="p-6">
@@ -232,32 +303,44 @@ const CompteBancaireDetail = () => {
                 <div>
                   <p className="text-sm text-gray-500">Solde initial</p>
                   <p className="font-medium text-primary">
-                    {Number(compte.solde_initial).toLocaleString()} {compte.devise || 'XOF'}
+                    {formatNumber(compte.solde_initial, devise)}
                   </p>
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">Solde actuel</p>
                   <p className="font-medium text-success text-lg">
-                    {Number(compte.solde_actuel).toLocaleString()} {compte.devise || 'XOF'}
+                    {formatNumber(compte.solde_actuel, devise)}
                   </p>
                 </div>
                 <div>
-                  <p className="text-sm text-gray-500">Créé le</p>
+                  <p className="text-sm text-gray-500">Cree le</p>
                   <p className="font-medium">
-                    {compte.created_at ? new Date(compte.created_at).toLocaleDateString() : '-'}
+                    {compte.created_at
+                      ? new Date(compte.created_at).toLocaleDateString('fr-FR')
+                      : '-'}
                   </p>
                 </div>
                 <div>
-                  <p className="text-sm text-gray-500">Dernière modification</p>
+                  <p className="text-sm text-gray-500">Derniere modification</p>
                   <p className="font-medium">
-                    {compte.updated_at ? new Date(compte.updated_at).toLocaleDateString() : '-'}
+                    {compte.updated_at
+                      ? new Date(compte.updated_at).toLocaleDateString('fr-FR')
+                      : '-'}
                   </p>
                 </div>
               </div>
+
               {compte.description && (
-                <div className="mt-4 pt-4 border-t">
+                <div className="mt-4 pt-4 border-t border-gray-100">
                   <p className="text-sm text-gray-500">Description</p>
                   <p className="font-medium">{compte.description}</p>
+                </div>
+              )}
+
+              {createdByLabel !== '-' && (
+                <div className="mt-4 pt-4 border-t border-gray-100">
+                  <p className="text-sm text-gray-500">Cree par</p>
+                  <p className="font-medium">{createdByLabel}</p>
                 </div>
               )}
             </div>

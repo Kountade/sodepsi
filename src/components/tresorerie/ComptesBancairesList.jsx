@@ -31,15 +31,25 @@ const ComptesBancairesList = () => {
 
   const getToken = () => localStorage.getItem('Token');
 
+  // ✅ NORMALISATION : tableau direct OU reponse paginee DRF
+  const normalizeData = (data) => {
+    if (Array.isArray(data)) return data;
+    if (data && Array.isArray(data.results)) return data.results;
+    return [];
+  };
+
   const fetchComptes = async () => {
     setLoading(true);
     try {
       const token = getToken();
       let url = '/comptes-bancaires/';
       const params = new URLSearchParams();
-      
+
+      // ✅ Charger un maximum de comptes d'un coup
+      params.append('page_size', '500');
+
       if (typeFilter !== 'all') {
-        params.append('type', typeFilter);
+        params.append('type_compte', typeFilter);  // ✅ 'type' -> 'type_compte'
       }
       if (statusFilter !== 'all') {
         params.append('is_active', statusFilter === 'active' ? 'true' : 'false');
@@ -47,18 +57,19 @@ const ComptesBancairesList = () => {
       if (searchTerm) {
         params.append('search', searchTerm);
       }
-      
-      if (params.toString()) {
-        url += `?${params.toString()}`;
-      }
-      
+
+      url += `?${params.toString()}`;
+
       const response = await AxiosInstance.get(url, {
         headers: { 'Authorization': `Token ${token}` }
       });
-      setComptes(response.data);
+
+      // ✅ NORMALISATION
+      setComptes(normalizeData(response.data));
     } catch (error) {
       console.error('Erreur:', error);
       showNotification('Erreur de chargement des comptes bancaires', 'error');
+      setComptes([]);
     } finally {
       setLoading(false);
     }
@@ -75,7 +86,7 @@ const ComptesBancairesList = () => {
       await AxiosInstance.delete(`/comptes-bancaires/${compteToDelete.id}/`, {
         headers: { 'Authorization': `Token ${token}` }
       });
-      showNotification('Compte bancaire supprimé avec succès', 'success');
+      showNotification('Compte bancaire supprime avec succes', 'success');
       fetchComptes();
       setShowDeleteModal(false);
       setCompteToDelete(null);
@@ -84,42 +95,45 @@ const ComptesBancairesList = () => {
     }
   };
 
-  const filteredComptes = comptes.filter(compte => {
-    const matchesSearch = !searchTerm || 
+  // ✅ Protection contre comptes non tableau
+  const safeComptes = Array.isArray(comptes) ? comptes : [];
+
+  const filteredComptes = safeComptes.filter(compte => {
+    const matchesSearch = !searchTerm ||
       (compte.nom?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
       (compte.banque?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
       (compte.numero_compte?.toLowerCase() || '').includes(searchTerm.toLowerCase());
-    
+
     const matchesType = typeFilter === 'all' || compte.type_compte === typeFilter;
-    const matchesStatus = statusFilter === 'all' || 
+    const matchesStatus = statusFilter === 'all' ||
       (statusFilter === 'active' ? compte.is_active : !compte.is_active);
-    
+
     return matchesSearch && matchesType && matchesStatus;
   });
 
-  const totalPages = Math.ceil(filteredComptes.length / itemsPerPage);
+  const totalPages = Math.max(1, Math.ceil(filteredComptes.length / itemsPerPage));
   const startIndex = (currentPage - 1) * itemsPerPage;
   const paginatedComptes = filteredComptes.slice(startIndex, startIndex + itemsPerPage);
 
   const stats = {
-    total: comptes.length,
-    actifs: comptes.filter(c => c.is_active).length,
-    inactifs: comptes.filter(c => !c.is_active).length,
-    solde_total: comptes.reduce((acc, c) => acc + parseFloat(c.solde_actuel || 0), 0)
+    total: safeComptes.length,
+    actifs: safeComptes.filter(c => c.is_active).length,
+    inactifs: safeComptes.filter(c => !c.is_active).length,
+    solde_total: safeComptes.reduce((acc, c) => acc + parseFloat(c.solde_actuel || 0), 0)
   };
 
   const getTypeBadge = (type) => {
     const configs = {
       courant: { label: 'Courant', className: 'badge-primary' },
-      epargne: { label: 'Épargne', className: 'badge-success' },
-      bloque: { label: 'Bloqué', className: 'badge-warning' }
+      epargne: { label: 'Epargne', className: 'badge-success' },
+      bloque: { label: 'Bloque', className: 'badge-warning' }
     };
     const config = configs[type] || { label: type, className: 'badge-ghost' };
     return <span className={`badge ${config.className}`}>{config.label}</span>;
   };
 
   const getStatusBadge = (isActive) => {
-    return isActive 
+    return isActive
       ? <span className="badge badge-success gap-1"><Check className="w-3 h-3" /> Actif</span>
       : <span className="badge badge-error gap-1"><X className="w-3 h-3" /> Inactif</span>;
   };
@@ -166,7 +180,7 @@ const ComptesBancairesList = () => {
               <p className="text-gray-600">Voulez-vous vraiment supprimer ce compte bancaire ?</p>
               <p className="font-semibold text-error mt-2">{compteToDelete.nom} - {compteToDelete.banque}</p>
               {parseFloat(compteToDelete.solde_actuel || 0) > 0 && (
-                <p className="text-warning text-sm mt-2">⚠️ Solde: {parseFloat(compteToDelete.solde_actuel || 0).toLocaleString()} FCFA</p>
+                <p className="text-warning text-sm mt-2">Solde: {parseFloat(compteToDelete.solde_actuel || 0).toLocaleString()} FCFA</p>
               )}
             </div>
             <div className="flex gap-3 p-4 bg-gray-50">
@@ -179,7 +193,7 @@ const ComptesBancairesList = () => {
         </div>
       )}
 
-      {/* En-tête */}
+      {/* En-tete */}
       <div className="relative overflow-hidden bg-gradient-to-r from-primary/10 via-primary/5 to-transparent rounded-2xl p-5">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
@@ -190,7 +204,7 @@ const ComptesBancairesList = () => {
               <h1 className="text-2xl sm:text-3xl font-black text-primary">Comptes Bancaires</h1>
             </div>
             <p className="text-sm text-gray-500 ml-1">
-              Gestion des comptes bancaires – {stats.total} compte(s)
+              Gestion des comptes bancaires - {stats.total} compte(s)
             </p>
           </div>
           <div className="flex flex-wrap gap-3">
@@ -237,12 +251,12 @@ const ComptesBancairesList = () => {
         <div className="flex flex-col gap-3">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input 
-              type="text" 
-              placeholder="Rechercher par nom, banque, numéro de compte..." 
-              className="input input-bordered w-full pl-9" 
-              value={searchTerm} 
-              onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }} 
+            <input
+              type="text"
+              placeholder="Rechercher par nom, banque, numero de compte..."
+              className="input input-bordered w-full pl-9"
+              value={searchTerm}
+              onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
             />
           </div>
           <button onClick={() => setShowFilters(!showFilters)} className="btn btn-outline btn-sm sm:hidden gap-2">
@@ -252,8 +266,8 @@ const ComptesBancairesList = () => {
             <select className="select select-bordered w-full" value={typeFilter} onChange={(e) => { setTypeFilter(e.target.value); setCurrentPage(1); }}>
               <option value="all">Tous les types</option>
               <option value="courant">Courants</option>
-              <option value="epargne">Épargne</option>
-              <option value="bloque">Bloqués</option>
+              <option value="epargne">Epargne</option>
+              <option value="bloque">Bloques</option>
             </select>
             <select className="select select-bordered w-full" value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(1); }}>
               <option value="all">Tous les statuts</option>
@@ -261,7 +275,7 @@ const ComptesBancairesList = () => {
               <option value="inactive">Inactifs</option>
             </select>
             <button className="btn btn-outline gap-2" onClick={() => { setTypeFilter('all'); setStatusFilter('all'); setSearchTerm(''); setCurrentPage(1); }}>
-              <RefreshCw className="w-4 h-4" /> Réinitialiser
+              <RefreshCw className="w-4 h-4" /> Reinitialiser
             </button>
           </div>
         </div>
@@ -287,7 +301,7 @@ const ComptesBancairesList = () => {
                   <td colSpan="6" className="text-center py-16">
                     <div className="flex flex-col items-center gap-3">
                       <Landmark className="w-16 h-16 text-gray-300" />
-                      <p className="text-gray-500 font-medium">Aucun compte bancaire trouvé</p>
+                      <p className="text-gray-500 font-medium">Aucun compte bancaire trouve</p>
                       <button onClick={() => navigate('/comptes-bancaires/nouveau')} className="btn btn-primary btn-sm gap-2">
                         <Plus className="w-4 h-4" /> Ajouter un compte
                       </button>
@@ -349,7 +363,7 @@ const ComptesBancairesList = () => {
         {filteredComptes.length > 0 && (
           <div className="px-6 py-4 border-t flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="text-sm text-gray-500">
-              Affichage de {startIndex + 1} à {Math.min(currentPage * itemsPerPage, filteredComptes.length)} sur {filteredComptes.length}
+              Affichage de {startIndex + 1} a {Math.min(currentPage * itemsPerPage, filteredComptes.length)} sur {filteredComptes.length}
             </div>
             <div className="flex items-center gap-3">
               <select className="select select-bordered select-sm" value={itemsPerPage} onChange={(e) => { setItemsPerPage(parseInt(e.target.value)); setCurrentPage(1); }}>

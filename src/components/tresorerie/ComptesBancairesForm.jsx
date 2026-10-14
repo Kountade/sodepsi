@@ -39,19 +39,27 @@ const CompteBancaireForm = () => {
 
   const getToken = () => localStorage.getItem('Token');
 
+  // ✅ NORMALISATION : tableau direct OU reponse paginee DRF
+  const normalizeData = (data) => {
+    if (Array.isArray(data)) return data;
+    if (data && Array.isArray(data.results)) return data.results;
+    return [];
+  };
+
   const showNotification = (message, type) => {
     setNotification({ message, type });
     setTimeout(() => setNotification(null), 4000);
   };
 
-  // Générer un code automatique
+  // Generer un code automatique
   const generateCompteCode = async () => {
     try {
       const token = getToken();
-      const response = await AxiosInstance.get('/comptes-bancaires/', {
-        headers: { 'Authorization': `Token ${token}` }
-      });
-      const comptes = response.data || [];
+      const response = await AxiosInstance.get(
+        '/comptes-bancaires/?page_size=1000',
+        { headers: { 'Authorization': `Token ${token}` } }
+      );
+      const comptes = normalizeData(response.data);
       const count = comptes.length + 1;
       return `CPT-${String(count).padStart(4, '0')}`;
     } catch {
@@ -59,24 +67,27 @@ const CompteBancaireForm = () => {
     }
   };
 
-  // Charger les entrepôts
+  // Charger les entrepots
   const fetchWarehouses = async () => {
     setLoadingWarehouses(true);
     try {
       const token = getToken();
-      const response = await AxiosInstance.get('/warehouses/?is_active=true', {
-        headers: { 'Authorization': `Token ${token}` }
-      });
-      setWarehouses(response.data || []);
+      const response = await AxiosInstance.get(
+        '/warehouses/?is_active=true&page_size=1000',
+        { headers: { 'Authorization': `Token ${token}` } }
+      );
+      // ✅ NORMALISATION
+      setWarehouses(normalizeData(response.data));
     } catch (error) {
-      console.error('Erreur chargement entrepôts:', error);
-      showNotification('Erreur de chargement des entrepôts', 'error');
+      console.error('Erreur chargement entrepots:', error);
+      showNotification('Erreur de chargement des entrepots', 'error');
+      setWarehouses([]);
     } finally {
       setLoadingWarehouses(false);
     }
   };
 
-  // Charger le compte en édition
+  // Charger le compte en edition
   const fetchCompte = async () => {
     if (!isEdit) {
       const code = await generateCompteCode();
@@ -109,7 +120,7 @@ const CompteBancaireForm = () => {
       });
     } catch (error) {
       console.error('Erreur chargement compte:', error);
-      showNotification('Erreur de chargement des données', 'error');
+      showNotification('Erreur de chargement des donnees', 'error');
       setTimeout(() => navigate('/comptes-bancaires'), 2000);
     } finally {
       setLoading(false);
@@ -119,6 +130,7 @@ const CompteBancaireForm = () => {
   useEffect(() => {
     fetchWarehouses();
     fetchCompte();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   const handleChange = (e) => {
@@ -137,11 +149,11 @@ const CompteBancaireForm = () => {
     if (!formData.banque.trim()) newErrors.banque = 'La banque est requise';
     if (!formData.code.trim()) newErrors.code = 'Le code est requis';
     if (!formData.nom.trim()) newErrors.nom = 'Le nom est requis';
-    if (!formData.warehouse) newErrors.warehouse = "L'entrepôt est requis";
-    if (!formData.numero_compte.trim()) newErrors.numero_compte = 'Le numéro de compte est requis';
+    if (!formData.warehouse) newErrors.warehouse = "L'entrepot est requis";
+    if (!formData.numero_compte.trim()) newErrors.numero_compte = 'Le numero de compte est requis';
 
     const soldeInitial = parseFloat(formData.solde_initial) || 0;
-    if (soldeInitial < 0) newErrors.solde_initial = 'Le solde initial ne peut pas être négatif';
+    if (soldeInitial < 0) newErrors.solde_initial = 'Le solde initial ne peut pas etre negatif';
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -171,7 +183,7 @@ const CompteBancaireForm = () => {
       });
 
       showNotification(
-        isEdit ? 'Compte modifié avec succès' : 'Compte créé avec succès',
+        isEdit ? 'Compte modifie avec succes' : 'Compte cree avec succes',
         'success'
       );
 
@@ -192,7 +204,7 @@ const CompteBancaireForm = () => {
         setErrors(newErrors);
         showNotification('Erreur lors de l\'enregistrement', 'error');
       } else {
-        showNotification('Erreur réseau', 'error');
+        showNotification('Erreur reseau', 'error');
       }
     } finally {
       setSubmitting(false);
@@ -201,8 +213,8 @@ const CompteBancaireForm = () => {
 
   const typeOptions = [
     { value: 'courant', label: 'Compte courant' },
-    { value: 'epargne', label: 'Compte épargne' },
-    { value: 'bloque', label: 'Compte bloqué' }
+    { value: 'epargne', label: 'Compte epargne' },
+    { value: 'bloque', label: 'Compte bloque' }
   ];
 
   if (loading) {
@@ -250,7 +262,7 @@ const CompteBancaireForm = () => {
                     {isEdit ? 'Modifier le compte bancaire' : 'Nouveau compte bancaire'}
                   </h1>
                   <p className="text-sm text-gray-500">
-                    {isEdit ? 'Modifiez les informations du compte' : 'Créez un nouveau compte bancaire'}
+                    {isEdit ? 'Modifiez les informations du compte' : 'Creez un nouveau compte bancaire'}
                   </p>
                 </div>
               </div>
@@ -263,11 +275,11 @@ const CompteBancaireForm = () => {
       <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
         <form onSubmit={handleSubmit} className="space-y-6">
 
-          {/* Section 1 : Informations générales */}
+          {/* Section 1 : Informations generales */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
             <div className="bg-gray-50 px-6 py-3 border-b">
               <h3 className="font-semibold flex items-center gap-2">
-                <Layers className="w-4 h-4 text-primary" /> Informations générales
+                <Layers className="w-4 h-4 text-primary" /> Informations generales
               </h3>
             </div>
             <div className="p-6">
@@ -297,7 +309,7 @@ const CompteBancaireForm = () => {
                     value={formData.banque}
                     onChange={handleChange}
                     className={`input input-bordered w-full ${errors.banque ? 'input-error' : ''}`}
-                    placeholder="Ex: Société Générale"
+                    placeholder="Ex: Societe Generale"
                   />
                   {errors.banque && <p className="text-error text-xs mt-1">{errors.banque}</p>}
                 </div>
@@ -335,7 +347,7 @@ const CompteBancaireForm = () => {
 
                 <div>
                   <label className="label text-sm font-medium text-gray-700">
-                    Entrepôt <span className="text-error">*</span>
+                    Entrepot <span className="text-error">*</span>
                   </label>
                   <select
                     name="warehouse"
@@ -344,7 +356,7 @@ const CompteBancaireForm = () => {
                     className={`select select-bordered w-full ${errors.warehouse ? 'select-error' : ''}`}
                     disabled={loadingWarehouses}
                   >
-                    <option value="">Sélectionner un entrepôt</option>
+                    <option value="">Selectionner un entrepot</option>
                     {warehouses.map(w => (
                       <option key={w.id} value={w.id}>{w.name} ({w.code})</option>
                     ))}
@@ -371,18 +383,18 @@ const CompteBancaireForm = () => {
             </div>
           </div>
 
-          {/* Section 2 : Détails bancaires */}
+          {/* Section 2 : Details bancaires */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
             <div className="bg-gray-50 px-6 py-3 border-b">
               <h3 className="font-semibold flex items-center gap-2">
-                <CreditCard className="w-4 h-4 text-primary" /> Détails bancaires
+                <CreditCard className="w-4 h-4 text-primary" /> Details bancaires
               </h3>
             </div>
             <div className="p-6">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 <div>
                   <label className="label text-sm font-medium text-gray-700">
-                    Numéro de compte <span className="text-error">*</span>
+                    Numero de compte <span className="text-error">*</span>
                   </label>
                   <input
                     type="text"
@@ -390,7 +402,7 @@ const CompteBancaireForm = () => {
                     value={formData.numero_compte}
                     onChange={handleChange}
                     className={`input input-bordered w-full ${errors.numero_compte ? 'input-error' : ''}`}
-                    placeholder="Numéro de compte"
+                    placeholder="Numero de compte"
                   />
                   {errors.numero_compte && <p className="text-error text-xs mt-1">{errors.numero_compte}</p>}
                 </div>
@@ -483,7 +495,7 @@ const CompteBancaireForm = () => {
                     onChange={handleChange}
                     className="checkbox checkbox-primary"
                   />
-                  <label className="text-sm font-medium text-gray-700">Compte par défaut</label>
+                  <label className="text-sm font-medium text-gray-700">Compte par defaut</label>
                 </div>
               </div>
 
@@ -522,7 +534,7 @@ const CompteBancaireForm = () => {
               ) : (
                 <Save className="w-4 h-4" />
               )}
-              {isEdit ? 'Modifier' : 'Créer'}
+              {isEdit ? 'Modifier' : 'Creer'}
             </button>
           </div>
 
