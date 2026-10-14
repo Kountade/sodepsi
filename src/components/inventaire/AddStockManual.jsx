@@ -1,6 +1,6 @@
 // src/components/products/AddStockManual.jsx
 // ============================================================
-// AJOUT MANUEL DE STOCK - VERSION CORRIGÉE
+// AJOUT MANUEL DE STOCK - VERSION CORRIGEE
 // ============================================================
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 
 // ============================================================
-// ✅ ERROR BOUNDARY
+// ERROR BOUNDARY
 // ============================================================
 class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -28,7 +28,7 @@ class ErrorBoundary extends React.Component {
   }
 
   componentDidCatch(error, errorInfo) {
-    console.error('❌ ErrorBoundary AddStockManual:', error, errorInfo);
+    console.error('ErrorBoundary AddStockManual:', error, errorInfo);
   }
 
   render() {
@@ -94,7 +94,7 @@ const AddStockManualContent = () => {
   });
 
   // ============================================================
-  // ✅ NORMALISATION DES RÉPONSES
+  // NORMALISATION DES REPONSES
   // ============================================================
   const normalizeData = (data) => {
     if (Array.isArray(data)) return data;
@@ -103,7 +103,7 @@ const AddStockManualContent = () => {
   };
 
   // ============================================================
-  // ✅ NOTIFICATION
+  // NOTIFICATION
   // ============================================================
   const showNotification = useCallback((message, type = 'success') => {
     setNotification({ message, type });
@@ -111,33 +111,35 @@ const AddStockManualContent = () => {
   }, []);
 
   // ============================================================
-  // ✅ CHARGEMENT DES DONNÉES (robuste)
+  // CHARGEMENT DES DONNEES
   // ============================================================
   useEffect(() => {
     let isMounted = true;
 
     const loadData = async () => {
       if (!token) {
-        showNotification('Session expirée', 'error');
+        showNotification('Session expiree', 'error');
         setTimeout(() => navigate('/login'), 2000);
         return;
       }
 
       setLoading(true);
       try {
-        console.log('🔍 Chargement produits + entrepôts...');
+        console.log('Chargement produits + entrepots...');
 
         const [productsRes, warehousesRes] = await Promise.all([
-          AxiosInstance.get('/products/?status=active&page_size=500', {
+          // Charger TOUS les produits actifs
+          AxiosInstance.get('/products/?status=active&page_size=5000', {
             headers: { Authorization: `Token ${token}` }
           }).catch(err => {
-            console.warn('⚠️ Erreur products:', err.message);
+            console.warn('Erreur products:', err.message);
             return { data: [] };
           }),
-          AxiosInstance.get('/warehouses/?active=true', {
+          // Charger tous les entrepots
+          AxiosInstance.get('/warehouses/?active=true&page_size=5000', {
             headers: { Authorization: `Token ${token}` }
           }).catch(err => {
-            console.warn('⚠️ Erreur warehouses:', err.message);
+            console.warn('Erreur warehouses:', err.message);
             return { data: [] };
           })
         ]);
@@ -147,7 +149,7 @@ const AddStockManualContent = () => {
         const productsData = normalizeData(productsRes.data);
         const warehousesData = normalizeData(warehousesRes.data);
 
-        console.log('✅ Données chargées:', {
+        console.log('Donnees chargees:', {
           products: productsData.length,
           warehouses: warehousesData.length
         });
@@ -156,9 +158,9 @@ const AddStockManualContent = () => {
         setWarehouses(warehousesData);
 
       } catch (error) {
-        console.error('❌ Erreur chargement données:', error);
+        console.error('Erreur chargement donnees:', error);
         if (isMounted) {
-          showNotification('Erreur de chargement des données', 'error');
+          showNotification('Erreur de chargement des donnees', 'error');
         }
       } finally {
         if (isMounted) setLoading(false);
@@ -171,7 +173,7 @@ const AddStockManualContent = () => {
   }, [token, navigate, showNotification]);
 
   // ============================================================
-  // ✅ MISE À JOUR DU PRODUIT SÉLECTIONNÉ
+  // MISE A JOUR DU PRODUIT SELECTIONNE
   // ============================================================
   useEffect(() => {
     if (!formData.product_id) {
@@ -208,10 +210,10 @@ const AddStockManualContent = () => {
   // ============================================================
   const validate = () => {
     const newErrors = {};
-    if (!formData.product_id) newErrors.product_id = 'Veuillez sélectionner un produit';
-    if (!formData.warehouse_id) newErrors.warehouse_id = 'Veuillez sélectionner un entrepôt';
+    if (!formData.product_id) newErrors.product_id = 'Veuillez selectionner un produit';
+    if (!formData.warehouse_id) newErrors.warehouse_id = 'Veuillez selectionner un entrepot';
     if (!formData.quantity || parseInt(formData.quantity) <= 0) {
-      newErrors.quantity = 'La quantité doit être supérieure à 0';
+      newErrors.quantity = 'La quantite doit etre superieure a 0';
     }
     if (selectedProduct?.has_expiry && !formData.expiry_date) {
       newErrors.expiry_date = 'Ce produit a une date d\'expiration obligatoire';
@@ -234,7 +236,7 @@ const AddStockManualContent = () => {
 
     setSubmitting(true);
     try {
-      // ✅ Préparer les données (enlever les champs vides)
+      // Preparer les donnees (enlever les champs vides)
       const payload = {
         product_id: parseInt(formData.product_id),
         warehouse_id: parseInt(formData.warehouse_id),
@@ -249,7 +251,7 @@ const AddStockManualContent = () => {
       if (formData.selling_price) payload.selling_price = parseFloat(formData.selling_price);
       if (formData.notes?.trim()) payload.notes = formData.notes.trim();
 
-      console.log('📤 Envoi add_stock_manual:', payload);
+      console.log('Envoi add_stock_manual:', payload);
 
       const response = await AxiosInstance.post(
         '/products/add_stock_manual/',
@@ -257,17 +259,17 @@ const AddStockManualContent = () => {
         { headers: { Authorization: `Token ${token}` } }
       );
 
-      console.log('✅ Réponse:', response.data);
+      console.log('Reponse:', response.data);
 
       showNotification(
-        response.data.message || 'Stock ajouté avec succès',
+        response.data.message || 'Stock ajoute avec succes',
         'success'
       );
 
       setTimeout(() => navigate('/stocks'), 2000);
 
     } catch (error) {
-      console.error('❌ Erreur soumission:', error);
+      console.error('Erreur soumission:', error);
 
       let errorMessage = 'Erreur lors de l\'ajout';
 
@@ -307,7 +309,7 @@ const AddStockManualContent = () => {
       <div className="flex items-center justify-center h-full w-full bg-gray-50">
         <div className="text-center space-y-4">
           <Loader2 className="animate-spin text-primary w-14 h-14 mx-auto" />
-          <p className="text-base font-medium text-gray-500">Chargement des données...</p>
+          <p className="text-base font-medium text-gray-500">Chargement des donnees...</p>
         </div>
       </div>
     );
@@ -366,11 +368,11 @@ const AddStockManualContent = () => {
           <div className="flex-1 w-full overflow-hidden p-6">
             <div className="grid grid-cols-1 xl:grid-cols-4 gap-6 h-full">
 
-              {/* Colonne 1: Produit & Entrepôt */}
+              {/* Colonne 1: Produit & Entrepot */}
               <div className="bg-white rounded-2xl shadow-md border border-gray-100 overflow-hidden flex flex-col">
                 <div className="bg-primary/5 px-5 py-3 border-b border-primary/10">
                   <h3 className="font-semibold flex items-center gap-2 text-base">
-                    <Package className="w-5 h-5 text-primary" /> Produit & Entrepôt
+                    <Package className="w-5 h-5 text-primary" /> Produit & Entrepot
                   </h3>
                 </div>
                 <div className="flex-1 p-5 space-y-4 overflow-y-auto">
@@ -384,7 +386,7 @@ const AddStockManualContent = () => {
                       onChange={handleChange}
                       className={`select select-bordered w-full text-base h-12 ${errors.product_id ? 'select-error' : ''}`}
                     >
-                      <option value="">Sélectionner un produit ({products.length} disponibles)</option>
+                      <option value="">Selectionner un produit ({products.length} disponibles)</option>
                       {products.map(product => (
                         <option key={product.id} value={product.id}>
                           {product.code} - {product.name} (Stock: {product.current_stock || 0})
@@ -394,7 +396,7 @@ const AddStockManualContent = () => {
                     {errors.product_id && <p className="text-error text-sm mt-1">{errors.product_id}</p>}
                     {products.length === 0 && (
                       <p className="text-warning text-sm mt-2">
-                        ⚠️ Aucun produit actif disponible
+                        Aucun produit actif disponible
                       </p>
                     )}
                     {selectedProduct && (
@@ -413,7 +415,7 @@ const AddStockManualContent = () => {
                   </div>
                   <div>
                     <label className="label text-sm font-medium text-gray-700">
-                      Entrepôt <span className="text-error">*</span>
+                      Entrepot <span className="text-error">*</span>
                     </label>
                     <select
                       name="warehouse_id"
@@ -421,7 +423,7 @@ const AddStockManualContent = () => {
                       onChange={handleChange}
                       className={`select select-bordered w-full text-base h-12 ${errors.warehouse_id ? 'select-error' : ''}`}
                     >
-                      <option value="">Sélectionner un entrepôt ({warehouses.length} disponibles)</option>
+                      <option value="">Selectionner un entrepot ({warehouses.length} disponibles)</option>
                       {warehouses.map(warehouse => (
                         <option key={warehouse.id} value={warehouse.id}>
                           {warehouse.name} ({warehouse.code})
@@ -431,24 +433,24 @@ const AddStockManualContent = () => {
                     {errors.warehouse_id && <p className="text-error text-sm mt-1">{errors.warehouse_id}</p>}
                     {warehouses.length === 0 && (
                       <p className="text-warning text-sm mt-2">
-                        ⚠️ Aucun entrepôt actif disponible
+                        Aucun entrepot actif disponible
                       </p>
                     )}
                   </div>
                 </div>
               </div>
 
-              {/* Colonne 2: Quantité & Lot */}
+              {/* Colonne 2: Quantite & Lot */}
               <div className="bg-white rounded-2xl shadow-md border border-gray-100 overflow-hidden flex flex-col">
                 <div className="bg-primary/5 px-5 py-3 border-b border-primary/10">
                   <h3 className="font-semibold flex items-center gap-2 text-base">
-                    <Hash className="w-5 h-5 text-primary" /> Quantité & Lot
+                    <Hash className="w-5 h-5 text-primary" /> Quantite & Lot
                   </h3>
                 </div>
                 <div className="flex-1 p-5 space-y-4 overflow-y-auto">
                   <div>
                     <label className="label text-sm font-medium text-gray-700">
-                      Quantité <span className="text-error">*</span>
+                      Quantite <span className="text-error">*</span>
                     </label>
                     <input
                       type="number"
@@ -462,13 +464,13 @@ const AddStockManualContent = () => {
                     {errors.quantity && <p className="text-error text-sm mt-1">{errors.quantity}</p>}
                     {selectedProduct && (
                       <p className="text-sm text-gray-400 mt-1.5 flex items-center gap-2">
-                        <Box className="w-4 h-4" /> Stock actuel: <span className="font-medium">{selectedProduct.current_stock || 0}</span> unités
+                        <Box className="w-4 h-4" /> Stock actuel: <span className="font-medium">{selectedProduct.current_stock || 0}</span> unites
                       </p>
                     )}
                   </div>
                   <div>
                     <label className="label text-sm font-medium text-gray-700">
-                      Numéro de lot
+                      Numero de lot
                     </label>
                     <input
                       type="text"
@@ -476,15 +478,15 @@ const AddStockManualContent = () => {
                       value={formData.lot_number}
                       onChange={handleChange}
                       className="input input-bordered w-full text-base h-12"
-                      placeholder="Auto-généré si vide"
+                      placeholder="Auto-genere si vide"
                     />
                     <p className="text-sm text-gray-400 mt-1.5 flex items-center gap-2">
-                      <Info className="w-4 h-4" /> Laissez vide pour génération automatique
+                      <Info className="w-4 h-4" /> Laissez vide pour generation automatique
                     </p>
                   </div>
                   <div>
                     <label className="label text-sm font-medium text-gray-700">
-                      Numéro de batch
+                      Numero de batch
                     </label>
                     <input
                       type="text"
@@ -556,7 +558,7 @@ const AddStockManualContent = () => {
                 </div>
               </div>
 
-              {/* Colonne 4: Notes & Résumé */}
+              {/* Colonne 4: Notes & Resume */}
               <div className="flex flex-col gap-4 h-full">
                 <div className="bg-white rounded-2xl shadow-md border border-gray-100 overflow-hidden flex-1">
                   <div className="bg-primary/5 px-5 py-3 border-b border-primary/10">
@@ -587,17 +589,17 @@ const AddStockManualContent = () => {
                         value={formData.notes}
                         onChange={handleChange}
                         className="textarea textarea-bordered w-full h-[calc(100%-60px)] min-h-[80px] text-base resize-none"
-                        placeholder="Informations sur le lot, qualité, fournisseur..."
+                        placeholder="Informations sur le lot, qualite, fournisseur..."
                       />
                     </div>
                   </div>
                 </div>
 
-                {/* Résumé */}
+                {/* Resume */}
                 <div className="bg-gradient-to-r from-primary/5 to-primary/10 rounded-2xl border border-primary/20 overflow-hidden">
                   <div className="bg-primary/10 px-5 py-2.5 border-b border-primary/10">
                     <h3 className="font-semibold flex items-center gap-2 text-sm">
-                      <CheckCircle className="w-4 h-4 text-primary" /> Résumé de l'opération
+                      <CheckCircle className="w-4 h-4 text-primary" /> Resume de l'operation
                     </h3>
                   </div>
                   <div className="p-4">
@@ -605,24 +607,24 @@ const AddStockManualContent = () => {
                       <div className="bg-white/50 rounded-lg p-3">
                         <p className="text-gray-500 text-xs">Produit</p>
                         <p className="font-medium truncate text-primary">
-                          {selectedProduct?.name || 'Non sélectionné'}
+                          {selectedProduct?.name || 'Non selectionne'}
                         </p>
                       </div>
                       <div className="bg-white/50 rounded-lg p-3">
-                        <p className="text-gray-500 text-xs">Entrepôt</p>
+                        <p className="text-gray-500 text-xs">Entrepot</p>
                         <p className="font-medium truncate">
-                          {warehouses.find(w => w.id === parseInt(formData.warehouse_id))?.name || 'Non sélectionné'}
+                          {warehouses.find(w => w.id === parseInt(formData.warehouse_id))?.name || 'Non selectionne'}
                         </p>
                       </div>
                       <div className="bg-white/50 rounded-lg p-3">
-                        <p className="text-gray-500 text-xs">Quantité</p>
+                        <p className="text-gray-500 text-xs">Quantite</p>
                         <p className="font-medium text-success text-lg">
-                          {formData.quantity || '0'} <span className="text-xs text-gray-400">unités</span>
+                          {formData.quantity || '0'} <span className="text-xs text-gray-400">unites</span>
                         </p>
                       </div>
                       <div className="bg-white/50 rounded-lg p-3">
                         <p className="text-gray-500 text-xs">Lot</p>
-                        <p className="font-medium truncate">{formData.lot_number || 'Auto-généré'}</p>
+                        <p className="font-medium truncate">{formData.lot_number || 'Auto-genere'}</p>
                       </div>
                     </div>
                   </div>

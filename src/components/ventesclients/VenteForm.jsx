@@ -1271,4 +1271,4 @@ const VenteForm = () => (
   </ErrorBoundary>
 );
 
-export default VenteForm;
+export default VenteForm;           
