@@ -30,6 +30,13 @@ const RapprochementBancaireList = () => {
 
   const getToken = () => localStorage.getItem('Token');
 
+  // NORMALISATION : tableau direct OU reponse paginee DRF
+  const normalizeData = (data) => {
+    if (Array.isArray(data)) return data;
+    if (data && Array.isArray(data.results)) return data.results;
+    return [];
+  };
+
   const showNotification = (message, type) => {
     setNotification({ show: true, message, type });
     setTimeout(() => setNotification(prev => ({ ...prev, show: false })), 4000);
@@ -43,6 +50,9 @@ const RapprochementBancaireList = () => {
       let url = '/rapprochements/';
       const params = new URLSearchParams();
 
+      // Charger un maximum de rapprochements
+      params.append('page_size', '500');
+
       if (filterWarehouse !== 'all') params.append('warehouse', filterWarehouse);
       if (filterCompte !== 'all') params.append('compte_bancaire', filterCompte);
       if (filterStatus !== 'all') params.append('status', filterStatus);
@@ -50,30 +60,36 @@ const RapprochementBancaireList = () => {
       if (filterDateFin) params.append('date_fin__lte', filterDateFin);
       if (searchTerm) params.append('search', searchTerm);
 
-      if (params.toString()) url += `?${params.toString()}`;
+      url += `?${params.toString()}`;
 
       const response = await AxiosInstance.get(url, {
         headers: { 'Authorization': `Token ${token}` }
       });
-      setRapprochements(response.data || []);
+
+      // NORMALISATION
+      setRapprochements(normalizeData(response.data));
     } catch (error) {
       console.error('Erreur:', error);
       showNotification('Erreur de chargement des rapprochements', 'error');
+      setRapprochements([]);
     } finally {
       setLoading(false);
     }
   };
 
-  // Charger les entrepôts
+  // Charger les entrepots
   const fetchWarehouses = async () => {
     try {
       const token = getToken();
-      const response = await AxiosInstance.get('/warehouses/?is_active=true', {
-        headers: { 'Authorization': `Token ${token}` }
-      });
-      setWarehouses(response.data || []);
+      const response = await AxiosInstance.get(
+        '/warehouses/?is_active=true&page_size=1000',
+        { headers: { 'Authorization': `Token ${token}` } }
+      );
+      // NORMALISATION
+      setWarehouses(normalizeData(response.data));
     } catch (error) {
-      console.error('Erreur chargement entrepôts:', error);
+      console.error('Erreur chargement entrepots:', error);
+      setWarehouses([]);
     }
   };
 
@@ -81,12 +97,15 @@ const RapprochementBancaireList = () => {
   const fetchComptes = async () => {
     try {
       const token = getToken();
-      const response = await AxiosInstance.get('/comptes-bancaires/?is_active=true', {
-        headers: { 'Authorization': `Token ${token}` }
-      });
-      setComptes(response.data || []);
+      const response = await AxiosInstance.get(
+        '/comptes-bancaires/?is_active=true&page_size=500',
+        { headers: { 'Authorization': `Token ${token}` } }
+      );
+      // NORMALISATION
+      setComptes(normalizeData(response.data));
     } catch (error) {
       console.error('Erreur chargement comptes:', error);
+      setComptes([]);
     }
   };
 
@@ -111,7 +130,7 @@ const RapprochementBancaireList = () => {
       await AxiosInstance.delete(`/rapprochements/${itemToDelete.id}/`, {
         headers: { 'Authorization': `Token ${token}` }
       });
-      showNotification('Rapprochement supprimé avec succès', 'success');
+      showNotification('Rapprochement supprime avec succes', 'success');
       fetchRapprochements();
       setShowDeleteModal(false);
       setItemToDelete(null);
@@ -120,7 +139,7 @@ const RapprochementBancaireList = () => {
     }
   };
 
-  // Valider un rapprochement (action personnalisée)
+  // Valider un rapprochement
   const handleValider = async (id) => {
     if (!window.confirm('Voulez-vous valider ce rapprochement ?')) return;
     try {
@@ -128,26 +147,29 @@ const RapprochementBancaireList = () => {
       await AxiosInstance.post(`/rapprochements/${id}/valider_rapprochement/`, {}, {
         headers: { 'Authorization': `Token ${token}` }
       });
-      showNotification('Rapprochement validé avec succès', 'success');
+      showNotification('Rapprochement valide avec succes', 'success');
       fetchRapprochements();
     } catch (error) {
       showNotification('Erreur lors de la validation', 'error');
     }
   };
 
+  // Protection contre rapprochements non tableau
+  const safeRapprochements = Array.isArray(rapprochements) ? rapprochements : [];
+
   // Pagination
-  const filteredItems = rapprochements;
-  const totalPages = Math.ceil(filteredItems.length / itemsPerPage);
+  const filteredItems = safeRapprochements;
+  const totalPages = Math.max(1, Math.ceil(filteredItems.length / itemsPerPage));
   const startIndex = (currentPage - 1) * itemsPerPage;
   const paginatedItems = filteredItems.slice(startIndex, startIndex + itemsPerPage);
 
   // Statistiques
   const stats = {
-    total: rapprochements.length,
-    complets: rapprochements.filter(r => r.status === 'complete').length,
-    partiels: rapprochements.filter(r => r.status === 'partiel').length,
-    ecart: rapprochements.filter(r => r.status === 'ecart').length,
-    enCours: rapprochements.filter(r => r.status === 'en_cours' || r.status === 'brouillon').length,
+    total: safeRapprochements.length,
+    complets: safeRapprochements.filter(r => r.status === 'complete').length,
+    partiels: safeRapprochements.filter(r => r.status === 'partiel').length,
+    ecart: safeRapprochements.filter(r => r.status === 'ecart').length,
+    enCours: safeRapprochements.filter(r => r.status === 'en_cours' || r.status === 'brouillon').length,
   };
 
   const formatNumber = (num) => {
@@ -171,7 +193,7 @@ const RapprochementBancaireList = () => {
       'en_cours': { label: 'En cours', color: 'badge-warning' },
       'partiel': { label: 'Partiel', color: 'badge-info' },
       'complete': { label: 'Complet', color: 'badge-success' },
-      'ecart': { label: 'Écart', color: 'badge-error' },
+      'ecart': { label: 'Ecart', color: 'badge-error' },
     };
     const info = map[status] || { label: status, color: 'badge-ghost' };
     return <span className={`badge ${info.color}`}>{info.label}</span>;
@@ -181,7 +203,7 @@ const RapprochementBancaireList = () => {
     return Math.abs(parseFloat(item.ecart || 0)) < 1;
   };
 
-  if (loading && rapprochements.length === 0) {
+  if (loading && safeRapprochements.length === 0) {
     return (
       <div className="flex items-center justify-center min-h-[calc(100vh-200px)]">
         <div className="text-center space-y-4">
@@ -222,7 +244,7 @@ const RapprochementBancaireList = () => {
             <div className="p-6 text-center">
               <p className="text-gray-600">Voulez-vous vraiment supprimer ce rapprochement ?</p>
               <p className="font-semibold mt-2">{itemToDelete.reference}</p>
-              <p className="text-sm text-gray-500 mt-1">{itemToDelete.compte_bancaire}</p>
+              <p className="text-sm text-gray-500 mt-1">{getCompteName(itemToDelete.compte_bancaire)}</p>
             </div>
             <div className="flex gap-3 p-4 bg-gray-50">
               <button className="btn btn-ghost flex-1" onClick={() => setShowDeleteModal(false)}>Annuler</button>
@@ -234,7 +256,7 @@ const RapprochementBancaireList = () => {
         </div>
       )}
 
-      {/* En-tête */}
+      {/* En-tete */}
       <div className="relative overflow-hidden bg-gradient-to-r from-primary/10 via-primary/5 to-transparent rounded-2xl p-5">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
@@ -245,7 +267,7 @@ const RapprochementBancaireList = () => {
               <h1 className="text-2xl sm:text-3xl font-black text-primary">Rapprochements bancaires</h1>
             </div>
             <p className="text-sm text-gray-500 ml-1">
-              Suivi des rapprochements – {stats.total} enregistrement(s)
+              Suivi des rapprochements - {stats.total} enregistrement(s)
             </p>
           </div>
           <div className="flex flex-wrap gap-3">
@@ -281,7 +303,7 @@ const RapprochementBancaireList = () => {
         </div>
         <div className="bg-white shadow-md rounded-xl p-3">
           <div className="flex items-center justify-between">
-            <div><p className="text-xs text-gray-500">Écarts</p><p className="text-xl font-bold text-error">{stats.ecart}</p></div>
+            <div><p className="text-xs text-gray-500">Ecarts</p><p className="text-xl font-bold text-error">{stats.ecart}</p></div>
             <AlertCircle className="w-8 h-8 text-error/20" />
           </div>
         </div>
@@ -300,7 +322,7 @@ const RapprochementBancaireList = () => {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
               type="text"
-              placeholder="Rechercher par référence..."
+              placeholder="Rechercher par reference..."
               className="input input-bordered w-full pl-9"
               value={searchTerm}
               onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
@@ -315,7 +337,7 @@ const RapprochementBancaireList = () => {
               value={filterWarehouse}
               onChange={(e) => { setFilterWarehouse(e.target.value); setCurrentPage(1); }}
             >
-              <option value="all">Tous les entrepôts</option>
+              <option value="all">Tous les entrepots</option>
               {warehouses.map(wh => (
                 <option key={wh.id} value={wh.id}>{wh.name}</option>
               ))}
@@ -340,14 +362,14 @@ const RapprochementBancaireList = () => {
               <option value="en_cours">En cours</option>
               <option value="partiel">Partiel</option>
               <option value="complete">Complet</option>
-              <option value="ecart">Écart</option>
+              <option value="ecart">Ecart</option>
             </select>
             <input
               type="date"
               className="input input-bordered w-full"
               value={filterDateDebut}
               onChange={(e) => { setFilterDateDebut(e.target.value); setCurrentPage(1); }}
-              placeholder="Date début"
+              placeholder="Date debut"
             />
             <input
               type="date"
@@ -369,7 +391,7 @@ const RapprochementBancaireList = () => {
               setCurrentPage(1);
             }}
           >
-            <RefreshCw className="w-4 h-4" /> Réinitialiser
+            <RefreshCw className="w-4 h-4" /> Reinitialiser
           </button>
         </div>
       </div>
@@ -380,12 +402,12 @@ const RapprochementBancaireList = () => {
           <table className="table w-full">
             <thead className="bg-gray-50">
               <tr>
-                <th className="py-3">Référence</th>
+                <th className="py-3">Reference</th>
                 <th className="py-3">Compte</th>
-                <th className="py-3 hidden md:table-cell">Période</th>
+                <th className="py-3 hidden md:table-cell">Periode</th>
                 <th className="py-3 text-right">Solde comptable</th>
                 <th className="py-3 text-right">Solde bancaire</th>
-                <th className="py-3 text-right">Écart</th>
+                <th className="py-3 text-right">Ecart</th>
                 <th className="py-3 text-center">Statut</th>
                 <th className="py-3 text-center">Actions</th>
               </tr>
@@ -396,7 +418,7 @@ const RapprochementBancaireList = () => {
                   <td colSpan="8" className="text-center py-16">
                     <div className="flex flex-col items-center gap-3">
                       <Building2 className="w-16 h-16 text-gray-300" />
-                      <p className="text-gray-500 font-medium">Aucun rapprochement trouvé</p>
+                      <p className="text-gray-500 font-medium">Aucun rapprochement trouve</p>
                       <button onClick={() => navigate('/rapprochement-bancaire/nouveau')} className="btn btn-primary btn-sm gap-2">
                         <Plus className="w-4 h-4" /> Ajouter
                       </button>
@@ -413,19 +435,19 @@ const RapprochementBancaireList = () => {
                     </td>
                     <td>{getCompteName(item.compte_bancaire)}</td>
                     <td className="hidden md:table-cell">
-                      {item.date_debut} → {item.date_fin}
+                      {item.date_debut} - {item.date_fin}
                     </td>
                     <td className="text-right">{formatNumber(item.solde_comptable)}</td>
                     <td className="text-right">{formatNumber(item.solde_bancaire)}</td>
                     <td className={`text-right font-bold ${isRapproche(item) ? 'text-success' : 'text-error'}`}>
                       {formatNumber(item.ecart)}
-                      {!isRapproche(item) && <span className="ml-1 text-xs">(⚠️)</span>}
+                      {!isRapproche(item) && <span className="ml-1 text-xs">(!)</span>}
                     </td>
                     <td className="text-center">
                       <div className="flex flex-col items-center gap-1">
                         {getStatusBadge(item.status)}
                         {isRapproche(item) && item.status !== 'complete' && (
-                          <span className="badge badge-success badge-xs">✅ OK</span>
+                          <span className="badge badge-success badge-xs">OK</span>
                         )}
                       </div>
                     </td>
@@ -465,7 +487,7 @@ const RapprochementBancaireList = () => {
         {filteredItems.length > 0 && (
           <div className="px-6 py-4 border-t flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="text-sm text-gray-500">
-              Affichage de {startIndex + 1} à {Math.min(currentPage * itemsPerPage, filteredItems.length)} sur {filteredItems.length}
+              Affichage de {startIndex + 1} a {Math.min(currentPage * itemsPerPage, filteredItems.length)} sur {filteredItems.length}
             </div>
             <div className="flex items-center gap-3">
               <select

@@ -4,7 +4,8 @@ import { useNavigate, useParams } from 'react-router-dom';
 import AxiosInstance from '../AxiosInstance';
 import {
   ArrowLeft, Save, X, AlertCircle, CheckCircle, Building2,
-  Calendar, DollarSign, FileText, RefreshCw, Plus, Trash2
+  Calendar, DollarSign, FileText, RefreshCw, Plus, Trash2,
+  Loader2
 } from 'lucide-react';
 
 const RapprochementBancaireForm = ({ isEdit = false }) => {
@@ -33,31 +34,45 @@ const RapprochementBancaireForm = ({ isEdit = false }) => {
 
   const getToken = () => localStorage.getItem('Token');
 
+  // NORMALISATION : tableau direct OU reponse paginee DRF
+  const normalizeData = (data) => {
+    if (Array.isArray(data)) return data;
+    if (data && Array.isArray(data.results)) return data.results;
+    return [];
+  };
+
   const showNotification = (message, type) => {
     setNotification({ show: true, message, type });
     setTimeout(() => setNotification(prev => ({ ...prev, show: false })), 4000);
   };
 
-  // Charger les entrepôts et comptes
+  // Charger les entrepots et comptes
   useEffect(() => {
     const fetchData = async () => {
       try {
         const token = getToken();
         const [whRes, cptRes] = await Promise.all([
-          AxiosInstance.get('/warehouses/?is_active=true', { headers: { 'Authorization': `Token ${token}` } }),
-          AxiosInstance.get('/comptes-bancaires/?is_active=true', { headers: { 'Authorization': `Token ${token}` } })
+          AxiosInstance.get('/warehouses/?is_active=true&page_size=1000', {
+            headers: { 'Authorization': `Token ${token}` }
+          }),
+          AxiosInstance.get('/comptes-bancaires/?is_active=true&page_size=500', {
+            headers: { 'Authorization': `Token ${token}` }
+          })
         ]);
-        setWarehouses(whRes.data || []);
-        setComptes(cptRes.data || []);
+        // NORMALISATION
+        setWarehouses(normalizeData(whRes.data));
+        setComptes(normalizeData(cptRes.data));
       } catch (error) {
-        console.error('Erreur chargement données:', error);
-        showNotification('Erreur de chargement des données', 'error');
+        console.error('Erreur chargement donnees:', error);
+        showNotification('Erreur de chargement des donnees', 'error');
+        setWarehouses([]);
+        setComptes([]);
       }
     };
     fetchData();
   }, []);
 
-  // Si édition, charger les données existantes
+  // Si edition, charger les donnees existantes
   useEffect(() => {
     if (isEdit && id) {
       const fetchRapprochement = async () => {
@@ -91,39 +106,36 @@ const RapprochementBancaireForm = ({ isEdit = false }) => {
       };
       fetchRapprochement();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, isEdit]);
 
-  // Gestion des changements
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
-    // Effacer l'erreur pour ce champ
     if (errors[name]) {
       setErrors(prev => ({ ...prev, [name]: null }));
     }
   };
 
-  // Validation
   const validate = () => {
     const newErrors = {};
-    if (!formData.warehouse) newErrors.warehouse = 'Veuillez sélectionner un entrepôt';
-    if (!formData.compte_bancaire) newErrors.compte_bancaire = 'Veuillez sélectionner un compte bancaire';
-    if (!formData.date_debut) newErrors.date_debut = 'La date de début est requise';
+    if (!formData.warehouse) newErrors.warehouse = 'Veuillez selectionner un entrepot';
+    if (!formData.compte_bancaire) newErrors.compte_bancaire = 'Veuillez selectionner un compte bancaire';
+    if (!formData.date_debut) newErrors.date_debut = 'La date de debut est requise';
     if (!formData.date_fin) newErrors.date_fin = 'La date de fin est requise';
     if (formData.date_debut && formData.date_fin && formData.date_debut > formData.date_fin) {
-      newErrors.date_fin = 'La date de fin doit être postérieure à la date de début';
+      newErrors.date_fin = 'La date de fin doit etre posterieure a la date de debut';
     }
-    if (!formData.solde_comptable || parseFloat(formData.solde_comptable) < 0) {
-      newErrors.solde_comptable = 'Le solde comptable est requis et doit être ≥ 0';
+    if (formData.solde_comptable === '' || parseFloat(formData.solde_comptable) < 0) {
+      newErrors.solde_comptable = 'Le solde comptable est requis et doit etre >= 0';
     }
-    if (!formData.solde_bancaire || parseFloat(formData.solde_bancaire) < 0) {
-      newErrors.solde_bancaire = 'Le solde bancaire est requis et doit être ≥ 0';
+    if (formData.solde_bancaire === '' || parseFloat(formData.solde_bancaire) < 0) {
+      newErrors.solde_bancaire = 'Le solde bancaire est requis et doit etre >= 0';
     }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
-  // Soumission
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!validate()) return;
@@ -133,8 +145,7 @@ const RapprochementBancaireForm = ({ isEdit = false }) => {
       const token = getToken();
       const url = isEdit ? `/rapprochements/${id}/` : '/rapprochements/';
       const method = isEdit ? 'put' : 'post';
-      
-      // Préparer les données (convertir en nombres)
+
       const payload = {
         ...formData,
         solde_comptable: parseFloat(formData.solde_comptable) || 0,
@@ -143,6 +154,8 @@ const RapprochementBancaireForm = ({ isEdit = false }) => {
         encours_encaissement: parseFloat(formData.encours_encaissement) || 0,
         commissions: parseFloat(formData.commissions) || 0,
         autres_ecarts: parseFloat(formData.autres_ecarts) || 0,
+        warehouse: parseInt(formData.warehouse),
+        compte_bancaire: parseInt(formData.compte_bancaire),
       };
 
       const response = await AxiosInstance[method](url, payload, {
@@ -150,14 +163,21 @@ const RapprochementBancaireForm = ({ isEdit = false }) => {
       });
 
       showNotification(
-        isEdit ? 'Rapprochement mis à jour avec succès' : 'Rapprochement créé avec succès',
+        isEdit ? 'Rapprochement mis a jour avec succes' : 'Rapprochement cree avec succes',
         'success'
       );
       setTimeout(() => navigate('/rapprochement-bancaire'), 1500);
     } catch (error) {
       console.error('Erreur sauvegarde:', error);
       if (error.response && error.response.data) {
-        setErrors(error.response.data);
+        const backendErrors = error.response.data;
+        const newErrors = {};
+        Object.keys(backendErrors).forEach(key => {
+          newErrors[key] = Array.isArray(backendErrors[key])
+            ? backendErrors[key][0]
+            : backendErrors[key];
+        });
+        setErrors(newErrors);
         showNotification('Erreur de validation', 'error');
       } else {
         showNotification('Erreur lors de la sauvegarde', 'error');
@@ -195,7 +215,7 @@ const RapprochementBancaireForm = ({ isEdit = false }) => {
         </div>
       )}
 
-      {/* En-tête */}
+      {/* En-tete */}
       <div className="relative overflow-hidden bg-gradient-to-r from-primary/10 via-primary/5 to-transparent rounded-2xl p-5">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
@@ -208,7 +228,7 @@ const RapprochementBancaireForm = ({ isEdit = false }) => {
               </h1>
             </div>
             <p className="text-sm text-gray-500 ml-1">
-              {isEdit ? 'Mettez à jour les informations' : 'Saisissez les informations du rapprochement'}
+              {isEdit ? 'Mettez a jour les informations' : 'Saisissez les informations du rapprochement'}
             </p>
           </div>
           <button onClick={() => navigate('/rapprochement-bancaire')} className="btn btn-sm sm:btn-md btn-outline gap-2">
@@ -220,10 +240,10 @@ const RapprochementBancaireForm = ({ isEdit = false }) => {
       {/* Formulaire */}
       <form onSubmit={handleSubmit} className="bg-white rounded-xl shadow-xl p-6 space-y-6">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Entrepôt */}
+          {/* Entrepot */}
           <div className="form-control">
             <label className="label">
-              <span className="label-text font-medium">Entrepôt *</span>
+              <span className="label-text font-medium">Entrepot *</span>
             </label>
             <select
               name="warehouse"
@@ -231,7 +251,7 @@ const RapprochementBancaireForm = ({ isEdit = false }) => {
               value={formData.warehouse}
               onChange={handleChange}
             >
-              <option value="">Sélectionner un entrepôt</option>
+              <option value="">Selectionner un entrepot</option>
               {warehouses.map(wh => (
                 <option key={wh.id} value={wh.id}>{wh.name}</option>
               ))}
@@ -250,7 +270,7 @@ const RapprochementBancaireForm = ({ isEdit = false }) => {
               value={formData.compte_bancaire}
               onChange={handleChange}
             >
-              <option value="">Sélectionner un compte</option>
+              <option value="">Selectionner un compte</option>
               {comptes.map(c => (
                 <option key={c.id} value={c.id}>{c.banque} - {c.nom} ({c.numero_compte})</option>
               ))}
@@ -258,10 +278,10 @@ const RapprochementBancaireForm = ({ isEdit = false }) => {
             {errors.compte_bancaire && <span className="text-error text-xs mt-1">{errors.compte_bancaire}</span>}
           </div>
 
-          {/* Date début */}
+          {/* Date debut */}
           <div className="form-control">
             <label className="label">
-              <span className="label-text font-medium">Date de début *</span>
+              <span className="label-text font-medium">Date de debut *</span>
             </label>
             <input
               type="date"
@@ -328,10 +348,10 @@ const RapprochementBancaireForm = ({ isEdit = false }) => {
             {errors.solde_bancaire && <span className="text-error text-xs mt-1">{errors.solde_bancaire}</span>}
           </div>
 
-          {/* En-cours émission */}
+          {/* En-cours emission */}
           <div className="form-control">
             <label className="label">
-              <span className="label-text font-medium">En-cours d'émission</span>
+              <span className="label-text font-medium">En-cours d'emission</span>
             </label>
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">FCFA</span>
@@ -385,10 +405,10 @@ const RapprochementBancaireForm = ({ isEdit = false }) => {
             </div>
           </div>
 
-          {/* Autres écarts */}
+          {/* Autres ecarts */}
           <div className="form-control">
             <label className="label">
-              <span className="label-text font-medium">Autres écarts</span>
+              <span className="label-text font-medium">Autres ecarts</span>
             </label>
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">FCFA</span>
@@ -404,7 +424,7 @@ const RapprochementBancaireForm = ({ isEdit = false }) => {
             </div>
           </div>
 
-          {/* Statut (seulement en édition, sinon on fixe brouillon) */}
+          {/* Statut (seulement en edition) */}
           {isEdit && (
             <div className="form-control">
               <label className="label">
@@ -420,7 +440,7 @@ const RapprochementBancaireForm = ({ isEdit = false }) => {
                 <option value="en_cours">En cours</option>
                 <option value="partiel">Partiel</option>
                 <option value="complete">Complet</option>
-                <option value="ecart">Écart</option>
+                <option value="ecart">Ecart</option>
               </select>
             </div>
           )}
@@ -436,7 +456,7 @@ const RapprochementBancaireForm = ({ isEdit = false }) => {
               className="textarea textarea-bordered w-full"
               value={formData.notes}
               onChange={handleChange}
-              placeholder="Informations complémentaires..."
+              placeholder="Informations complementaires..."
             />
           </div>
         </div>
@@ -455,8 +475,12 @@ const RapprochementBancaireForm = ({ isEdit = false }) => {
             className="btn btn-primary gap-2"
             disabled={saving}
           >
-            {saving ? <span className="loading loading-spinner loading-sm"></span> : <Save className="w-4 h-4" />}
-            {isEdit ? 'Mettre à jour' : 'Enregistrer'}
+            {saving ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Save className="w-4 h-4" />
+            )}
+            {isEdit ? 'Mettre a jour' : 'Enregistrer'}
           </button>
         </div>
       </form>

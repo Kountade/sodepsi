@@ -30,6 +30,13 @@ const PrevisionsList = () => {
 
   const getToken = () => localStorage.getItem('Token');
 
+  // NORMALISATION : tableau direct OU reponse paginee DRF
+  const normalizeData = (data) => {
+    if (Array.isArray(data)) return data;
+    if (data && Array.isArray(data.results)) return data.results;
+    return [];
+  };
+
   const showNotification = (message, type) => {
     setNotification({ show: true, message, type });
     setTimeout(() => setNotification(prev => ({ ...prev, show: false })), 4000);
@@ -43,6 +50,9 @@ const PrevisionsList = () => {
       let url = '/previsions/';
       const params = new URLSearchParams();
 
+      // Charger un maximum de previsions
+      params.append('page_size', '500');
+
       if (filterWarehouse !== 'all') params.append('warehouse', filterWarehouse);
       if (filterType !== 'all') params.append('type_prevision', filterType);
       if (filterStatus !== 'all') params.append('statut', filterStatus);
@@ -51,30 +61,36 @@ const PrevisionsList = () => {
       if (filterDateFin) params.append('date_fin__lte', filterDateFin);
       if (searchTerm) params.append('search', searchTerm);
 
-      if (params.toString()) url += `?${params.toString()}`;
+      url += `?${params.toString()}`;
 
       const response = await AxiosInstance.get(url, {
         headers: { 'Authorization': `Token ${token}` }
       });
-      setPrevisions(response.data || []);
+
+      // NORMALISATION
+      setPrevisions(normalizeData(response.data));
     } catch (error) {
       console.error('Erreur:', error);
-      showNotification('Erreur de chargement des prévisions', 'error');
+      showNotification('Erreur de chargement des previsions', 'error');
+      setPrevisions([]);
     } finally {
       setLoading(false);
     }
   };
 
-  // Charger les entrepôts
+  // Charger les entrepots
   const fetchWarehouses = async () => {
     try {
       const token = getToken();
-      const response = await AxiosInstance.get('/warehouses/?is_active=true', {
-        headers: { 'Authorization': `Token ${token}` }
-      });
-      setWarehouses(response.data || []);
+      const response = await AxiosInstance.get(
+        '/warehouses/?is_active=true&page_size=1000',
+        { headers: { 'Authorization': `Token ${token}` } }
+      );
+      // NORMALISATION
+      setWarehouses(normalizeData(response.data));
     } catch (error) {
-      console.error('Erreur chargement entrepôts:', error);
+      console.error('Erreur chargement entrepots:', error);
+      setWarehouses([]);
     }
   };
 
@@ -98,7 +114,7 @@ const PrevisionsList = () => {
       await AxiosInstance.delete(`/previsions/${itemToDelete.id}/`, {
         headers: { 'Authorization': `Token ${token}` }
       });
-      showNotification('Prévision supprimée avec succès', 'success');
+      showNotification('Prevision supprimee avec succes', 'success');
       fetchPrevisions();
       setShowDeleteModal(false);
       setItemToDelete(null);
@@ -107,22 +123,25 @@ const PrevisionsList = () => {
     }
   };
 
+  // Protection contre previsions non tableau
+  const safePrevisions = Array.isArray(previsions) ? previsions : [];
+
   // Pagination
-  const filteredItems = previsions;
-  const totalPages = Math.ceil(filteredItems.length / itemsPerPage);
+  const filteredItems = safePrevisions;
+  const totalPages = Math.max(1, Math.ceil(filteredItems.length / itemsPerPage));
   const startIndex = (currentPage - 1) * itemsPerPage;
   const paginatedItems = filteredItems.slice(startIndex, startIndex + itemsPerPage);
 
   // Statistiques
   const stats = {
-    total: previsions.length,
-    entrees: previsions.filter(p => p.type_prevision === 'entree').length,
-    sorties: previsions.filter(p => p.type_prevision === 'sortie').length,
-    validees: previsions.filter(p => p.statut === 'valide').length,
-    realisees: previsions.filter(p => p.statut === 'realise').length,
-    ecart: previsions.filter(p => parseFloat(p.ecart || 0) !== 0).length,
-    totalMontantPrevu: previsions.reduce((acc, p) => acc + parseFloat(p.montant_prevu || 0), 0),
-    totalMontantReel: previsions.reduce((acc, p) => acc + parseFloat(p.montant_reel || 0), 0),
+    total: safePrevisions.length,
+    entrees: safePrevisions.filter(p => p.type_prevision === 'entree').length,
+    sorties: safePrevisions.filter(p => p.type_prevision === 'sortie').length,
+    validees: safePrevisions.filter(p => p.statut === 'valide').length,
+    realisees: safePrevisions.filter(p => p.statut === 'realise').length,
+    ecart: safePrevisions.filter(p => parseFloat(p.ecart || 0) !== 0).length,
+    totalMontantPrevu: safePrevisions.reduce((acc, p) => acc + parseFloat(p.montant_prevu || 0), 0),
+    totalMontantReel: safePrevisions.reduce((acc, p) => acc + parseFloat(p.montant_reel || 0), 0),
   };
 
   const formatNumber = (num) => {
@@ -139,7 +158,7 @@ const PrevisionsList = () => {
 
   const getTypeBadge = (type) => {
     const map = {
-      'entree': { label: 'Entrée', color: 'badge-success' },
+      'entree': { label: 'Entree', color: 'badge-success' },
       'sortie': { label: 'Sortie', color: 'badge-error' }
     };
     const info = map[type] || { label: type, color: 'badge-ghost' };
@@ -150,10 +169,10 @@ const PrevisionsList = () => {
     const map = {
       'brouillon': { label: 'Brouillon', color: 'badge-ghost' },
       'en_cours': { label: 'En cours', color: 'badge-warning' },
-      'valide': { label: 'Validée', color: 'badge-info' },
-      'realise': { label: 'Réalisé', color: 'badge-success' },
-      'annule': { label: 'Annulé', color: 'badge-error' },
-      'ecart': { label: 'Écart', color: 'badge-error' }
+      'valide': { label: 'Validee', color: 'badge-info' },
+      'realise': { label: 'Realise', color: 'badge-success' },
+      'annule': { label: 'Annule', color: 'badge-error' },
+      'ecart': { label: 'Ecart', color: 'badge-error' }
     };
     const info = map[status] || { label: status, color: 'badge-ghost' };
     return <span className={`badge ${info.color}`}>{info.label}</span>;
@@ -170,12 +189,12 @@ const PrevisionsList = () => {
     return map[periode] || periode;
   };
 
-  if (loading && previsions.length === 0) {
+  if (loading && safePrevisions.length === 0) {
     return (
       <div className="flex items-center justify-center min-h-[calc(100vh-200px)]">
         <div className="text-center space-y-4">
           <div className="loading loading-spinner loading-lg text-primary w-12 h-12"></div>
-          <p className="text-base font-semibold text-gray-500">Chargement des prévisions...</p>
+          <p className="text-base font-semibold text-gray-500">Chargement des previsions...</p>
         </div>
       </div>
     );
@@ -209,7 +228,7 @@ const PrevisionsList = () => {
               <h3 className="text-xl font-bold text-error">Confirmer la suppression</h3>
             </div>
             <div className="p-6 text-center">
-              <p className="text-gray-600">Voulez-vous vraiment supprimer cette prévision ?</p>
+              <p className="text-gray-600">Voulez-vous vraiment supprimer cette prevision ?</p>
               <p className="font-semibold mt-2">{itemToDelete.reference} - {itemToDelete.titre}</p>
             </div>
             <div className="flex gap-3 p-4 bg-gray-50">
@@ -222,7 +241,7 @@ const PrevisionsList = () => {
         </div>
       )}
 
-      {/* En-tête */}
+      {/* En-tete */}
       <div className="relative overflow-hidden bg-gradient-to-r from-primary/10 via-primary/5 to-transparent rounded-2xl p-5">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
@@ -230,10 +249,10 @@ const PrevisionsList = () => {
               <div className="p-2 bg-primary/10 rounded-xl">
                 <BarChart3 className="w-7 h-7 text-primary" />
               </div>
-              <h1 className="text-2xl sm:text-3xl font-black text-primary">Prévisions de trésorerie</h1>
+              <h1 className="text-2xl sm:text-3xl font-black text-primary">Previsions de tresorerie</h1>
             </div>
             <p className="text-sm text-gray-500 ml-1">
-              Planification financière – {stats.total} prévision(s)
+              Planification financiere - {stats.total} prevision(s)
             </p>
           </div>
           <div className="flex flex-wrap gap-3">
@@ -241,7 +260,7 @@ const PrevisionsList = () => {
               <RefreshCw className="w-4 h-4" /> Actualiser
             </button>
             <button onClick={() => navigate('/previsions/nouveau')} className="btn btn-sm sm:btn-md bg-gradient-to-r from-primary to-primary/80 text-white border-none shadow-lg gap-2">
-              <Plus className="w-4 h-4" /> Nouvelle prévision
+              <Plus className="w-4 h-4" /> Nouvelle prevision
             </button>
           </div>
         </div>
@@ -257,7 +276,7 @@ const PrevisionsList = () => {
         </div>
         <div className="bg-white shadow-md rounded-xl p-3">
           <div className="flex items-center justify-between">
-            <div><p className="text-xs text-gray-500">Entrées</p><p className="text-xl font-bold text-success">{stats.entrees}</p></div>
+            <div><p className="text-xs text-gray-500">Entrees</p><p className="text-xl font-bold text-success">{stats.entrees}</p></div>
             <TrendingUp className="w-8 h-8 text-success/20" />
           </div>
         </div>
@@ -269,19 +288,19 @@ const PrevisionsList = () => {
         </div>
         <div className="bg-white shadow-md rounded-xl p-3">
           <div className="flex items-center justify-between">
-            <div><p className="text-xs text-gray-500">Validées</p><p className="text-xl font-bold text-info">{stats.validees}</p></div>
+            <div><p className="text-xs text-gray-500">Validees</p><p className="text-xl font-bold text-info">{stats.validees}</p></div>
             <CheckCircle className="w-8 h-8 text-info/20" />
           </div>
         </div>
         <div className="bg-white shadow-md rounded-xl p-3">
           <div className="flex items-center justify-between">
-            <div><p className="text-xs text-gray-500">Réalisées</p><p className="text-xl font-bold text-success">{stats.realisees}</p></div>
+            <div><p className="text-xs text-gray-500">Realisees</p><p className="text-xl font-bold text-success">{stats.realisees}</p></div>
             <Clock className="w-8 h-8 text-success/20" />
           </div>
         </div>
         <div className="bg-white shadow-md rounded-xl p-3">
           <div className="flex items-center justify-between">
-            <div><p className="text-xs text-gray-500">Écarts</p><p className="text-xl font-bold text-warning">{stats.ecart}</p></div>
+            <div><p className="text-xs text-gray-500">Ecarts</p><p className="text-xl font-bold text-warning">{stats.ecart}</p></div>
             <AlertCircle className="w-8 h-8 text-warning/20" />
           </div>
         </div>
@@ -294,7 +313,7 @@ const PrevisionsList = () => {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
               type="text"
-              placeholder="Rechercher par référence, titre..."
+              placeholder="Rechercher par reference, titre..."
               className="input input-bordered w-full pl-9"
               value={searchTerm}
               onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
@@ -309,7 +328,7 @@ const PrevisionsList = () => {
               value={filterWarehouse}
               onChange={(e) => { setFilterWarehouse(e.target.value); setCurrentPage(1); }}
             >
-              <option value="all">Tous les entrepôts</option>
+              <option value="all">Tous les entrepots</option>
               {warehouses.map(wh => (
                 <option key={wh.id} value={wh.id}>{wh.name}</option>
               ))}
@@ -320,7 +339,7 @@ const PrevisionsList = () => {
               onChange={(e) => { setFilterType(e.target.value); setCurrentPage(1); }}
             >
               <option value="all">Tous les types</option>
-              <option value="entree">Entrée</option>
+              <option value="entree">Entree</option>
               <option value="sortie">Sortie</option>
             </select>
             <select
@@ -331,17 +350,17 @@ const PrevisionsList = () => {
               <option value="all">Tous les statuts</option>
               <option value="brouillon">Brouillon</option>
               <option value="en_cours">En cours</option>
-              <option value="valide">Validée</option>
-              <option value="realise">Réalisé</option>
-              <option value="annule">Annulé</option>
-              <option value="ecart">Écart</option>
+              <option value="valide">Validee</option>
+              <option value="realise">Realise</option>
+              <option value="annule">Annule</option>
+              <option value="ecart">Ecart</option>
             </select>
             <select
               className="select select-bordered w-full"
               value={filterPeriode}
               onChange={(e) => { setFilterPeriode(e.target.value); setCurrentPage(1); }}
             >
-              <option value="all">Toutes les périodes</option>
+              <option value="all">Toutes les periodes</option>
               <option value="journalier">Journalier</option>
               <option value="hebdomadaire">Hebdomadaire</option>
               <option value="mensuel">Mensuel</option>
@@ -353,7 +372,7 @@ const PrevisionsList = () => {
               className="input input-bordered w-full"
               value={filterDateDebut}
               onChange={(e) => { setFilterDateDebut(e.target.value); setCurrentPage(1); }}
-              placeholder="Date début"
+              placeholder="Date debut"
             />
             <input
               type="date"
@@ -376,7 +395,7 @@ const PrevisionsList = () => {
               setCurrentPage(1);
             }}
           >
-            <RefreshCw className="w-4 h-4" /> Réinitialiser
+            <RefreshCw className="w-4 h-4" /> Reinitialiser
           </button>
         </div>
       </div>
@@ -387,13 +406,13 @@ const PrevisionsList = () => {
           <table className="table w-full">
             <thead className="bg-gray-50">
               <tr>
-                <th className="py-3">Référence</th>
+                <th className="py-3">Reference</th>
                 <th className="py-3">Titre</th>
                 <th className="py-3 hidden md:table-cell">Type</th>
-                <th className="py-3 text-right">Montant prévu</th>
-                <th className="py-3 text-right">Montant réel</th>
-                <th className="py-3 text-right">Écart</th>
-                <th className="py-3 hidden lg:table-cell">Période</th>
+                <th className="py-3 text-right">Montant prevu</th>
+                <th className="py-3 text-right">Montant reel</th>
+                <th className="py-3 text-right">Ecart</th>
+                <th className="py-3 hidden lg:table-cell">Periode</th>
                 <th className="py-3 text-center">Statut</th>
                 <th className="py-3 text-center">Actions</th>
               </tr>
@@ -404,7 +423,7 @@ const PrevisionsList = () => {
                   <td colSpan="9" className="text-center py-16">
                     <div className="flex flex-col items-center gap-3">
                       <BarChart3 className="w-16 h-16 text-gray-300" />
-                      <p className="text-gray-500 font-medium">Aucune prévision trouvée</p>
+                      <p className="text-gray-500 font-medium">Aucune prevision trouvee</p>
                       <button onClick={() => navigate('/previsions/nouveau')} className="btn btn-primary btn-sm gap-2">
                         <Plus className="w-4 h-4" /> Ajouter
                       </button>
@@ -429,7 +448,7 @@ const PrevisionsList = () => {
                       <td className="text-right">{formatCurrency(item.montant_reel)}</td>
                       <td className={`text-right font-bold ${isEcart ? (isPositive ? 'text-success' : 'text-error') : 'text-gray-400'}`}>
                         {formatCurrency(item.ecart)}
-                        {isEcart && <span className="ml-1 text-xs">{isPositive ? '↑' : '↓'}</span>}
+                        {isEcart && <span className="ml-1 text-xs">{isPositive ? 'HAUT' : 'BAS'}</span>}
                       </td>
                       <td className="hidden lg:table-cell">{getPeriodeLabel(item.periode)}</td>
                       <td className="text-center">
@@ -468,7 +487,7 @@ const PrevisionsList = () => {
         {filteredItems.length > 0 && (
           <div className="px-6 py-4 border-t flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="text-sm text-gray-500">
-              Affichage de {startIndex + 1} à {Math.min(currentPage * itemsPerPage, filteredItems.length)} sur {filteredItems.length}
+              Affichage de {startIndex + 1} a {Math.min(currentPage * itemsPerPage, filteredItems.length)} sur {filteredItems.length}
             </div>
             <div className="flex items-center gap-3">
               <select

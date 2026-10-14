@@ -19,6 +19,17 @@ const PrevisionsDetail = () => {
 
   const getToken = () => localStorage.getItem('Token');
 
+  // ============================================================
+  // FORMATAGE DES NOMBRES
+  // ============================================================
+  const formatNumber = (value, devise = 'FCFA') => {
+    const num = parseFloat(value);
+    if (isNaN(num)) return `0 ${devise}`;
+    return `${num.toLocaleString('fr-FR')} ${devise}`;
+  };
+
+  const formatCurrency = (num) => formatNumber(num, 'FCFA');
+
   const showNotification = (message, type) => {
     setNotification({ show: true, message, type });
     setTimeout(() => setNotification(prev => ({ ...prev, show: false })), 4000);
@@ -29,23 +40,34 @@ const PrevisionsDetail = () => {
     setError(null);
     try {
       const token = getToken();
+      if (!token) {
+        navigate('/login');
+        return;
+      }
+
       const response = await AxiosInstance.get(`/previsions/${id}/`, {
         headers: { 'Authorization': `Token ${token}` }
       });
       setPrevision(response.data);
 
-      // Récupérer le nom de l'entrepôt
-      try {
-        const whRes = await AxiosInstance.get(`/warehouses/${response.data.warehouse}/`, {
-          headers: { 'Authorization': `Token ${token}` }
-        });
-        setWarehouseName(whRes.data.name);
-      } catch {
-        setWarehouseName(response.data.warehouse);
+      // Le serializer renvoie deja warehouse_nom, mais on garde un fallback
+      if (response.data.warehouse_nom) {
+        setWarehouseName(response.data.warehouse_nom);
+      } else if (response.data.warehouse_name) {
+        setWarehouseName(response.data.warehouse_name);
+      } else if (response.data.warehouse) {
+        setWarehouseName(String(response.data.warehouse));
       }
     } catch (error) {
       console.error('Erreur:', error);
-      setError('Impossible de charger les détails de cette prévision.');
+      if (error.response?.status === 404) {
+        setError('Prevision introuvable');
+      } else if (error.response?.status === 401 || error.response?.status === 403) {
+        navigate('/login');
+        return;
+      } else {
+        setError('Impossible de charger les details de cette prevision.');
+      }
       showNotification('Erreur de chargement', 'error');
     } finally {
       setLoading(false);
@@ -56,33 +78,27 @@ const PrevisionsDetail = () => {
     if (id) {
       fetchDetail();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   const handleDelete = async () => {
-    if (!window.confirm('Voulez-vous vraiment supprimer cette prévision ?')) return;
+    if (!window.confirm('Voulez-vous vraiment supprimer cette prevision ?')) return;
     try {
       const token = getToken();
       await AxiosInstance.delete(`/previsions/${id}/`, {
         headers: { 'Authorization': `Token ${token}` }
       });
-      showNotification('Prévision supprimée avec succès', 'success');
+      showNotification('Prevision supprimee avec succes', 'success');
       setTimeout(() => navigate('/previsions'), 1500);
     } catch (error) {
       showNotification('Erreur lors de la suppression', 'error');
     }
   };
 
-  const formatNumber = (num) => {
-    if (num === undefined || num === null) return '0';
-    return Number(num).toLocaleString();
-  };
-
-  const formatCurrency = (num) => `${formatNumber(num)} FCFA`;
-
   const getTypeBadge = (type) => {
     const map = {
-      'entree': { label: 'Entrée prévue', color: 'badge-success' },
-      'sortie': { label: 'Sortie prévue', color: 'badge-error' }
+      'entree': { label: 'Entree prevue', color: 'badge-success' },
+      'sortie': { label: 'Sortie prevue', color: 'badge-error' }
     };
     const info = map[type] || { label: type, color: 'badge-ghost' };
     return <span className={`badge ${info.color} text-sm py-2 px-4`}>{info.label}</span>;
@@ -103,10 +119,10 @@ const PrevisionsDetail = () => {
     const map = {
       'brouillon': { label: 'Brouillon', color: 'badge-ghost' },
       'en_cours': { label: 'En cours', color: 'badge-warning' },
-      'valide': { label: 'Validée', color: 'badge-info' },
-      'realise': { label: 'Réalisé', color: 'badge-success' },
-      'annule': { label: 'Annulé', color: 'badge-error' },
-      'ecart': { label: 'Écart constaté', color: 'badge-error' }
+      'valide': { label: 'Validee', color: 'badge-info' },
+      'realise': { label: 'Realise', color: 'badge-success' },
+      'annule': { label: 'Annule', color: 'badge-error' },
+      'ecart': { label: 'Ecart constate', color: 'badge-error' }
     };
     const info = map[status] || { label: status, color: 'badge-ghost' };
     return <span className={`badge ${info.color} text-sm py-2 px-4`}>{info.label}</span>;
@@ -117,7 +133,7 @@ const PrevisionsDetail = () => {
       <div className="flex items-center justify-center min-h-[calc(100vh-200px)]">
         <div className="text-center space-y-4">
           <div className="loading loading-spinner loading-lg text-primary w-12 h-12"></div>
-          <p className="text-base font-semibold text-gray-500">Chargement des détails...</p>
+          <p className="text-base font-semibold text-gray-500">Chargement des details...</p>
         </div>
       </div>
     );
@@ -128,9 +144,9 @@ const PrevisionsDetail = () => {
       <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)]">
         <div className="text-center space-y-4">
           <AlertCircle className="w-16 h-16 text-error" />
-          <p className="text-xl font-semibold text-gray-700">{error || 'Prévision non trouvée'}</p>
+          <p className="text-xl font-semibold text-gray-700">{error || 'Prevision non trouvee'}</p>
           <button onClick={() => navigate('/previsions')} className="btn btn-primary gap-2">
-            <ArrowLeft className="w-4 h-4" /> Retour à la liste
+            <ArrowLeft className="w-4 h-4" /> Retour a la liste
           </button>
         </div>
       </div>
@@ -139,6 +155,15 @@ const PrevisionsDetail = () => {
 
   const isEcart = parseFloat(prevision.ecart || 0) !== 0;
   const ecartPositive = parseFloat(prevision.ecart || 0) > 0;
+
+  // Valeurs derivees pour l'affichage
+  const warehouseLabel = warehouseName || prevision.warehouse_nom || prevision.warehouse_name || prevision.warehouse || '-';
+
+  const createdByLabel = prevision.created_by_name
+    || (typeof prevision.created_by === 'object' && prevision.created_by !== null
+        ? prevision.created_by.full_name || prevision.created_by.username
+        : prevision.created_by)
+    || '-';
 
   return (
     <div className="space-y-4 sm:space-y-6 p-4 sm:p-6 bg-gray-50 min-h-screen">
@@ -157,7 +182,7 @@ const PrevisionsDetail = () => {
         </div>
       )}
 
-      {/* En-tête */}
+      {/* En-tete */}
       <div className="relative overflow-hidden bg-gradient-to-r from-primary/10 via-primary/5 to-transparent rounded-2xl p-5">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
@@ -169,9 +194,9 @@ const PrevisionsDetail = () => {
                 <BarChart3 className="w-7 h-7 text-primary" />
               </div>
               <div>
-                <h1 className="text-2xl sm:text-3xl font-black text-primary">Prévision de trésorerie</h1>
+                <h1 className="text-2xl sm:text-3xl font-black text-primary">Prevision de tresorerie</h1>
                 <p className="text-sm text-gray-500">
-                  {prevision.reference} – {prevision.titre}
+                  {prevision.reference} - {prevision.titre}
                 </p>
               </div>
             </div>
@@ -190,12 +215,12 @@ const PrevisionsDetail = () => {
         </div>
       </div>
 
-      {/* Cartes récapitulatives */}
+      {/* Cartes recapitulatives */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white shadow-md rounded-xl p-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs text-gray-500">Montant prévu</p>
+              <p className="text-xs text-gray-500">Montant prevu</p>
               <p className="text-2xl font-bold">{formatCurrency(prevision.montant_prevu)}</p>
             </div>
             <DollarSign className="w-8 h-8 text-primary/20" />
@@ -204,7 +229,7 @@ const PrevisionsDetail = () => {
         <div className="bg-white shadow-md rounded-xl p-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs text-gray-500">Montant réel</p>
+              <p className="text-xs text-gray-500">Montant reel</p>
               <p className="text-2xl font-bold">{formatCurrency(prevision.montant_reel)}</p>
             </div>
             <DollarSign className="w-8 h-8 text-primary/20" />
@@ -213,7 +238,7 @@ const PrevisionsDetail = () => {
         <div className="bg-white shadow-md rounded-xl p-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs text-gray-500">Écart</p>
+              <p className="text-xs text-gray-500">Ecart</p>
               <p className={`text-2xl font-bold ${isEcart ? (ecartPositive ? 'text-success' : 'text-error') : 'text-gray-500'}`}>
                 {formatCurrency(prevision.ecart)}
               </p>
@@ -228,7 +253,7 @@ const PrevisionsDetail = () => {
         <div className="bg-white shadow-md rounded-xl p-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs text-gray-500">Probabilité</p>
+              <p className="text-xs text-gray-500">Probabilite</p>
               <p className="text-2xl font-bold">{prevision.probabilite || 0}%</p>
             </div>
             <Percent className="w-8 h-8 text-primary/20" />
@@ -236,16 +261,16 @@ const PrevisionsDetail = () => {
         </div>
       </div>
 
-      {/* Détails */}
+      {/* Details */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Informations générales */}
+        {/* Informations generales */}
         <div className="bg-white shadow-md rounded-xl p-5">
           <h2 className="text-lg font-bold text-primary mb-4 flex items-center gap-2">
-            <FileText className="w-5 h-5" /> Informations générales
+            <FileText className="w-5 h-5" /> Informations generales
           </h2>
           <div className="space-y-3">
             <div className="flex justify-between items-center border-b pb-2">
-              <span className="text-gray-600">Référence</span>
+              <span className="text-gray-600">Reference</span>
               <span className="font-mono font-bold">{prevision.reference}</span>
             </div>
             <div className="flex justify-between items-center border-b pb-2">
@@ -253,15 +278,15 @@ const PrevisionsDetail = () => {
               <span className="font-bold">{prevision.titre}</span>
             </div>
             <div className="flex justify-between items-center border-b pb-2">
-              <span className="text-gray-600">Entrepôt</span>
-              <span>{warehouseName}</span>
+              <span className="text-gray-600">Entrepot</span>
+              <span>{warehouseLabel}</span>
             </div>
             <div className="flex justify-between items-center border-b pb-2">
               <span className="text-gray-600">Type</span>
               <span>{getTypeBadge(prevision.type_prevision)}</span>
             </div>
             <div className="flex justify-between items-center border-b pb-2">
-              <span className="text-gray-600">Période</span>
+              <span className="text-gray-600">Periode</span>
               <span>{getPeriodeLabel(prevision.periode)}</span>
             </div>
             <div className="flex justify-between items-center border-b pb-2">
@@ -269,20 +294,20 @@ const PrevisionsDetail = () => {
               <span>{getStatusBadge(prevision.statut)}</span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-gray-600">Probabilité</span>
+              <span className="text-gray-600">Probabilite</span>
               <span>{prevision.probabilite || 0}%</span>
             </div>
           </div>
         </div>
 
-        {/* Période et écarts */}
+        {/* Periode et ecarts */}
         <div className="bg-white shadow-md rounded-xl p-5">
           <h2 className="text-lg font-bold text-primary mb-4 flex items-center gap-2">
-            <Calendar className="w-5 h-5" /> Période & écarts
+            <Calendar className="w-5 h-5" /> Periode & ecarts
           </h2>
           <div className="space-y-3">
             <div className="flex justify-between items-center border-b pb-2">
-              <span className="text-gray-600">Date début</span>
+              <span className="text-gray-600">Date debut</span>
               <span>{prevision.date_debut}</span>
             </div>
             <div className="flex justify-between items-center border-b pb-2">
@@ -290,21 +315,21 @@ const PrevisionsDetail = () => {
               <span>{prevision.date_fin}</span>
             </div>
             <div className="flex justify-between items-center border-b pb-2">
-              <span className="text-gray-600">Montant prévu</span>
+              <span className="text-gray-600">Montant prevu</span>
               <span className="font-bold">{formatCurrency(prevision.montant_prevu)}</span>
             </div>
             <div className="flex justify-between items-center border-b pb-2">
-              <span className="text-gray-600">Montant réel</span>
+              <span className="text-gray-600">Montant reel</span>
               <span className="font-bold">{formatCurrency(prevision.montant_reel)}</span>
             </div>
             <div className="flex justify-between items-center border-b pb-2">
-              <span className="text-gray-600">Écart</span>
+              <span className="text-gray-600">Ecart</span>
               <span className={`font-bold ${isEcart ? (ecartPositive ? 'text-success' : 'text-error') : 'text-gray-500'}`}>
                 {formatCurrency(prevision.ecart)}
               </span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-gray-600">% Écart</span>
+              <span className="text-gray-600">% Ecart</span>
               <span className={`font-bold ${isEcart ? (ecartPositive ? 'text-success' : 'text-error') : 'text-gray-500'}`}>
                 {prevision.pourcentage_ecart ? `${Number(prevision.pourcentage_ecart).toFixed(2)}%` : '0%'}
               </span>
@@ -313,19 +338,19 @@ const PrevisionsDetail = () => {
         </div>
       </div>
 
-      {/* Catégorie et source */}
+      {/* Categorie et source */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white shadow-md rounded-xl p-5">
           <h2 className="text-lg font-bold text-primary mb-4 flex items-center gap-2">
-            <Tag className="w-5 h-5" /> Catégorisation
+            <Tag className="w-5 h-5" /> Categorisation
           </h2>
           <div className="space-y-3">
             <div className="flex justify-between items-center border-b pb-2">
-              <span className="text-gray-600">Catégorie</span>
+              <span className="text-gray-600">Categorie</span>
               <span>{prevision.categorie || '-'}</span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-gray-600">Sous-catégorie</span>
+              <span className="text-gray-600">Sous-categorie</span>
               <span>{prevision.sous_categorie || '-'}</span>
             </div>
           </div>
@@ -355,13 +380,23 @@ const PrevisionsDetail = () => {
         </div>
       )}
 
-      {/* Métadonnées */}
+      {/* Metadonnees */}
       <div className="bg-white shadow-md rounded-xl p-5 text-sm text-gray-500">
         <div className="grid grid-cols-2 gap-4">
-          <div><span className="font-semibold">Créé le :</span> {new Date(prevision.created_at).toLocaleString()}</div>
-          <div><span className="font-semibold">Mis à jour :</span> {new Date(prevision.updated_at).toLocaleString()}</div>
-          <div><span className="font-semibold">Créé par :</span> {prevision.created_by || '-'}</div>
-          <div><span className="font-semibold">ID :</span> {prevision.id}</div>
+          <div>
+            <span className="font-semibold">Cree le :</span>{' '}
+            {prevision.created_at ? new Date(prevision.created_at).toLocaleString('fr-FR') : '-'}
+          </div>
+          <div>
+            <span className="font-semibold">Mis a jour :</span>{' '}
+            {prevision.updated_at ? new Date(prevision.updated_at).toLocaleString('fr-FR') : '-'}
+          </div>
+          <div>
+            <span className="font-semibold">Cree par :</span> {createdByLabel}
+          </div>
+          <div>
+            <span className="font-semibold">ID :</span> {prevision.id}
+          </div>
         </div>
       </div>
     </div>

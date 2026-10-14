@@ -39,19 +39,28 @@ const FraisForm = () => {
 
   const getToken = () => localStorage.getItem('Token');
 
+  // NORMALISATION : tableau direct OU reponse paginee DRF
+  const normalizeData = (data) => {
+    if (Array.isArray(data)) return data;
+    if (data && Array.isArray(data.results)) return data.results;
+    return [];
+  };
+
   const showNotification = (message, type) => {
     setNotification({ message, type });
     setTimeout(() => setNotification(null), 4000);
   };
 
-  // Génération automatique de la référence (comme le backend)
+  // Generation automatique de la reference (comme le backend)
   const generateReference = async () => {
     try {
       const token = getToken();
-      const response = await AxiosInstance.get('/frais/', {
-        headers: { 'Authorization': `Token ${token}` }
-      });
-      const frais = response.data || [];
+      const response = await AxiosInstance.get(
+        '/frais/?page_size=1000',
+        { headers: { 'Authorization': `Token ${token}` } }
+      );
+      // NORMALISATION
+      const frais = normalizeData(response.data);
       const month = new Date().toISOString().slice(0, 7).replace('-', '');
       const filtered = frais.filter(f => f.reference && f.reference.startsWith('FRAIS' + month));
       const maxNum = filtered.reduce((max, f) => {
@@ -66,16 +75,19 @@ const FraisForm = () => {
     }
   };
 
-  // Charger les entrepôts
+  // Charger les entrepots
   const fetchWarehouses = async () => {
     try {
       const token = getToken();
-      const response = await AxiosInstance.get('/warehouses/?is_active=true', {
-        headers: { 'Authorization': `Token ${token}` }
-      });
-      setWarehouses(response.data || []);
+      const response = await AxiosInstance.get(
+        '/warehouses/?is_active=true&page_size=1000',
+        { headers: { 'Authorization': `Token ${token}` } }
+      );
+      // NORMALISATION
+      setWarehouses(normalizeData(response.data));
     } catch (error) {
-      console.error('Erreur chargement entrepôts:', error);
+      console.error('Erreur chargement entrepots:', error);
+      setWarehouses([]);
     }
   };
 
@@ -83,19 +95,21 @@ const FraisForm = () => {
   const fetchSuppliers = async () => {
     try {
       const token = getToken();
-      const response = await AxiosInstance.get('/fournisseurs/?limit=50', {
-        headers: { 'Authorization': `Token ${token}` }
-      });
-      setSuppliers(response.data || []);
+      const response = await AxiosInstance.get(
+        '/fournisseurs/?page_size=500',
+        { headers: { 'Authorization': `Token ${token}` } }
+      );
+      // NORMALISATION
+      setSuppliers(normalizeData(response.data));
     } catch (error) {
       console.error('Erreur chargement fournisseurs:', error);
+      setSuppliers([]);
     }
   };
 
-  // Charger les données du frais en édition
+  // Charger les donnees du frais en edition
   const fetchFrais = async () => {
     if (!isEdit) {
-      // Générer la référence pour un nouveau frais
       const ref = await generateReference();
       setFormData(prev => ({ ...prev, reference: ref }));
       return;
@@ -119,13 +133,13 @@ const FraisForm = () => {
         beneficiaire: data.beneficiaire || '',
         piece_justificative: data.piece_justificative || '',
         mode_paiement: data.mode_paiement || 'especes',
-        supplier: data.supplier || '',
+        supplier: data.supplier || data.supplier_id || '',
         status: data.status || 'brouillon',
         notes: data.notes || ''
       });
     } catch (error) {
       console.error('Erreur chargement frais:', error);
-      showNotification('Erreur de chargement des données', 'error');
+      showNotification('Erreur de chargement des donnees', 'error');
       setTimeout(() => navigate('/frais'), 2000);
     } finally {
       setLoading(false);
@@ -136,6 +150,7 @@ const FraisForm = () => {
     fetchWarehouses();
     fetchSuppliers();
     fetchFrais();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   const handleChange = (e) => {
@@ -152,12 +167,12 @@ const FraisForm = () => {
   const validate = () => {
     const newErrors = {};
     if (!formData.titre.trim()) newErrors.titre = 'Le titre est requis';
-    if (!formData.warehouse) newErrors.warehouse = "L'entrepôt est requis";
-    if (!formData.categorie) newErrors.categorie = 'La catégorie est requise';
+    if (!formData.warehouse) newErrors.warehouse = "L'entrepot est requis";
+    if (!formData.categorie) newErrors.categorie = 'La categorie est requise';
     if (!formData.montant || parseFloat(formData.montant) <= 0) {
-      newErrors.montant = 'Le montant doit être supérieur à 0';
+      newErrors.montant = 'Le montant doit etre superieur a 0';
     }
-    if (!formData.beneficiaire.trim()) newErrors.beneficiaire = 'Le bénéficiaire est requis';
+    if (!formData.beneficiaire.trim()) newErrors.beneficiaire = 'Le beneficiaire est requis';
     if (!formData.date_frais) newErrors.date_frais = 'La date du frais est requise';
 
     setErrors(newErrors);
@@ -178,9 +193,12 @@ const FraisForm = () => {
       const dataToSend = {
         ...formData,
         montant: parseFloat(formData.montant) || 0,
-        supplier: formData.supplier || null,
+        supplier_id: formData.supplier ? parseInt(formData.supplier) : null,
         date_paiement: formData.date_paiement || null,
       };
+
+      // Retirer supplier (envoyer supplier_id uniquement)
+      delete dataToSend.supplier;
 
       const url = isEdit ? `/frais/${id}/` : '/frais/';
       const method = isEdit ? 'put' : 'post';
@@ -190,7 +208,7 @@ const FraisForm = () => {
       });
 
       showNotification(
-        isEdit ? 'Frais modifié avec succès' : 'Frais créé avec succès',
+        isEdit ? 'Frais modifie avec succes' : 'Frais cree avec succes',
         'success'
       );
 
@@ -211,14 +229,13 @@ const FraisForm = () => {
         setErrors(newErrors);
         showNotification('Erreur lors de l\'enregistrement', 'error');
       } else {
-        showNotification('Erreur réseau', 'error');
+        showNotification('Erreur reseau', 'error');
       }
     } finally {
       setSubmitting(false);
     }
   };
 
-  // Options pour les sélecteurs
   const categorieOptions = [
     { value: 'transport', label: 'Transport' },
     { value: 'restauration', label: 'Restauration' },
@@ -227,9 +244,9 @@ const FraisForm = () => {
     { value: 'entretien', label: 'Entretien' },
     { value: 'formation', label: 'Formation' },
     { value: 'mission', label: 'Mission' },
-    { value: 'representations', label: 'Représentation' },
+    { value: 'representations', label: 'Representation' },
     { value: 'assurances', label: 'Assurances' },
-    { value: 'impots', label: 'Impôts et taxes' },
+    { value: 'impots', label: 'Impots et taxes' },
     { value: 'loyer', label: 'Loyer' },
     { value: 'services', label: 'Services' },
     { value: 'fournisseur', label: 'Paiement fournisseur' },
@@ -237,22 +254,22 @@ const FraisForm = () => {
   ];
 
   const modeOptions = [
-    { value: 'especes', label: 'Espèces' },
+    { value: 'especes', label: 'Especes' },
     { value: 'carte', label: 'Carte bancaire' },
-    { value: 'cheque', label: 'Chèque' },
+    { value: 'cheque', label: 'Cheque' },
     { value: 'virement', label: 'Virement' },
     { value: 'mobile_money', label: 'Mobile Money' },
-    { value: 'prelevement', label: 'Prélèvement' },
+    { value: 'prelevement', label: 'Prelevement' },
     { value: 'autre', label: 'Autre' }
   ];
 
   const statusOptions = [
     { value: 'brouillon', label: 'Brouillon' },
     { value: 'en_attente', label: 'En attente de validation' },
-    { value: 'valide', label: 'Validé' },
-    { value: 'paye', label: 'Payé' },
-    { value: 'refuse', label: 'Refusé' },
-    { value: 'annule', label: 'Annulé' }
+    { value: 'valide', label: 'Valide' },
+    { value: 'paye', label: 'Paye' },
+    { value: 'refuse', label: 'Refuse' },
+    { value: 'annule', label: 'Annule' }
   ];
 
   if (loading) {
@@ -283,7 +300,7 @@ const FraisForm = () => {
         </div>
       )}
 
-      {/* En-tête */}
+      {/* En-tete */}
       <div className="w-full bg-gradient-to-r from-primary/10 via-primary/5 to-transparent border-b border-primary/10">
         <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
@@ -300,7 +317,7 @@ const FraisForm = () => {
                     {isEdit ? 'Modifier le frais' : 'Nouveau frais'}
                   </h1>
                   <p className="text-sm text-gray-500">
-                    {isEdit ? 'Modifiez les informations du frais' : 'Enregistrez une nouvelle dépense'}
+                    {isEdit ? 'Modifiez les informations du frais' : 'Enregistrez une nouvelle depense'}
                   </p>
                 </div>
               </div>
@@ -313,19 +330,18 @@ const FraisForm = () => {
       <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
         <form onSubmit={handleSubmit} className="space-y-6">
 
-          {/* Section 1 : Informations générales */}
+          {/* Section 1 : Informations generales */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
             <div className="bg-gray-50 px-6 py-3 border-b">
               <h3 className="font-semibold flex items-center gap-2">
-                <Layers className="w-4 h-4 text-primary" /> Informations générales
+                <Layers className="w-4 h-4 text-primary" /> Informations generales
               </h3>
             </div>
             <div className="p-6">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {/* Référence */}
                 <div>
                   <label className="label text-sm font-medium text-gray-700">
-                    Référence <span className="text-error">*</span>
+                    Reference <span className="text-error">*</span>
                   </label>
                   <input
                     type="text"
@@ -337,7 +353,6 @@ const FraisForm = () => {
                   />
                 </div>
 
-                {/* Titre */}
                 <div>
                   <label className="label text-sm font-medium text-gray-700">
                     Titre <span className="text-error">*</span>
@@ -353,10 +368,9 @@ const FraisForm = () => {
                   {errors.titre && <p className="text-error text-xs mt-1">{errors.titre}</p>}
                 </div>
 
-                {/* Catégorie */}
                 <div>
                   <label className="label text-sm font-medium text-gray-700">
-                    Catégorie <span className="text-error">*</span>
+                    Categorie <span className="text-error">*</span>
                   </label>
                   <select
                     name="categorie"
@@ -371,10 +385,9 @@ const FraisForm = () => {
                   {errors.categorie && <p className="text-error text-xs mt-1">{errors.categorie}</p>}
                 </div>
 
-                {/* Entrepôt */}
                 <div>
                   <label className="label text-sm font-medium text-gray-700">
-                    Entrepôt <span className="text-error">*</span>
+                    Entrepot <span className="text-error">*</span>
                   </label>
                   <select
                     name="warehouse"
@@ -382,7 +395,7 @@ const FraisForm = () => {
                     onChange={handleChange}
                     className={`select select-bordered w-full ${errors.warehouse ? 'select-error' : ''}`}
                   >
-                    <option value="">Sélectionner</option>
+                    <option value="">Selectionner</option>
                     {warehouses.map(w => (
                       <option key={w.id} value={w.id}>{w.name} ({w.code})</option>
                     ))}
@@ -390,10 +403,9 @@ const FraisForm = () => {
                   {errors.warehouse && <p className="text-error text-xs mt-1">{errors.warehouse}</p>}
                 </div>
 
-                {/* Bénéficiaire */}
                 <div>
                   <label className="label text-sm font-medium text-gray-700">
-                    Bénéficiaire <span className="text-error">*</span>
+                    Beneficiaire <span className="text-error">*</span>
                   </label>
                   <input
                     type="text"
@@ -401,12 +413,11 @@ const FraisForm = () => {
                     value={formData.beneficiaire}
                     onChange={handleChange}
                     className={`input input-bordered w-full ${errors.beneficiaire ? 'input-error' : ''}`}
-                    placeholder="Nom du bénéficiaire"
+                    placeholder="Nom du beneficiaire"
                   />
                   {errors.beneficiaire && <p className="text-error text-xs mt-1">{errors.beneficiaire}</p>}
                 </div>
 
-                {/* Fournisseur (optionnel) */}
                 <div>
                   <label className="label text-sm font-medium text-gray-700">
                     Fournisseur (optionnel)
@@ -436,7 +447,6 @@ const FraisForm = () => {
             </div>
             <div className="p-6">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {/* Montant */}
                 <div>
                   <label className="label text-sm font-medium text-gray-700">
                     Montant <span className="text-error">*</span>
@@ -454,7 +464,6 @@ const FraisForm = () => {
                   {errors.montant && <p className="text-error text-xs mt-1">{errors.montant}</p>}
                 </div>
 
-                {/* Mode de paiement */}
                 <div>
                   <label className="label text-sm font-medium text-gray-700">
                     Mode de paiement
@@ -471,7 +480,6 @@ const FraisForm = () => {
                   </select>
                 </div>
 
-                {/* Statut */}
                 <div>
                   <label className="label text-sm font-medium text-gray-700">
                     Statut
@@ -500,7 +508,6 @@ const FraisForm = () => {
             </div>
             <div className="p-6">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {/* Date du frais */}
                 <div>
                   <label className="label text-sm font-medium text-gray-700">
                     Date du frais <span className="text-error">*</span>
@@ -515,7 +522,6 @@ const FraisForm = () => {
                   {errors.date_frais && <p className="text-error text-xs mt-1">{errors.date_frais}</p>}
                 </div>
 
-                {/* Date de paiement */}
                 <div>
                   <label className="label text-sm font-medium text-gray-700">
                     Date de paiement
@@ -529,10 +535,9 @@ const FraisForm = () => {
                   />
                 </div>
 
-                {/* Pièce justificative */}
                 <div>
                   <label className="label text-sm font-medium text-gray-700">
-                    Pièce justificative
+                    Piece justificative
                   </label>
                   <input
                     type="text"
@@ -540,7 +545,7 @@ const FraisForm = () => {
                     value={formData.piece_justificative}
                     onChange={handleChange}
                     className="input input-bordered w-full"
-                    placeholder="N° de pièce"
+                    placeholder="N de piece"
                   />
                 </div>
               </div>
@@ -560,12 +565,12 @@ const FraisForm = () => {
                 value={formData.notes}
                 onChange={handleChange}
                 className="textarea textarea-bordered w-full min-h-[80px]"
-                placeholder="Informations complémentaires..."
+                placeholder="Informations complementaires..."
               />
             </div>
           </div>
 
-          {/* Boutons d'action */}
+          {/* Boutons */}
           <div className="flex flex-col sm:flex-row gap-3 justify-end">
             <button
               type="button"
@@ -585,7 +590,7 @@ const FraisForm = () => {
               ) : (
                 <Save className="w-4 h-4" />
               )}
-              {isEdit ? 'Modifier' : 'Créer'}
+              {isEdit ? 'Modifier' : 'Creer'}
             </button>
           </div>
 

@@ -14,11 +14,20 @@ const RapprochementBancaireDetail = () => {
   const [rapprochement, setRapprochement] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [warehouseName, setWarehouseName] = useState('');
-  const [compteName, setCompteName] = useState('');
   const [notification, setNotification] = useState({ show: false, message: '', type: 'success' });
 
   const getToken = () => localStorage.getItem('Token');
+
+  // ============================================================
+  // FORMATAGE DES NOMBRES
+  // ============================================================
+  const formatNumber = (value, devise = 'FCFA') => {
+    const num = parseFloat(value);
+    if (isNaN(num)) return `0 ${devise}`;
+    return `${num.toLocaleString('fr-FR')} ${devise}`;
+  };
+
+  const formatCurrency = (num) => formatNumber(num, 'FCFA');
 
   const showNotification = (message, type) => {
     setNotification({ show: true, message, type });
@@ -30,30 +39,25 @@ const RapprochementBancaireDetail = () => {
     setError(null);
     try {
       const token = getToken();
+      if (!token) {
+        navigate('/login');
+        return;
+      }
+
       const response = await AxiosInstance.get(`/rapprochements/${id}/`, {
         headers: { 'Authorization': `Token ${token}` }
       });
       setRapprochement(response.data);
-
-      // Récupérer les noms de l'entrepôt et du compte
-      try {
-        const [whRes, cptRes] = await Promise.all([
-          AxiosInstance.get(`/warehouses/${response.data.warehouse}/`, {
-            headers: { 'Authorization': `Token ${token}` }
-          }),
-          AxiosInstance.get(`/comptes-bancaires/${response.data.compte_bancaire}/`, {
-            headers: { 'Authorization': `Token ${token}` }
-          })
-        ]);
-        setWarehouseName(whRes.data.name);
-        setCompteName(`${cptRes.data.banque} - ${cptRes.data.nom} (${cptRes.data.numero_compte})`);
-      } catch {
-        setWarehouseName(response.data.warehouse);
-        setCompteName(response.data.compte_bancaire);
-      }
     } catch (error) {
       console.error('Erreur:', error);
-      setError('Impossible de charger les détails de ce rapprochement.');
+      if (error.response?.status === 404) {
+        setError('Rapprochement introuvable');
+      } else if (error.response?.status === 401 || error.response?.status === 403) {
+        navigate('/login');
+        return;
+      } else {
+        setError('Impossible de charger les details de ce rapprochement.');
+      }
       showNotification('Erreur de chargement', 'error');
     } finally {
       setLoading(false);
@@ -64,6 +68,7 @@ const RapprochementBancaireDetail = () => {
     if (id) {
       fetchDetail();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   // Valider le rapprochement
@@ -74,7 +79,7 @@ const RapprochementBancaireDetail = () => {
       await AxiosInstance.post(`/rapprochements/${id}/valider_rapprochement/`, {}, {
         headers: { 'Authorization': `Token ${token}` }
       });
-      showNotification('Rapprochement validé avec succès', 'success');
+      showNotification('Rapprochement valide avec succes', 'success');
       fetchDetail();
     } catch (error) {
       showNotification('Erreur lors de la validation', 'error');
@@ -89,19 +94,12 @@ const RapprochementBancaireDetail = () => {
       await AxiosInstance.delete(`/rapprochements/${id}/`, {
         headers: { 'Authorization': `Token ${token}` }
       });
-      showNotification('Rapprochement supprimé avec succès', 'success');
+      showNotification('Rapprochement supprime avec succes', 'success');
       setTimeout(() => navigate('/rapprochement-bancaire'), 1500);
     } catch (error) {
       showNotification('Erreur lors de la suppression', 'error');
     }
   };
-
-  const formatNumber = (num) => {
-    if (num === undefined || num === null) return '0';
-    return Number(num).toLocaleString();
-  };
-
-  const formatCurrency = (num) => `${formatNumber(num)} FCFA`;
 
   const getStatusBadge = (status) => {
     const map = {
@@ -109,7 +107,7 @@ const RapprochementBancaireDetail = () => {
       'en_cours': { label: 'En cours', color: 'badge-warning' },
       'partiel': { label: 'Partiel', color: 'badge-info' },
       'complete': { label: 'Complet', color: 'badge-success' },
-      'ecart': { label: 'Écart', color: 'badge-error' },
+      'ecart': { label: 'Ecart', color: 'badge-error' },
     };
     const info = map[status] || { label: status, color: 'badge-ghost' };
     return <span className={`badge ${info.color} text-sm py-2 px-4`}>{info.label}</span>;
@@ -124,7 +122,7 @@ const RapprochementBancaireDetail = () => {
       <div className="flex items-center justify-center min-h-[calc(100vh-200px)]">
         <div className="text-center space-y-4">
           <div className="loading loading-spinner loading-lg text-primary w-12 h-12"></div>
-          <p className="text-base font-semibold text-gray-500">Chargement des détails...</p>
+          <p className="text-base font-semibold text-gray-500">Chargement des details...</p>
         </div>
       </div>
     );
@@ -135,14 +133,39 @@ const RapprochementBancaireDetail = () => {
       <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)]">
         <div className="text-center space-y-4">
           <AlertCircle className="w-16 h-16 text-error" />
-          <p className="text-xl font-semibold text-gray-700">{error || 'Rapprochement non trouvé'}</p>
+          <p className="text-xl font-semibold text-gray-700">{error || 'Rapprochement non trouve'}</p>
           <button onClick={() => navigate('/rapprochement-bancaire')} className="btn btn-primary gap-2">
-            <ArrowLeft className="w-4 h-4" /> Retour à la liste
+            <ArrowLeft className="w-4 h-4" /> Retour a la liste
           </button>
         </div>
       </div>
     );
   }
+
+  // Valeurs derivees
+  const warehouseLabel = rapprochement.warehouse_nom
+    || rapprochement.warehouse_name
+    || (typeof rapprochement.warehouse === 'object' && rapprochement.warehouse !== null
+        ? rapprochement.warehouse.name
+        : rapprochement.warehouse || '-');
+
+  const compteLabel = rapprochement.compte_bancaire_nom
+    || rapprochement.compte_name
+    || (typeof rapprochement.compte_bancaire === 'object' && rapprochement.compte_bancaire !== null
+        ? `${rapprochement.compte_bancaire.banque} - ${rapprochement.compte_bancaire.nom}`
+        : rapprochement.compte_bancaire || '-');
+
+  const valideParLabel = rapprochement.valide_par_name
+    || (typeof rapprochement.valide_par === 'object' && rapprochement.valide_par !== null
+        ? rapprochement.valide_par.full_name || rapprochement.valide_par.username
+        : rapprochement.valide_par)
+    || '-';
+
+  const createdByLabel = rapprochement.created_by_name
+    || (typeof rapprochement.created_by === 'object' && rapprochement.created_by !== null
+        ? rapprochement.created_by.full_name || rapprochement.created_by.username
+        : rapprochement.created_by)
+    || '-';
 
   return (
     <div className="space-y-4 sm:space-y-6 p-4 sm:p-6 bg-gray-50 min-h-screen">
@@ -161,7 +184,7 @@ const RapprochementBancaireDetail = () => {
         </div>
       )}
 
-      {/* En-tête */}
+      {/* En-tete */}
       <div className="relative overflow-hidden bg-gradient-to-r from-primary/10 via-primary/5 to-transparent rounded-2xl p-5">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
@@ -175,7 +198,7 @@ const RapprochementBancaireDetail = () => {
               <div>
                 <h1 className="text-2xl sm:text-3xl font-black text-primary">Rapprochement bancaire</h1>
                 <p className="text-sm text-gray-500">
-                  {rapprochement.reference} – {compteName}
+                  {rapprochement.reference} - {compteLabel}
                 </p>
               </div>
             </div>
@@ -199,7 +222,7 @@ const RapprochementBancaireDetail = () => {
         </div>
       </div>
 
-      {/* Cartes récapitulatives */}
+      {/* Cartes recapitulatives */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white shadow-md rounded-xl p-4">
           <div className="flex items-center justify-between">
@@ -222,10 +245,9 @@ const RapprochementBancaireDetail = () => {
         <div className="bg-white shadow-md rounded-xl p-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs text-gray-500">Écart</p>
+              <p className="text-xs text-gray-500">Ecart</p>
               <p className={`text-2xl font-bold ${isRapproche(rapprochement) ? 'text-success' : 'text-error'}`}>
                 {formatCurrency(rapprochement.ecart)}
-                {!isRapproche(rapprochement) && <span className="text-sm ml-1">⚠️</span>}
               </p>
             </div>
             {isRapproche(rapprochement) ? (
@@ -246,29 +268,29 @@ const RapprochementBancaireDetail = () => {
         </div>
       </div>
 
-      {/* Détails du rapprochement */}
+      {/* Details du rapprochement */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Informations générales */}
+        {/* Informations generales */}
         <div className="bg-white shadow-md rounded-xl p-5">
           <h2 className="text-lg font-bold text-primary mb-4 flex items-center gap-2">
-            <FileText className="w-5 h-5" /> Informations générales
+            <FileText className="w-5 h-5" /> Informations generales
           </h2>
           <div className="space-y-3">
             <div className="flex justify-between items-center border-b pb-2">
-              <span className="text-gray-600">Référence</span>
+              <span className="text-gray-600">Reference</span>
               <span className="font-mono font-bold">{rapprochement.reference}</span>
             </div>
             <div className="flex justify-between items-center border-b pb-2">
-              <span className="text-gray-600">Entrepôt</span>
-              <span>{warehouseName}</span>
+              <span className="text-gray-600">Entrepot</span>
+              <span>{warehouseLabel}</span>
             </div>
             <div className="flex justify-between items-center border-b pb-2">
               <span className="text-gray-600">Compte bancaire</span>
-              <span>{compteName}</span>
+              <span>{compteLabel}</span>
             </div>
             <div className="flex justify-between items-center border-b pb-2">
-              <span className="text-gray-600">Période</span>
-              <span>{rapprochement.date_debut} → {rapprochement.date_fin}</span>
+              <span className="text-gray-600">Periode</span>
+              <span>{rapprochement.date_debut} - {rapprochement.date_fin}</span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-gray-600">Statut</span>
@@ -277,10 +299,10 @@ const RapprochementBancaireDetail = () => {
           </div>
         </div>
 
-        {/* Détails des écarts */}
+        {/* Details des ecarts */}
         <div className="bg-white shadow-md rounded-xl p-5">
           <h2 className="text-lg font-bold text-primary mb-4 flex items-center gap-2">
-            <TrendingUp className="w-5 h-5" /> Détail des écarts
+            <TrendingUp className="w-5 h-5" /> Detail des ecarts
           </h2>
           <div className="space-y-3">
             <div className="flex justify-between items-center border-b pb-2">
@@ -292,7 +314,7 @@ const RapprochementBancaireDetail = () => {
               <span className="font-bold">{formatCurrency(rapprochement.solde_bancaire)}</span>
             </div>
             <div className="flex justify-between items-center border-b pb-2">
-              <span className="text-gray-600">En-cours d'émission</span>
+              <span className="text-gray-600">En-cours d'emission</span>
               <span>{formatCurrency(rapprochement.encours_emission)}</span>
             </div>
             <div className="flex justify-between items-center border-b pb-2">
@@ -304,17 +326,17 @@ const RapprochementBancaireDetail = () => {
               <span>{formatCurrency(rapprochement.commissions)}</span>
             </div>
             <div className="flex justify-between items-center border-b pb-2">
-              <span className="text-gray-600">Autres écarts</span>
+              <span className="text-gray-600">Autres ecarts</span>
               <span>{formatCurrency(rapprochement.autres_ecarts)}</span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-gray-600 font-bold">Écart</span>
+              <span className="text-gray-600 font-bold">Ecart</span>
               <span className={`font-bold ${isRapproche(rapprochement) ? 'text-success' : 'text-error'}`}>
                 {formatCurrency(rapprochement.ecart)}
               </span>
             </div>
             <div className="flex justify-between items-center mt-2 pt-2 border-t">
-              <span className="text-gray-600 font-bold">Solde rapproché</span>
+              <span className="text-gray-600 font-bold">Solde rapproche</span>
               <span className="font-bold text-primary">{formatCurrency(rapprochement.solde_rapproche)}</span>
             </div>
           </div>
@@ -329,18 +351,32 @@ const RapprochementBancaireDetail = () => {
         </div>
       )}
 
-      {/* Métadonnées */}
+      {/* Metadonnees */}
       <div className="bg-white shadow-md rounded-xl p-5 text-sm text-gray-500">
         <div className="grid grid-cols-2 gap-4">
-          <div><span className="font-semibold">Créé le :</span> {new Date(rapprochement.created_at).toLocaleString()}</div>
-          <div><span className="font-semibold">Mis à jour :</span> {new Date(rapprochement.updated_at).toLocaleString()}</div>
+          <div>
+            <span className="font-semibold">Cree le :</span>{' '}
+            {rapprochement.created_at ? new Date(rapprochement.created_at).toLocaleString('fr-FR') : '-'}
+          </div>
+          <div>
+            <span className="font-semibold">Mis a jour :</span>{' '}
+            {rapprochement.updated_at ? new Date(rapprochement.updated_at).toLocaleString('fr-FR') : '-'}
+          </div>
           {rapprochement.date_validation && (
-            <div><span className="font-semibold">Validé le :</span> {new Date(rapprochement.date_validation).toLocaleString()}</div>
+            <div>
+              <span className="font-semibold">Valide le :</span>{' '}
+              {new Date(rapprochement.date_validation).toLocaleString('fr-FR')}
+            </div>
           )}
-          {rapprochement.valide_par && (
-            <div><span className="font-semibold">Validé par :</span> {rapprochement.valide_par}</div>
-          )}
-          <div><span className="font-semibold">ID :</span> {rapprochement.id}</div>
+          <div>
+            <span className="font-semibold">Valide par :</span> {valideParLabel}
+          </div>
+          <div>
+            <span className="font-semibold">Cree par :</span> {createdByLabel}
+          </div>
+          <div>
+            <span className="font-semibold">ID :</span> {rapprochement.id}
+          </div>
         </div>
       </div>
     </div>

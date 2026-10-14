@@ -21,24 +21,41 @@ const MouvementTresorerieDetail = () => {
 
   const getToken = () => localStorage.getItem('Token');
 
+  // ============================================================
+  // FORMATAGE DES NOMBRES
+  // ============================================================
+  const formatNumber = (value, devise = 'XOF') => {
+    const num = parseFloat(value);
+    if (isNaN(num)) return `0 ${devise}`;
+    return `${num.toLocaleString('fr-FR')} ${devise}`;
+  };
+
+  // ============================================================
+  // CHARGEMENT DU MOUVEMENT
+  // ============================================================
   const fetchMouvement = async () => {
     setLoading(true);
     setError(null);
     try {
       const token = getToken();
+      if (!token) {
+        navigate('/login');
+        return;
+      }
+
       const response = await AxiosInstance.get(`/mouvements/${id}/`, {
         headers: { 'Authorization': `Token ${token}` }
       });
       setMouvement(response.data);
     } catch (err) {
       console.error('Erreur chargement mouvement:', err);
-      setError(
-        err.response?.status === 404
-          ? 'Mouvement introuvable'
-          : 'Erreur de chargement des données'
-      );
-      if (err.response?.status === 401) {
+      if (err.response?.status === 404) {
+        setError('Mouvement introuvable');
+      } else if (err.response?.status === 401 || err.response?.status === 403) {
         navigate('/login');
+        return;
+      } else {
+        setError('Erreur de chargement des donnees');
       }
     } finally {
       setLoading(false);
@@ -46,8 +63,11 @@ const MouvementTresorerieDetail = () => {
   };
 
   useEffect(() => {
-    fetchMouvement();
-  }, [id, navigate]);
+    if (id) {
+      fetchMouvement();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
 
   const handleAnnuler = async () => {
     if (!window.confirm('Voulez-vous vraiment annuler ce mouvement ?')) return;
@@ -57,7 +77,6 @@ const MouvementTresorerieDetail = () => {
       await AxiosInstance.post(`/mouvements/${id}/annuler/`, {}, {
         headers: { 'Authorization': `Token ${token}` }
       });
-      // Recharger les données pour afficher le nouveau statut
       await fetchMouvement();
     } catch (error) {
       console.error('Erreur annulation:', error);
@@ -79,28 +98,19 @@ const MouvementTresorerieDetail = () => {
   const getTypeLabel = (type) => {
     const map = {
       'encaissement': 'Encaissement',
-      'decaissement': 'Décaissement',
+      'decaissement': 'Decaissement',
       'transfert': 'Transfert'
     };
     return map[type] || type;
   };
 
-  const getTypeBadgeColor = (type) => {
-    const map = {
-      'encaissement': 'badge-success',
-      'decaissement': 'badge-error',
-      'transfert': 'badge-primary'
-    };
-    return map[type] || 'badge-ghost';
-  };
-
   const getStatusBadge = (status) => {
     const map = {
-      'planifie': { label: 'Planifié', color: 'badge-ghost' },
+      'planifie': { label: 'Planifie', color: 'badge-ghost' },
       'en_attente': { label: 'En attente', color: 'badge-warning' },
-      'effectue': { label: 'Effectué', color: 'badge-success' },
-      'annule': { label: 'Annulé', color: 'badge-error' },
-      'rejete': { label: 'Rejeté', color: 'badge-error' }
+      'effectue': { label: 'Effectue', color: 'badge-success' },
+      'annule': { label: 'Annule', color: 'badge-error' },
+      'rejete': { label: 'Rejete', color: 'badge-error' }
     };
     const info = map[status] || { label: status, color: 'badge-ghost' };
     return <span className={`badge ${info.color} gap-1`}>{info.label}</span>;
@@ -108,12 +118,12 @@ const MouvementTresorerieDetail = () => {
 
   const getModeLabel = (mode) => {
     const map = {
-      'especes': 'Espèces',
+      'especes': 'Especes',
       'carte': 'Carte bancaire',
-      'cheque': 'Chèque',
+      'cheque': 'Cheque',
       'virement': 'Virement',
       'mobile_money': 'Mobile Money',
-      'prelevement': 'Prélèvement',
+      'prelevement': 'Prelevement',
       'autre': 'Autre'
     };
     return map[mode] || mode;
@@ -178,7 +188,7 @@ const MouvementTresorerieDetail = () => {
             onClick={() => navigate('/mouvements-tresorerie')}
             className="btn btn-primary gap-2"
           >
-            <ArrowLeft className="w-4 h-4" /> Retour à la liste
+            <ArrowLeft className="w-4 h-4" /> Retour a la liste
           </button>
         </div>
       </div>
@@ -188,10 +198,48 @@ const MouvementTresorerieDetail = () => {
   if (!mouvement) {
     return (
       <div className="flex items-center justify-center min-h-[calc(100vh-200px)] bg-gray-50">
-        <p className="text-gray-500">Aucune donnée disponible</p>
+        <div className="text-center space-y-4">
+          <AlertCircle className="text-warning w-16 h-16 mx-auto" />
+          <p className="text-gray-500">Aucune donnee disponible</p>
+          <button
+            onClick={() => navigate('/mouvements-tresorerie')}
+            className="btn btn-primary gap-2"
+          >
+            <ArrowLeft className="w-4 h-4" /> Retour a la liste
+          </button>
+        </div>
       </div>
     );
   }
+
+  // Valeurs derivees
+  const devise = mouvement.devise || 'XOF';
+  const warehouseLabel = mouvement.warehouse_nom
+    || (typeof mouvement.warehouse === 'object' && mouvement.warehouse !== null
+        ? mouvement.warehouse.name
+        : mouvement.warehouse || '-');
+
+  const createdByLabel = mouvement.created_by_name
+    || (typeof mouvement.created_by === 'object' && mouvement.created_by !== null
+        ? mouvement.created_by.full_name || mouvement.created_by.username
+        : mouvement.created_by)
+    || '-';
+
+  const valideParLabel = mouvement.valide_par_name
+    || (typeof mouvement.valide_par === 'object' && mouvement.valide_par !== null
+        ? mouvement.valide_par.full_name || mouvement.valide_par.username
+        : mouvement.valide_par)
+    || '-';
+
+  const caisseLabel = mouvement.caisse_nom
+    || (typeof mouvement.caisse === 'object' && mouvement.caisse !== null
+        ? mouvement.caisse.nom
+        : mouvement.caisse);
+
+  const compteLabel = mouvement.compte_bancaire_nom
+    || (typeof mouvement.compte_bancaire === 'object' && mouvement.compte_bancaire !== null
+        ? mouvement.compte_bancaire.nom
+        : mouvement.compte_bancaire);
 
   return (
     <div className="w-full min-h-screen bg-gray-50">
@@ -215,7 +263,7 @@ const MouvementTresorerieDetail = () => {
                     {mouvement.reference}
                   </h1>
                   <p className="text-sm text-gray-500">
-                    {getTypeLabel(mouvement.type_mouvement)} • {mouvement.libelle}
+                    {getTypeLabel(mouvement.type_mouvement)} - {mouvement.libelle}
                   </p>
                 </div>
               </div>
@@ -250,17 +298,17 @@ const MouvementTresorerieDetail = () => {
       <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
         <div className="space-y-6">
 
-          {/* Carte 1 : Informations générales */}
+          {/* Carte 1 : Informations generales */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
             <div className="bg-gray-50 px-6 py-3 border-b">
               <h3 className="font-semibold flex items-center gap-2">
-                <Layers className="w-4 h-4 text-primary" /> Informations générales
+                <Layers className="w-4 h-4 text-primary" /> Informations generales
               </h3>
             </div>
             <div className="p-6">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 <div>
-                  <p className="text-sm text-gray-500">Référence</p>
+                  <p className="text-sm text-gray-500">Reference</p>
                   <p className="font-mono font-medium">{mouvement.reference}</p>
                 </div>
                 <div>
@@ -275,10 +323,8 @@ const MouvementTresorerieDetail = () => {
                   <p>{getStatusBadge(mouvement.status)}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-gray-500">Entrepôt</p>
-                  <p className="font-medium">
-                    {mouvement.warehouse_name || mouvement.warehouse || '-'}
-                  </p>
+                  <p className="text-sm text-gray-500">Entrepot</p>
+                  <p className="font-medium">{warehouseLabel}</p>
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">Source</p>
@@ -292,15 +338,15 @@ const MouvementTresorerieDetail = () => {
                   </p>
                 </div>
                 <div>
-                  <p className="text-sm text-gray-500">Référence externe</p>
+                  <p className="text-sm text-gray-500">Reference externe</p>
                   <p className="font-medium">{mouvement.reference_externe || '-'}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-gray-500">Pièce justificative</p>
+                  <p className="text-sm text-gray-500">Piece justificative</p>
                   <p className="font-medium">{mouvement.piece_justificative || '-'}</p>
                 </div>
                 <div className="lg:col-span-2">
-                  <p className="text-sm text-gray-500">Libellé</p>
+                  <p className="text-sm text-gray-500">Libelle</p>
                   <p className="font-medium">{mouvement.libelle}</p>
                 </div>
               </div>
@@ -320,7 +366,7 @@ const MouvementTresorerieDetail = () => {
                   <p className="text-sm text-gray-500">Montant</p>
                   <p className={`text-2xl font-bold ${mouvement.type_mouvement === 'encaissement' ? 'text-success' : 'text-error'}`}>
                     {mouvement.type_mouvement === 'encaissement' ? '+' : '-'}
-                    {Number(mouvement.montant).toLocaleString()} {mouvement.devise || 'XOF'}
+                    {formatNumber(mouvement.montant, devise)}
                   </p>
                 </div>
                 <div>
@@ -328,7 +374,7 @@ const MouvementTresorerieDetail = () => {
                   <p className="font-medium">{getModeLabel(mouvement.mode_paiement)}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-gray-500">Rapproché</p>
+                  <p className="text-sm text-gray-500">Rapproche</p>
                   <p className="font-medium">
                     {mouvement.rapproche ? (
                       <span className="badge badge-success gap-1">
@@ -354,25 +400,25 @@ const MouvementTresorerieDetail = () => {
             </div>
             <div className="p-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {mouvement.caisse ? (
+                {caisseLabel ? (
                   <div>
                     <p className="text-sm text-gray-500">Caisse</p>
                     <p className="font-medium flex items-center gap-2">
                       <Wallet className="w-4 h-4 text-primary" />
-                      {mouvement.caisse.nom || mouvement.caisse}
+                      {caisseLabel}
                     </p>
                   </div>
-                ) : mouvement.compte_bancaire ? (
+                ) : compteLabel ? (
                   <div>
                     <p className="text-sm text-gray-500">Compte bancaire</p>
                     <p className="font-medium flex items-center gap-2">
                       <Building2 className="w-4 h-4 text-primary" />
-                      {mouvement.compte_bancaire.nom || mouvement.compte_bancaire}
+                      {compteLabel}
                     </p>
                   </div>
                 ) : (
                   <div className="col-span-2">
-                    <p className="text-sm text-gray-500">Aucune caisse ou compte associé</p>
+                    <p className="text-sm text-gray-500">Aucune caisse ou compte associe</p>
                     <p className="text-gray-400">-</p>
                   </div>
                 )}
@@ -398,76 +444,37 @@ const MouvementTresorerieDetail = () => {
                   <p className="font-medium">{formatDateShort(mouvement.date_valeur)}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-gray-500">Date prévue</p>
+                  <p className="text-sm text-gray-500">Date prevue</p>
                   <p className="font-medium">{formatDateShort(mouvement.date_prevue) || '-'}</p>
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Carte 5 : Liens vers les entités */}
-          { (mouvement.vente || mouvement.purchase_order || mouvement.facture_vente || mouvement.paiement) && (
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-              <div className="bg-gray-50 px-6 py-3 border-b">
-                <h3 className="font-semibold flex items-center gap-2">
-                  <FileText className="w-4 h-4 text-primary" /> Entités liées
-                </h3>
-              </div>
-              <div className="p-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                  {mouvement.vente && (
-                    <div>
-                      <p className="text-sm text-gray-500">Vente</p>
-                      <p className="font-medium">{mouvement.vente.reference || mouvement.vente}</p>
-                    </div>
-                  )}
-                  {mouvement.purchase_order && (
-                    <div>
-                      <p className="text-sm text-gray-500">Commande fournisseur</p>
-                      <p className="font-medium">{mouvement.purchase_order.reference || mouvement.purchase_order}</p>
-                    </div>
-                  )}
-                  {mouvement.facture_vente && (
-                    <div>
-                      <p className="text-sm text-gray-500">Facture vente</p>
-                      <p className="font-medium">{mouvement.facture_vente.numero || mouvement.facture_vente}</p>
-                    </div>
-                  )}
-                  {mouvement.paiement && (
-                    <div>
-                      <p className="text-sm text-gray-500">Paiement</p>
-                      <p className="font-medium">{mouvement.paiement.reference || mouvement.paiement}</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Carte 6 : Métadonnées et notes */}
+          {/* Carte 5 : Metadonnees et notes */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
             <div className="bg-gray-50 px-6 py-3 border-b">
               <h3 className="font-semibold flex items-center gap-2">
-                <Clock className="w-4 h-4 text-primary" /> Métadonnées
+                <Clock className="w-4 h-4 text-primary" /> Metadonnees
               </h3>
             </div>
             <div className="p-6">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div>
-                  <p className="text-sm text-gray-500">Créé le</p>
+                  <p className="text-sm text-gray-500">Cree le</p>
                   <p className="font-medium">{formatDate(mouvement.created_at)}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-gray-500">Dernière modification</p>
+                  <p className="text-sm text-gray-500">Derniere modification</p>
                   <p className="font-medium">{formatDate(mouvement.updated_at)}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-gray-500">Créé par</p>
-                  <p className="font-medium">{mouvement.created_by || '-'}</p>
+                  <p className="text-sm text-gray-500">Cree par</p>
+                  <p className="font-medium">{createdByLabel}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-gray-500">Validé par</p>
-                  <p className="font-medium">{mouvement.valide_par || '-'}</p>
+                  <p className="text-sm text-gray-500">Valide par</p>
+                  <p className="font-medium">{valideParLabel}</p>
                 </div>
                 {mouvement.date_validation && (
                   <div>

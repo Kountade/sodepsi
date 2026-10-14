@@ -30,12 +30,19 @@ const TresorerieJournaliere = () => {
 
   const getToken = () => localStorage.getItem('Token');
 
+  // NORMALISATION : tableau direct OU reponse paginee DRF
+  const normalizeData = (data) => {
+    if (Array.isArray(data)) return data;
+    if (data && Array.isArray(data.results)) return data.results;
+    return [];
+  };
+
   const showNotification = (message, type) => {
     setNotification({ show: true, message, type });
     setTimeout(() => setNotification(prev => ({ ...prev, show: false })), 4000);
   };
 
-  // Charger les données
+  // Charger les donnees
   const fetchJournaliers = async () => {
     setLoading(true);
     try {
@@ -43,35 +50,44 @@ const TresorerieJournaliere = () => {
       let url = '/tresorerie-journaliere/';
       const params = new URLSearchParams();
 
+      // Charger un maximum de lignes
+      params.append('page_size', '1000');
+
       if (filterWarehouse !== 'all') params.append('warehouse', filterWarehouse);
       if (filterDateDebut) params.append('date__gte', filterDateDebut);
       if (filterDateFin) params.append('date__lte', filterDateFin);
       if (searchTerm) params.append('search', searchTerm);
 
-      if (params.toString()) url += `?${params.toString()}`;
+      url += `?${params.toString()}`;
 
       const response = await AxiosInstance.get(url, {
         headers: { 'Authorization': `Token ${token}` }
       });
-      setJournaliers(response.data || []);
+
+      // NORMALISATION
+      setJournaliers(normalizeData(response.data));
     } catch (error) {
       console.error('Erreur:', error);
-      showNotification('Erreur de chargement des données', 'error');
+      showNotification('Erreur de chargement des donnees', 'error');
+      setJournaliers([]);
     } finally {
       setLoading(false);
     }
   };
 
-  // Charger les entrepôts
+  // Charger les entrepots
   const fetchWarehouses = async () => {
     try {
       const token = getToken();
-      const response = await AxiosInstance.get('/warehouses/?is_active=true', {
-        headers: { 'Authorization': `Token ${token}` }
-      });
-      setWarehouses(response.data || []);
+      const response = await AxiosInstance.get(
+        '/warehouses/?is_active=true&page_size=1000',
+        { headers: { 'Authorization': `Token ${token}` } }
+      );
+      // NORMALISATION
+      setWarehouses(normalizeData(response.data));
     } catch (error) {
-      console.error('Erreur chargement entrepôts:', error);
+      console.error('Erreur chargement entrepots:', error);
+      setWarehouses([]);
     }
   };
 
@@ -87,10 +103,10 @@ const TresorerieJournaliere = () => {
     return () => clearTimeout(timeout);
   }, [searchTerm, filterWarehouse, filterDateDebut, filterDateFin]);
 
-  // Générer une ligne
+  // Generer une ligne
   const handleGenerate = async () => {
     if (!generateDate || !generateWarehouse) {
-      showNotification('Veuillez choisir une date et un entrepôt', 'error');
+      showNotification('Veuillez choisir une date et un entrepot', 'error');
       return;
     }
     setGenerating(true);
@@ -102,12 +118,12 @@ const TresorerieJournaliere = () => {
       }, {
         headers: { 'Authorization': `Token ${token}` }
       });
-      showNotification('Données générées avec succès', 'success');
+      showNotification('Donnees generees avec succes', 'success');
       setShowGenerateModal(false);
       fetchJournaliers();
     } catch (error) {
       console.error('Erreur:', error);
-      showNotification('Erreur lors de la génération', 'error');
+      showNotification('Erreur lors de la generation', 'error');
     } finally {
       setGenerating(false);
     }
@@ -121,7 +137,7 @@ const TresorerieJournaliere = () => {
       await AxiosInstance.delete(`/tresorerie-journaliere/${itemToDelete.id}/`, {
         headers: { 'Authorization': `Token ${token}` }
       });
-      showNotification('Ligne supprimée avec succès', 'success');
+      showNotification('Ligne supprimee avec succes', 'success');
       fetchJournaliers();
       setShowDeleteModal(false);
       setItemToDelete(null);
@@ -130,18 +146,21 @@ const TresorerieJournaliere = () => {
     }
   };
 
+  // Protection contre journaliers non tableau
+  const safeJournaliers = Array.isArray(journaliers) ? journaliers : [];
+
   // Pagination
-  const filteredItems = journaliers;
-  const totalPages = Math.ceil(filteredItems.length / itemsPerPage);
+  const filteredItems = safeJournaliers;
+  const totalPages = Math.max(1, Math.ceil(filteredItems.length / itemsPerPage));
   const startIndex = (currentPage - 1) * itemsPerPage;
   const paginatedItems = filteredItems.slice(startIndex, startIndex + itemsPerPage);
 
   // Statistiques
   const stats = {
-    total: journaliers.length,
-    totalEntrees: journaliers.reduce((acc, item) => acc + parseFloat(item.total_entrees || 0), 0),
-    totalSorties: journaliers.reduce((acc, item) => acc + parseFloat(item.total_sorties || 0), 0),
-    totalVariation: journaliers.reduce((acc, item) => acc + parseFloat(item.variation || 0), 0),
+    total: safeJournaliers.length,
+    totalEntrees: safeJournaliers.reduce((acc, item) => acc + parseFloat(item.total_entrees || 0), 0),
+    totalSorties: safeJournaliers.reduce((acc, item) => acc + parseFloat(item.total_sorties || 0), 0),
+    totalVariation: safeJournaliers.reduce((acc, item) => acc + parseFloat(item.variation || 0), 0),
   };
 
   const formatNumber = (num) => {
@@ -154,7 +173,7 @@ const TresorerieJournaliere = () => {
     return wh ? wh.name : id;
   };
 
-  if (loading && journaliers.length === 0) {
+  if (loading && safeJournaliers.length === 0) {
     return (
       <div className="flex items-center justify-center min-h-[calc(100vh-200px)]">
         <div className="text-center space-y-4">
@@ -206,11 +225,11 @@ const TresorerieJournaliere = () => {
         </div>
       )}
 
-      {/* Modal de génération */}
+      {/* Modal de generation */}
       {showGenerateModal && (
         <div className="modal modal-open">
           <div className="modal-box">
-            <h3 className="font-bold text-lg mb-4">Générer une ligne journalière</h3>
+            <h3 className="font-bold text-lg mb-4">Generer une ligne journaliere</h3>
             <div className="space-y-4">
               <div>
                 <label className="label">Date</label>
@@ -222,13 +241,13 @@ const TresorerieJournaliere = () => {
                 />
               </div>
               <div>
-                <label className="label">Entrepôt</label>
+                <label className="label">Entrepot</label>
                 <select
                   className="select select-bordered w-full"
                   value={generateWarehouse}
                   onChange={(e) => setGenerateWarehouse(e.target.value)}
                 >
-                  <option value="">Choisir un entrepôt</option>
+                  <option value="">Choisir un entrepot</option>
                   {warehouses.map(wh => (
                     <option key={wh.id} value={wh.id}>{wh.name}</option>
                   ))}
@@ -239,14 +258,14 @@ const TresorerieJournaliere = () => {
               <button className="btn btn-ghost" onClick={() => setShowGenerateModal(false)}>Annuler</button>
               <button className="btn btn-primary gap-2" onClick={handleGenerate} disabled={generating}>
                 {generating ? <span className="loading loading-spinner loading-sm"></span> : <Save className="w-4 h-4" />}
-                Générer
+                Generer
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* En-tête */}
+      {/* En-tete */}
       <div className="relative overflow-hidden bg-gradient-to-r from-primary/10 via-primary/5 to-transparent rounded-2xl p-5">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
@@ -254,10 +273,10 @@ const TresorerieJournaliere = () => {
               <div className="p-2 bg-primary/10 rounded-xl">
                 <Calendar className="w-7 h-7 text-primary" />
               </div>
-              <h1 className="text-2xl sm:text-3xl font-black text-primary">Trésorerie journalière</h1>
+              <h1 className="text-2xl sm:text-3xl font-black text-primary">Tresorerie journaliere</h1>
             </div>
             <p className="text-sm text-gray-500 ml-1">
-              Suivi quotidien – {stats.total} jour(s) enregistré(s)
+              Suivi quotidien - {stats.total} jour(s) enregistre(s)
             </p>
           </div>
           <div className="flex flex-wrap gap-3">
@@ -265,7 +284,7 @@ const TresorerieJournaliere = () => {
               <RefreshCw className="w-4 h-4" /> Actualiser
             </button>
             <button onClick={() => setShowGenerateModal(true)} className="btn btn-sm sm:btn-md bg-gradient-to-r from-primary to-primary/80 text-white border-none shadow-lg gap-2">
-              <Plus className="w-4 h-4" /> Générer
+              <Plus className="w-4 h-4" /> Generer
             </button>
           </div>
         </div>
@@ -281,7 +300,7 @@ const TresorerieJournaliere = () => {
         </div>
         <div className="bg-white shadow-md rounded-xl p-3">
           <div className="flex items-center justify-between">
-            <div><p className="text-xs text-gray-500">Total entrées</p><p className="text-xl font-bold text-success">{formatNumber(stats.totalEntrees)}</p></div>
+            <div><p className="text-xs text-gray-500">Total entrees</p><p className="text-xl font-bold text-success">{formatNumber(stats.totalEntrees)}</p></div>
             <TrendingUp className="w-8 h-8 text-success/20" />
           </div>
         </div>
@@ -293,7 +312,7 @@ const TresorerieJournaliere = () => {
         </div>
         <div className="bg-white shadow-md rounded-xl p-3">
           <div className="flex items-center justify-between">
-            <div><p className="text-xs text-gray-500">Variation cumulée</p><p className={`text-xl font-bold ${stats.totalVariation >= 0 ? 'text-success' : 'text-error'}`}>{formatNumber(stats.totalVariation)}</p></div>
+            <div><p className="text-xs text-gray-500">Variation cumulee</p><p className={`text-xl font-bold ${stats.totalVariation >= 0 ? 'text-success' : 'text-error'}`}>{formatNumber(stats.totalVariation)}</p></div>
             <DollarSign className="w-8 h-8 text-primary/20" />
           </div>
         </div>
@@ -306,7 +325,7 @@ const TresorerieJournaliere = () => {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
               type="text"
-              placeholder="Rechercher par entrepôt, date..."
+              placeholder="Rechercher par entrepot, date..."
               className="input input-bordered w-full pl-9"
               value={searchTerm}
               onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
@@ -318,7 +337,7 @@ const TresorerieJournaliere = () => {
               value={filterWarehouse}
               onChange={(e) => { setFilterWarehouse(e.target.value); setCurrentPage(1); }}
             >
-              <option value="all">Tous les entrepôts</option>
+              <option value="all">Tous les entrepots</option>
               {warehouses.map(wh => (
                 <option key={wh.id} value={wh.id}>{wh.name}</option>
               ))}
@@ -328,7 +347,7 @@ const TresorerieJournaliere = () => {
               className="input input-bordered w-full"
               value={filterDateDebut}
               onChange={(e) => { setFilterDateDebut(e.target.value); setCurrentPage(1); }}
-              placeholder="Date début"
+              placeholder="Date debut"
             />
             <input
               type="date"
@@ -348,7 +367,7 @@ const TresorerieJournaliere = () => {
               setCurrentPage(1);
             }}
           >
-            <RefreshCw className="w-4 h-4" /> Réinitialiser
+            <RefreshCw className="w-4 h-4" /> Reinitialiser
           </button>
         </div>
       </div>
@@ -360,13 +379,13 @@ const TresorerieJournaliere = () => {
             <thead className="bg-gray-50">
               <tr>
                 <th className="py-3">Date</th>
-                <th className="py-3">Entrepôt</th>
+                <th className="py-3">Entrepot</th>
                 <th className="py-3 text-right">Solde ouv.</th>
                 <th className="py-3 text-right">Solde ferm.</th>
-                <th className="py-3 text-right">Entrées</th>
+                <th className="py-3 text-right">Entrees</th>
                 <th className="py-3 text-right">Sorties</th>
                 <th className="py-3 text-right">Variation</th>
-                <th className="py-3 text-center">Opérations</th>
+                <th className="py-3 text-center">Operations</th>
                 <th className="py-3 text-center">Actions</th>
               </tr>
             </thead>
@@ -376,9 +395,9 @@ const TresorerieJournaliere = () => {
                   <td colSpan="9" className="text-center py-16">
                     <div className="flex flex-col items-center gap-3">
                       <Calendar className="w-16 h-16 text-gray-300" />
-                      <p className="text-gray-500 font-medium">Aucune donnée journalière trouvée</p>
+                      <p className="text-gray-500 font-medium">Aucune donnee journaliere trouvee</p>
                       <button onClick={() => setShowGenerateModal(true)} className="btn btn-primary btn-sm gap-2">
-                        <Plus className="w-4 h-4" /> Générer
+                        <Plus className="w-4 h-4" /> Generer
                       </button>
                     </div>
                   </td>
@@ -400,11 +419,10 @@ const TresorerieJournaliere = () => {
                     </td>
                     <td className="text-center">
                       <div className="flex justify-center gap-1">
-                        {/* Navigation vers la page de détail */}
                         <button
                           onClick={() => navigate(`/tresorerie-journaliere/${item.id}`)}
                           className="btn btn-ghost btn-sm btn-circle"
-                          title="Voir le détail"
+                          title="Voir le detail"
                         >
                           <Eye className="w-4 h-4" />
                         </button>
@@ -428,7 +446,7 @@ const TresorerieJournaliere = () => {
         {filteredItems.length > 0 && (
           <div className="px-6 py-4 border-t flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="text-sm text-gray-500">
-              Affichage de {startIndex + 1} à {Math.min(currentPage * itemsPerPage, filteredItems.length)} sur {filteredItems.length}
+              Affichage de {startIndex + 1} a {Math.min(currentPage * itemsPerPage, filteredItems.length)} sur {filteredItems.length}
             </div>
             <div className="flex items-center gap-3">
               <select

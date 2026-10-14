@@ -34,6 +34,13 @@ const MouvementsTresorerieList = () => {
 
   const getToken = () => localStorage.getItem('Token');
 
+  // NORMALISATION : tableau direct OU reponse paginee DRF
+  const normalizeData = (data) => {
+    if (Array.isArray(data)) return data;
+    if (data && Array.isArray(data.results)) return data.results;
+    return [];
+  };
+
   // Charger les mouvements
   const fetchMouvements = async () => {
     setLoading(true);
@@ -42,36 +49,45 @@ const MouvementsTresorerieList = () => {
       let url = '/mouvements/';
       const params = new URLSearchParams();
 
+      // Charger un maximum de mouvements
+      params.append('page_size', '2000');
+
       if (filterType !== 'all') params.append('type_mouvement', filterType);
       if (filterStatus !== 'all') params.append('status', filterStatus);
       if (filterMode !== 'all') params.append('mode_paiement', filterMode);
       if (filterWarehouse !== 'all') params.append('warehouse', filterWarehouse);
       if (searchTerm) params.append('search', searchTerm);
 
-      if (params.toString()) url += `?${params.toString()}`;
+      url += `?${params.toString()}`;
 
       const response = await AxiosInstance.get(url, {
         headers: { 'Authorization': `Token ${token}` }
       });
-      setMouvements(response.data || []);
+
+      // NORMALISATION
+      setMouvements(normalizeData(response.data));
     } catch (error) {
       console.error('Erreur:', error);
       showNotification('Erreur de chargement des mouvements', 'error');
+      setMouvements([]);
     } finally {
       setLoading(false);
     }
   };
 
-  // Charger les entrepôts pour le filtre
+  // Charger les entrepots pour le filtre
   const fetchWarehouses = async () => {
     try {
       const token = getToken();
-      const response = await AxiosInstance.get('/warehouses/?is_active=true', {
-        headers: { 'Authorization': `Token ${token}` }
-      });
-      setWarehouses(response.data || []);
+      const response = await AxiosInstance.get(
+        '/warehouses/?is_active=true&page_size=1000',
+        { headers: { 'Authorization': `Token ${token}` } }
+      );
+      // NORMALISATION
+      setWarehouses(normalizeData(response.data));
     } catch (error) {
-      console.error('Erreur chargement entrepôts:', error);
+      console.error('Erreur chargement entrepots:', error);
+      setWarehouses([]);
     }
   };
 
@@ -97,7 +113,7 @@ const MouvementsTresorerieList = () => {
       await AxiosInstance.delete(`/mouvements/${mouvementToDelete.id}/`, {
         headers: { 'Authorization': `Token ${token}` }
       });
-      showNotification('Mouvement supprimé avec succès', 'success');
+      showNotification('Mouvement supprime avec succes', 'success');
       fetchMouvements();
       setShowDeleteModal(false);
       setMouvementToDelete(null);
@@ -106,7 +122,7 @@ const MouvementsTresorerieList = () => {
     }
   };
 
-  // Annuler un mouvement (action personnalisée)
+  // Annuler un mouvement
   const handleAnnuler = async (id) => {
     if (!window.confirm('Voulez-vous vraiment annuler ce mouvement ?')) return;
     try {
@@ -114,15 +130,18 @@ const MouvementsTresorerieList = () => {
       await AxiosInstance.post(`/mouvements/${id}/annuler/`, {}, {
         headers: { 'Authorization': `Token ${token}` }
       });
-      showNotification('Mouvement annulé avec succès', 'success');
+      showNotification('Mouvement annule avec succes', 'success');
       fetchMouvements();
     } catch (error) {
       showNotification('Erreur lors de l\'annulation', 'error');
     }
   };
 
+  // Protection contre mouvements non tableau
+  const safeMouvements = Array.isArray(mouvements) ? mouvements : [];
+
   // Filtrer et paginer
-  const filteredMouvements = mouvements.filter(mvt => {
+  const filteredMouvements = safeMouvements.filter(mvt => {
     const matchesSearch = !searchTerm ||
       (mvt.reference?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
       (mvt.libelle?.toLowerCase() || '').includes(searchTerm.toLowerCase());
@@ -135,21 +154,21 @@ const MouvementsTresorerieList = () => {
     return matchesSearch && matchesType && matchesStatus && matchesMode && matchesWarehouse;
   });
 
-  const totalPages = Math.ceil(filteredMouvements.length / itemsPerPage);
+  const totalPages = Math.max(1, Math.ceil(filteredMouvements.length / itemsPerPage));
   const startIndex = (currentPage - 1) * itemsPerPage;
   const paginatedMouvements = filteredMouvements.slice(startIndex, startIndex + itemsPerPage);
 
   // Statistiques
   const stats = {
-    total: mouvements.length,
-    encaissements: mouvements.filter(m => m.type_mouvement === 'encaissement').length,
-    decaissements: mouvements.filter(m => m.type_mouvement === 'decaissement').length,
-    transferts: mouvements.filter(m => m.type_mouvement === 'transfert').length,
-    effectues: mouvements.filter(m => m.status === 'effectue').length,
-    total_entrees: mouvements
+    total: safeMouvements.length,
+    encaissements: safeMouvements.filter(m => m.type_mouvement === 'encaissement').length,
+    decaissements: safeMouvements.filter(m => m.type_mouvement === 'decaissement').length,
+    transferts: safeMouvements.filter(m => m.type_mouvement === 'transfert').length,
+    effectues: safeMouvements.filter(m => m.status === 'effectue').length,
+    total_entrees: safeMouvements
       .filter(m => m.type_mouvement === 'encaissement')
       .reduce((acc, m) => acc + parseFloat(m.montant || 0), 0),
-    total_sorties: mouvements
+    total_sorties: safeMouvements
       .filter(m => m.type_mouvement === 'decaissement')
       .reduce((acc, m) => acc + parseFloat(m.montant || 0), 0),
   };
@@ -167,7 +186,7 @@ const MouvementsTresorerieList = () => {
   const getTypeLabel = (type) => {
     const map = {
       'encaissement': 'Encaissement',
-      'decaissement': 'Décaissement',
+      'decaissement': 'Decaissement',
       'transfert': 'Transfert'
     };
     return map[type] || type;
@@ -175,11 +194,11 @@ const MouvementsTresorerieList = () => {
 
   const getStatusBadge = (status) => {
     const map = {
-      'planifie': { label: 'Planifié', color: 'badge-ghost' },
+      'planifie': { label: 'Planifie', color: 'badge-ghost' },
       'en_attente': { label: 'En attente', color: 'badge-warning' },
-      'effectue': { label: 'Effectué', color: 'badge-success' },
-      'annule': { label: 'Annulé', color: 'badge-error' },
-      'rejete': { label: 'Rejeté', color: 'badge-error' }
+      'effectue': { label: 'Effectue', color: 'badge-success' },
+      'annule': { label: 'Annule', color: 'badge-error' },
+      'rejete': { label: 'Rejete', color: 'badge-error' }
     };
     const info = map[status] || { label: status, color: 'badge-ghost' };
     return <span className={`badge ${info.color}`}>{info.label}</span>;
@@ -187,18 +206,18 @@ const MouvementsTresorerieList = () => {
 
   const getModeLabel = (mode) => {
     const map = {
-      'especes': 'Espèces',
+      'especes': 'Especes',
       'carte': 'Carte bancaire',
-      'cheque': 'Chèque',
+      'cheque': 'Cheque',
       'virement': 'Virement',
       'mobile_money': 'Mobile Money',
-      'prelevement': 'Prélèvement',
+      'prelevement': 'Prelevement',
       'autre': 'Autre'
     };
     return map[mode] || mode;
   };
 
-  if (loading && mouvements.length === 0) {
+  if (loading && safeMouvements.length === 0) {
     return (
       <div className="flex items-center justify-center min-h-[calc(100vh-200px)]">
         <div className="text-center space-y-4">
@@ -241,7 +260,7 @@ const MouvementsTresorerieList = () => {
               <p className="font-semibold text-error mt-2">{mouvementToDelete.reference}</p>
               <p className="text-sm text-gray-500 mt-1">{mouvementToDelete.libelle}</p>
               {parseFloat(mouvementToDelete.montant || 0) > 0 && (
-                <p className="text-warning text-sm mt-2">⚠️ Montant: {parseFloat(mouvementToDelete.montant || 0).toLocaleString()} FCFA</p>
+                <p className="text-warning text-sm mt-2">Montant: {parseFloat(mouvementToDelete.montant || 0).toLocaleString()} FCFA</p>
               )}
             </div>
             <div className="flex gap-3 p-4 bg-gray-50">
@@ -254,7 +273,7 @@ const MouvementsTresorerieList = () => {
         </div>
       )}
 
-      {/* En-tête */}
+      {/* En-tete */}
       <div className="relative overflow-hidden bg-gradient-to-r from-primary/10 via-primary/5 to-transparent rounded-2xl p-5">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
@@ -262,10 +281,10 @@ const MouvementsTresorerieList = () => {
               <div className="p-2 bg-primary/10 rounded-xl">
                 <DollarSign className="w-7 h-7 text-primary" />
               </div>
-              <h1 className="text-2xl sm:text-3xl font-black text-primary">Mouvements de trésorerie</h1>
+              <h1 className="text-2xl sm:text-3xl font-black text-primary">Mouvements de tresorerie</h1>
             </div>
             <p className="text-sm text-gray-500 ml-1">
-              Suivi des opérations – {stats.total} mouvement(s)
+              Suivi des operations - {stats.total} mouvement(s)
             </p>
           </div>
           <div className="flex flex-wrap gap-3">
@@ -295,7 +314,7 @@ const MouvementsTresorerieList = () => {
         </div>
         <div className="bg-white shadow-md rounded-xl p-3">
           <div className="flex items-center justify-between">
-            <div><p className="text-xs text-gray-500">Décaissements</p><p className="text-xl font-bold text-error">{stats.decaissements}</p></div>
+            <div><p className="text-xs text-gray-500">Decaissements</p><p className="text-xl font-bold text-error">{stats.decaissements}</p></div>
             <TrendingDown className="w-8 h-8 text-error/20" />
           </div>
         </div>
@@ -308,7 +327,7 @@ const MouvementsTresorerieList = () => {
         <div className="bg-white shadow-md rounded-xl p-3 sm:col-span-2 lg:col-span-2">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs text-gray-500">Total encaissements / décaissements</p>
+              <p className="text-xs text-gray-500">Total encaissements / decaissements</p>
               <p className="text-xl font-bold text-primary">
                 +{stats.total_entrees.toLocaleString()} / -{stats.total_sorties.toLocaleString()} FCFA
               </p>
@@ -325,7 +344,7 @@ const MouvementsTresorerieList = () => {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
               type="text"
-              placeholder="Rechercher par référence, libellé..."
+              placeholder="Rechercher par reference, libelle..."
               className="input input-bordered w-full pl-9"
               value={searchTerm}
               onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
@@ -342,7 +361,7 @@ const MouvementsTresorerieList = () => {
             >
               <option value="all">Tous les types</option>
               <option value="encaissement">Encaissement</option>
-              <option value="decaissement">Décaissement</option>
+              <option value="decaissement">Decaissement</option>
               <option value="transfert">Transfert</option>
             </select>
             <select
@@ -351,11 +370,11 @@ const MouvementsTresorerieList = () => {
               onChange={(e) => { setFilterStatus(e.target.value); setCurrentPage(1); }}
             >
               <option value="all">Tous les statuts</option>
-              <option value="planifie">Planifié</option>
+              <option value="planifie">Planifie</option>
               <option value="en_attente">En attente</option>
-              <option value="effectue">Effectué</option>
-              <option value="annule">Annulé</option>
-              <option value="rejete">Rejeté</option>
+              <option value="effectue">Effectue</option>
+              <option value="annule">Annule</option>
+              <option value="rejete">Rejete</option>
             </select>
             <select
               className="select select-bordered w-full"
@@ -363,12 +382,12 @@ const MouvementsTresorerieList = () => {
               onChange={(e) => { setFilterMode(e.target.value); setCurrentPage(1); }}
             >
               <option value="all">Tous les modes</option>
-              <option value="especes">Espèces</option>
+              <option value="especes">Especes</option>
               <option value="carte">Carte bancaire</option>
-              <option value="cheque">Chèque</option>
+              <option value="cheque">Cheque</option>
               <option value="virement">Virement</option>
               <option value="mobile_money">Mobile Money</option>
-              <option value="prelevement">Prélèvement</option>
+              <option value="prelevement">Prelevement</option>
               <option value="autre">Autre</option>
             </select>
             <select
@@ -376,7 +395,7 @@ const MouvementsTresorerieList = () => {
               value={filterWarehouse}
               onChange={(e) => { setFilterWarehouse(e.target.value); setCurrentPage(1); }}
             >
-              <option value="all">Tous les entrepôts</option>
+              <option value="all">Tous les entrepots</option>
               {warehouses.map(w => (
                 <option key={w.id} value={w.id}>{w.name}</option>
               ))}
@@ -392,21 +411,21 @@ const MouvementsTresorerieList = () => {
                 setCurrentPage(1);
               }}
             >
-              <RefreshCw className="w-4 h-4" /> Réinitialiser
+              <RefreshCw className="w-4 h-4" /> Reinitialiser
             </button>
           </div>
         </div>
       </div>
 
-      {/* Tableau des mouvements */}
+      {/* Tableau */}
       <div className="bg-white rounded-xl shadow-xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="table w-full">
             <thead className="bg-gray-50">
               <tr>
-                <th className="py-3">Référence</th>
+                <th className="py-3">Reference</th>
                 <th className="py-3">Type</th>
-                <th className="py-3">Libellé</th>
+                <th className="py-3">Libelle</th>
                 <th className="py-3">Montant</th>
                 <th className="py-3 hidden sm:table-cell">Mode</th>
                 <th className="py-3 hidden lg:table-cell">Caisse / Compte</th>
@@ -421,7 +440,7 @@ const MouvementsTresorerieList = () => {
                   <td colSpan="9" className="text-center py-16">
                     <div className="flex flex-col items-center gap-3">
                       <DollarSign className="w-16 h-16 text-gray-300" />
-                      <p className="text-gray-500 font-medium">Aucun mouvement trouvé</p>
+                      <p className="text-gray-500 font-medium">Aucun mouvement trouve</p>
                       <button onClick={() => navigate('/mouvements-tresorerie/nouveau')} className="btn btn-primary btn-sm gap-2">
                         <Plus className="w-4 h-4" /> Ajouter un mouvement
                       </button>
@@ -456,13 +475,13 @@ const MouvementsTresorerieList = () => {
                       <span className="badge badge-ghost">{getModeLabel(mvt.mode_paiement)}</span>
                     </td>
                     <td className="hidden lg:table-cell">
-                      {mvt.caisse ? (
+                      {mvt.caisse_nom ? (
                         <span className="flex items-center gap-1 text-sm">
-                          <Wallet className="w-3 h-3" /> {mvt.caisse.nom || mvt.caisse}
+                          <Wallet className="w-3 h-3" /> {mvt.caisse_nom}
                         </span>
-                      ) : mvt.compte_bancaire ? (
+                      ) : mvt.compte_bancaire_nom ? (
                         <span className="flex items-center gap-1 text-sm">
-                          <Building2 className="w-3 h-3" /> {mvt.compte_bancaire.nom || mvt.compte_bancaire}
+                          <Building2 className="w-3 h-3" /> {mvt.compte_bancaire_nom}
                         </span>
                       ) : '-'}
                     </td>
@@ -473,7 +492,7 @@ const MouvementsTresorerieList = () => {
                       <div className="flex flex-col items-center gap-1">
                         {getStatusBadge(mvt.status)}
                         {mvt.rapproche && (
-                          <span className="badge badge-primary badge-xs">✅ rapproché</span>
+                          <span className="badge badge-primary badge-xs">Rapproche</span>
                         )}
                       </div>
                     </td>
@@ -513,7 +532,7 @@ const MouvementsTresorerieList = () => {
         {filteredMouvements.length > 0 && (
           <div className="px-6 py-4 border-t flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="text-sm text-gray-500">
-              Affichage de {startIndex + 1} à {Math.min(currentPage * itemsPerPage, filteredMouvements.length)} sur {filteredMouvements.length}
+              Affichage de {startIndex + 1} a {Math.min(currentPage * itemsPerPage, filteredMouvements.length)} sur {filteredMouvements.length}
             </div>
             <div className="flex items-center gap-3">
               <select

@@ -34,6 +34,13 @@ const FraisList = () => {
 
   const getToken = () => localStorage.getItem('Token');
 
+  // NORMALISATION : tableau direct OU reponse paginee DRF
+  const normalizeData = (data) => {
+    if (Array.isArray(data)) return data;
+    if (data && Array.isArray(data.results)) return data.results;
+    return [];
+  };
+
   // Charger les frais
   const fetchFrais = async () => {
     setLoading(true);
@@ -42,35 +49,44 @@ const FraisList = () => {
       let url = '/frais/';
       const params = new URLSearchParams();
 
+      // Charger un maximum de frais
+      params.append('page_size', '1000');
+
       if (filterCategorie !== 'all') params.append('categorie', filterCategorie);
       if (filterStatus !== 'all') params.append('status', filterStatus);
       if (filterWarehouse !== 'all') params.append('warehouse', filterWarehouse);
       if (searchTerm) params.append('search', searchTerm);
 
-      if (params.toString()) url += `?${params.toString()}`;
+      url += `?${params.toString()}`;
 
       const response = await AxiosInstance.get(url, {
         headers: { 'Authorization': `Token ${token}` }
       });
-      setFrais(response.data || []);
+
+      // NORMALISATION
+      setFrais(normalizeData(response.data));
     } catch (error) {
       console.error('Erreur:', error);
       showNotification('Erreur de chargement des frais', 'error');
+      setFrais([]);
     } finally {
       setLoading(false);
     }
   };
 
-  // Charger les entrepôts pour le filtre
+  // Charger les entrepots
   const fetchWarehouses = async () => {
     try {
       const token = getToken();
-      const response = await AxiosInstance.get('/warehouses/?is_active=true', {
-        headers: { 'Authorization': `Token ${token}` }
-      });
-      setWarehouses(response.data || []);
+      const response = await AxiosInstance.get(
+        '/warehouses/?is_active=true&page_size=1000',
+        { headers: { 'Authorization': `Token ${token}` } }
+      );
+      // NORMALISATION
+      setWarehouses(normalizeData(response.data));
     } catch (error) {
-      console.error('Erreur chargement entrepôts:', error);
+      console.error('Erreur chargement entrepots:', error);
+      setWarehouses([]);
     }
   };
 
@@ -96,7 +112,7 @@ const FraisList = () => {
       await AxiosInstance.delete(`/frais/${fraisToDelete.id}/`, {
         headers: { 'Authorization': `Token ${token}` }
       });
-      showNotification('Frais supprimé avec succès', 'success');
+      showNotification('Frais supprime avec succes', 'success');
       fetchFrais();
       setShowDeleteModal(false);
       setFraisToDelete(null);
@@ -105,8 +121,11 @@ const FraisList = () => {
     }
   };
 
+  // Protection contre frais non tableau
+  const safeFrais = Array.isArray(frais) ? frais : [];
+
   // Filtrer et paginer
-  const filteredFrais = frais.filter(item => {
+  const filteredFrais = safeFrais.filter(item => {
     const matchesSearch = !searchTerm ||
       (item.reference?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
       (item.titre?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
@@ -119,18 +138,18 @@ const FraisList = () => {
     return matchesSearch && matchesCategorie && matchesStatus && matchesWarehouse;
   });
 
-  const totalPages = Math.ceil(filteredFrais.length / itemsPerPage);
+  const totalPages = Math.max(1, Math.ceil(filteredFrais.length / itemsPerPage));
   const startIndex = (currentPage - 1) * itemsPerPage;
   const paginatedFrais = filteredFrais.slice(startIndex, startIndex + itemsPerPage);
 
   // Statistiques
   const stats = {
-    total: frais.length,
-    brouillon: frais.filter(f => f.status === 'brouillon').length,
-    en_attente: frais.filter(f => f.status === 'en_attente').length,
-    paye: frais.filter(f => f.status === 'paye').length,
-    total_montant: frais.reduce((acc, f) => acc + parseFloat(f.montant || 0), 0),
-    total_payes: frais.filter(f => f.status === 'paye').reduce((acc, f) => acc + parseFloat(f.montant || 0), 0)
+    total: safeFrais.length,
+    brouillon: safeFrais.filter(f => f.status === 'brouillon').length,
+    en_attente: safeFrais.filter(f => f.status === 'en_attente').length,
+    paye: safeFrais.filter(f => f.status === 'paye').length,
+    total_montant: safeFrais.reduce((acc, f) => acc + parseFloat(f.montant || 0), 0),
+    total_payes: safeFrais.filter(f => f.status === 'paye').reduce((acc, f) => acc + parseFloat(f.montant || 0), 0)
   };
 
   // Utilitaires d'affichage
@@ -143,9 +162,9 @@ const FraisList = () => {
       'entretien': 'Entretien',
       'formation': 'Formation',
       'mission': 'Mission',
-      'representations': 'Représentation',
+      'representations': 'Representation',
       'assurances': 'Assurances',
-      'impots': 'Impôts et taxes',
+      'impots': 'Impots et taxes',
       'loyer': 'Loyer',
       'services': 'Services',
       'fournisseur': 'Paiement fournisseur',
@@ -158,10 +177,10 @@ const FraisList = () => {
     const map = {
       'brouillon': { label: 'Brouillon', color: 'badge-ghost' },
       'en_attente': { label: 'En attente', color: 'badge-warning' },
-      'valide': { label: 'Validé', color: 'badge-info' },
-      'paye': { label: 'Payé', color: 'badge-success' },
-      'refuse': { label: 'Refusé', color: 'badge-error' },
-      'annule': { label: 'Annulé', color: 'badge-error' }
+      'valide': { label: 'Valide', color: 'badge-info' },
+      'paye': { label: 'Paye', color: 'badge-success' },
+      'refuse': { label: 'Refuse', color: 'badge-error' },
+      'annule': { label: 'Annule', color: 'badge-error' }
     };
     const info = map[status] || { label: status, color: 'badge-ghost' };
     return <span className={`badge ${info.color}`}>{info.label}</span>;
@@ -169,18 +188,18 @@ const FraisList = () => {
 
   const getModeLabel = (mode) => {
     const map = {
-      'especes': 'Espèces',
+      'especes': 'Especes',
       'carte': 'Carte bancaire',
-      'cheque': 'Chèque',
+      'cheque': 'Cheque',
       'virement': 'Virement',
       'mobile_money': 'Mobile Money',
-      'prelevement': 'Prélèvement',
+      'prelevement': 'Prelevement',
       'autre': 'Autre'
     };
     return map[mode] || mode;
   };
 
-  if (loading && frais.length === 0) {
+  if (loading && safeFrais.length === 0) {
     return (
       <div className="flex items-center justify-center min-h-[calc(100vh-200px)]">
         <div className="text-center space-y-4">
@@ -223,7 +242,7 @@ const FraisList = () => {
               <p className="font-semibold text-error mt-2">{fraisToDelete.titre}</p>
               <p className="text-sm text-gray-500 mt-1">{fraisToDelete.reference}</p>
               {parseFloat(fraisToDelete.montant || 0) > 0 && (
-                <p className="text-warning text-sm mt-2">⚠️ Montant: {parseFloat(fraisToDelete.montant || 0).toLocaleString()} FCFA</p>
+                <p className="text-warning text-sm mt-2">Montant: {parseFloat(fraisToDelete.montant || 0).toLocaleString()} FCFA</p>
               )}
             </div>
             <div className="flex gap-3 p-4 bg-gray-50">
@@ -236,7 +255,7 @@ const FraisList = () => {
         </div>
       )}
 
-      {/* En-tête */}
+      {/* En-tete */}
       <div className="relative overflow-hidden bg-gradient-to-r from-primary/10 via-primary/5 to-transparent rounded-2xl p-5">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
@@ -244,10 +263,10 @@ const FraisList = () => {
               <div className="p-2 bg-primary/10 rounded-xl">
                 <Receipt className="w-7 h-7 text-primary" />
               </div>
-              <h1 className="text-2xl sm:text-3xl font-black text-primary">Frais et dépenses</h1>
+              <h1 className="text-2xl sm:text-3xl font-black text-primary">Frais et depenses</h1>
             </div>
             <p className="text-sm text-gray-500 ml-1">
-              Gestion des frais – {stats.total} enregistrement(s)
+              Gestion des frais - {stats.total} enregistrement(s)
             </p>
           </div>
           <div className="flex flex-wrap gap-3">
@@ -271,7 +290,7 @@ const FraisList = () => {
         </div>
         <div className="bg-white shadow-md rounded-xl p-3">
           <div className="flex items-center justify-between">
-            <div><p className="text-xs text-gray-500">Payés</p><p className="text-xl font-bold text-success">{stats.paye}</p></div>
+            <div><p className="text-xs text-gray-500">Payes</p><p className="text-xl font-bold text-success">{stats.paye}</p></div>
             <Check className="w-8 h-8 text-success/20" />
           </div>
         </div>
@@ -305,7 +324,7 @@ const FraisList = () => {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
               type="text"
-              placeholder="Rechercher par référence, titre, bénéficiaire..."
+              placeholder="Rechercher par reference, titre, beneficiaire..."
               className="input input-bordered w-full pl-9"
               value={searchTerm}
               onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
@@ -320,7 +339,7 @@ const FraisList = () => {
               value={filterCategorie}
               onChange={(e) => { setFilterCategorie(e.target.value); setCurrentPage(1); }}
             >
-              <option value="all">Toutes catégories</option>
+              <option value="all">Toutes categories</option>
               <option value="transport">Transport</option>
               <option value="restauration">Restauration</option>
               <option value="fournitures">Fournitures</option>
@@ -328,9 +347,9 @@ const FraisList = () => {
               <option value="entretien">Entretien</option>
               <option value="formation">Formation</option>
               <option value="mission">Mission</option>
-              <option value="representations">Représentation</option>
+              <option value="representations">Representation</option>
               <option value="assurances">Assurances</option>
-              <option value="impots">Impôts</option>
+              <option value="impots">Impots</option>
               <option value="loyer">Loyer</option>
               <option value="services">Services</option>
               <option value="fournisseur">Fournisseur</option>
@@ -344,17 +363,17 @@ const FraisList = () => {
               <option value="all">Tous statuts</option>
               <option value="brouillon">Brouillon</option>
               <option value="en_attente">En attente</option>
-              <option value="valide">Validé</option>
-              <option value="paye">Payé</option>
-              <option value="refuse">Refusé</option>
-              <option value="annule">Annulé</option>
+              <option value="valide">Valide</option>
+              <option value="paye">Paye</option>
+              <option value="refuse">Refuse</option>
+              <option value="annule">Annule</option>
             </select>
             <select
               className="select select-bordered w-full"
               value={filterWarehouse}
               onChange={(e) => { setFilterWarehouse(e.target.value); setCurrentPage(1); }}
             >
-              <option value="all">Tous entrepôts</option>
+              <option value="all">Tous entrepots</option>
               {warehouses.map(w => (
                 <option key={w.id} value={w.id}>{w.name}</option>
               ))}
@@ -369,7 +388,7 @@ const FraisList = () => {
                 setCurrentPage(1);
               }}
             >
-              <RefreshCw className="w-4 h-4" /> Réinitialiser
+              <RefreshCw className="w-4 h-4" /> Reinitialiser
             </button>
           </div>
         </div>
@@ -381,10 +400,10 @@ const FraisList = () => {
           <table className="table w-full">
             <thead className="bg-gray-50">
               <tr>
-                <th className="py-3">Référence</th>
+                <th className="py-3">Reference</th>
                 <th className="py-3">Titre</th>
-                <th className="py-3 hidden lg:table-cell">Catégorie</th>
-                <th className="py-3 hidden md:table-cell">Bénéficiaire</th>
+                <th className="py-3 hidden lg:table-cell">Categorie</th>
+                <th className="py-3 hidden md:table-cell">Beneficiaire</th>
                 <th className="py-3">Montant</th>
                 <th className="py-3 hidden sm:table-cell">Mode</th>
                 <th className="py-3 hidden lg:table-cell">Date</th>
@@ -398,7 +417,7 @@ const FraisList = () => {
                   <td colSpan="9" className="text-center py-16">
                     <div className="flex flex-col items-center gap-3">
                       <Receipt className="w-16 h-16 text-gray-300" />
-                      <p className="text-gray-500 font-medium">Aucun frais trouvé</p>
+                      <p className="text-gray-500 font-medium">Aucun frais trouve</p>
                       <button onClick={() => navigate('/frais/nouveau')} className="btn btn-primary btn-sm gap-2">
                         <Plus className="w-4 h-4" /> Ajouter un frais
                       </button>
@@ -433,8 +452,8 @@ const FraisList = () => {
                     <td className="text-center">
                       <div className="flex flex-col items-center gap-1">
                         {getStatusBadge(item.status)}
-                        {item.status === 'paye' && item.mouvement && (
-                          <span className="badge badge-primary badge-xs">✅ mouvement</span>
+                        {item.status === 'paye' && item.mouvement_reference && (
+                          <span className="badge badge-primary badge-xs">Mouvement</span>
                         )}
                       </div>
                     </td>
@@ -465,7 +484,7 @@ const FraisList = () => {
         {filteredFrais.length > 0 && (
           <div className="px-6 py-4 border-t flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="text-sm text-gray-500">
-              Affichage de {startIndex + 1} à {Math.min(currentPage * itemsPerPage, filteredFrais.length)} sur {filteredFrais.length}
+              Affichage de {startIndex + 1} a {Math.min(currentPage * itemsPerPage, filteredFrais.length)} sur {filteredFrais.length}
             </div>
             <div className="flex items-center gap-3">
               <select

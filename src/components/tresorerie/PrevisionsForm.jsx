@@ -41,6 +41,13 @@ const PrevisionsForm = () => {
 
   const getToken = () => localStorage.getItem('Token');
 
+  // NORMALISATION : tableau direct OU reponse paginee DRF
+  const normalizeData = (data) => {
+    if (Array.isArray(data)) return data;
+    if (data && Array.isArray(data.results)) return data.results;
+    return [];
+  };
+
   const showNotification = (message, type) => {
     setNotification({ message, type });
     setTimeout(() => setNotification(null), 4000);
@@ -49,10 +56,12 @@ const PrevisionsForm = () => {
   const generateReference = async () => {
     try {
       const token = getToken();
-      const response = await AxiosInstance.get('/previsions/', {
-        headers: { 'Authorization': `Token ${token}` }
-      });
-      const previsions = response.data || [];
+      const response = await AxiosInstance.get(
+        '/previsions/?page_size=1000',
+        { headers: { 'Authorization': `Token ${token}` } }
+      );
+      // NORMALISATION
+      const previsions = normalizeData(response.data);
       const month = new Date().toISOString().slice(0, 7).replace('-', '');
       const filtered = previsions.filter(p => p.reference && p.reference.startsWith('PREV' + month));
       const maxNum = filtered.reduce((max, p) => {
@@ -70,12 +79,15 @@ const PrevisionsForm = () => {
   const fetchWarehouses = async () => {
     try {
       const token = getToken();
-      const response = await AxiosInstance.get('/warehouses/?is_active=true', {
-        headers: { 'Authorization': `Token ${token}` }
-      });
-      setWarehouses(response.data || []);
+      const response = await AxiosInstance.get(
+        '/warehouses/?is_active=true&page_size=1000',
+        { headers: { 'Authorization': `Token ${token}` } }
+      );
+      // NORMALISATION
+      setWarehouses(normalizeData(response.data));
     } catch (error) {
-      console.error('Erreur chargement entrepôts:', error);
+      console.error('Erreur chargement entrepots:', error);
+      setWarehouses([]);
     }
   };
 
@@ -112,8 +124,8 @@ const PrevisionsForm = () => {
         notes: data.notes || ''
       });
     } catch (error) {
-      console.error('Erreur chargement prévision:', error);
-      showNotification('Erreur de chargement des données', 'error');
+      console.error('Erreur chargement prevision:', error);
+      showNotification('Erreur de chargement des donnees', 'error');
       setTimeout(() => navigate('/previsions'), 2000);
     } finally {
       setLoading(false);
@@ -123,6 +135,7 @@ const PrevisionsForm = () => {
   useEffect(() => {
     fetchWarehouses();
     fetchPrevision();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   const handleChange = (e) => {
@@ -139,18 +152,18 @@ const PrevisionsForm = () => {
   const validate = () => {
     const newErrors = {};
     if (!formData.titre.trim()) newErrors.titre = 'Le titre est requis';
-    if (!formData.warehouse) newErrors.warehouse = "L'entrepôt est requis";
+    if (!formData.warehouse) newErrors.warehouse = "L'entrepot est requis";
     if (!formData.type_prevision) newErrors.type_prevision = 'Le type est requis';
     if (!formData.montant_prevu || parseFloat(formData.montant_prevu) <= 0) {
-      newErrors.montant_prevu = 'Le montant prévu doit être supérieur à 0';
+      newErrors.montant_prevu = 'Le montant prevu doit etre superieur a 0';
     }
-    if (!formData.date_debut) newErrors.date_debut = 'La date de début est requise';
+    if (!formData.date_debut) newErrors.date_debut = 'La date de debut est requise';
     if (!formData.date_fin) newErrors.date_fin = 'La date de fin est requise';
     else if (formData.date_fin && formData.date_debut && formData.date_fin < formData.date_debut) {
-      newErrors.date_fin = 'La date de fin doit être postérieure à la date de début';
+      newErrors.date_fin = 'La date de fin doit etre posterieure a la date de debut';
     }
     if (formData.probabilite < 0 || formData.probabilite > 100) {
-      newErrors.probabilite = 'La probabilité doit être comprise entre 0 et 100';
+      newErrors.probabilite = 'La probabilite doit etre comprise entre 0 et 100';
     }
 
     setErrors(newErrors);
@@ -184,7 +197,7 @@ const PrevisionsForm = () => {
       });
 
       showNotification(
-        isEdit ? 'Prévision modifiée avec succès' : 'Prévision créée avec succès',
+        isEdit ? 'Prevision modifiee avec succes' : 'Prevision creee avec succes',
         'success'
       );
 
@@ -205,17 +218,16 @@ const PrevisionsForm = () => {
         setErrors(newErrors);
         showNotification('Erreur lors de l\'enregistrement', 'error');
       } else {
-        showNotification('Erreur réseau', 'error');
+        showNotification('Erreur reseau', 'error');
       }
     } finally {
       setSubmitting(false);
     }
   };
 
-  // Options des sélecteurs
   const typeOptions = [
-    { value: 'entree', label: 'Entrée prévue', icon: TrendingUp },
-    { value: 'sortie', label: 'Sortie prévue', icon: TrendingDown }
+    { value: 'entree', label: 'Entree prevue', icon: TrendingUp },
+    { value: 'sortie', label: 'Sortie prevue', icon: TrendingDown }
   ];
 
   const periodeOptions = [
@@ -229,10 +241,10 @@ const PrevisionsForm = () => {
   const statutOptions = [
     { value: 'brouillon', label: 'Brouillon' },
     { value: 'en_cours', label: 'En cours' },
-    { value: 'valide', label: 'Validée' },
-    { value: 'realise', label: 'Réalisé' },
-    { value: 'annule', label: 'Annulé' },
-    { value: 'ecart', label: 'Écart constaté' }
+    { value: 'valide', label: 'Validee' },
+    { value: 'realise', label: 'Realise' },
+    { value: 'annule', label: 'Annule' },
+    { value: 'ecart', label: 'Ecart constate' }
   ];
 
   if (loading) {
@@ -263,7 +275,7 @@ const PrevisionsForm = () => {
         </div>
       )}
 
-      {/* En-tête */}
+      {/* En-tete */}
       <div className="w-full bg-gradient-to-r from-primary/10 via-primary/5 to-transparent border-b border-primary/10">
         <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
@@ -277,10 +289,10 @@ const PrevisionsForm = () => {
                 </div>
                 <div>
                   <h1 className="text-2xl font-bold text-gray-800">
-                    {isEdit ? 'Modifier la prévision' : 'Nouvelle prévision'}
+                    {isEdit ? 'Modifier la prevision' : 'Nouvelle prevision'}
                   </h1>
                   <p className="text-sm text-gray-500">
-                    {isEdit ? 'Modifiez les informations de la prévision' : 'Planifiez une nouvelle prévision de trésorerie'}
+                    {isEdit ? 'Modifiez les informations de la prevision' : 'Planifiez une nouvelle prevision de tresorerie'}
                   </p>
                 </div>
               </div>
@@ -293,18 +305,18 @@ const PrevisionsForm = () => {
       <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
         <form onSubmit={handleSubmit} className="space-y-6">
 
-          {/* Section 1 : Informations générales */}
+          {/* Section 1 : Informations generales */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
             <div className="bg-gray-50 px-6 py-3 border-b">
               <h3 className="font-semibold flex items-center gap-2">
-                <Layers className="w-4 h-4 text-primary" /> Informations générales
+                <Layers className="w-4 h-4 text-primary" /> Informations generales
               </h3>
             </div>
             <div className="p-6">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 <div>
                   <label className="label text-sm font-medium text-gray-700">
-                    Référence <span className="text-error">*</span>
+                    Reference <span className="text-error">*</span>
                   </label>
                   <input
                     type="text"
@@ -326,14 +338,14 @@ const PrevisionsForm = () => {
                     value={formData.titre}
                     onChange={handleChange}
                     className={`input input-bordered w-full ${errors.titre ? 'input-error' : ''}`}
-                    placeholder="Ex: Prévision mensuelle des encaissements"
+                    placeholder="Ex: Prevision mensuelle des encaissements"
                   />
                   {errors.titre && <p className="text-error text-xs mt-1">{errors.titre}</p>}
                 </div>
 
                 <div>
                   <label className="label text-sm font-medium text-gray-700">
-                    Entrepôt <span className="text-error">*</span>
+                    Entrepot <span className="text-error">*</span>
                   </label>
                   <select
                     name="warehouse"
@@ -341,7 +353,7 @@ const PrevisionsForm = () => {
                     onChange={handleChange}
                     className={`select select-bordered w-full ${errors.warehouse ? 'select-error' : ''}`}
                   >
-                    <option value="">Sélectionner</option>
+                    <option value="">Selectionner</option>
                     {warehouses.map(w => (
                       <option key={w.id} value={w.id}>{w.name} ({w.code})</option>
                     ))}
@@ -352,18 +364,18 @@ const PrevisionsForm = () => {
             </div>
           </div>
 
-          {/* Section 2 : Type et périodicité */}
+          {/* Section 2 : Type et periodicite */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
             <div className="bg-gray-50 px-6 py-3 border-b">
               <h3 className="font-semibold flex items-center gap-2">
-                <Clock className="w-4 h-4 text-primary" /> Type et périodicité
+                <Clock className="w-4 h-4 text-primary" /> Type et periodicite
               </h3>
             </div>
             <div className="p-6">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 <div>
                   <label className="label text-sm font-medium text-gray-700">
-                    Type de prévision <span className="text-error">*</span>
+                    Type de prevision <span className="text-error">*</span>
                   </label>
                   <select
                     name="type_prevision"
@@ -380,7 +392,7 @@ const PrevisionsForm = () => {
 
                 <div>
                   <label className="label text-sm font-medium text-gray-700">
-                    Période
+                    Periode
                   </label>
                   <select
                     name="periode"
@@ -396,7 +408,7 @@ const PrevisionsForm = () => {
 
                 <div>
                   <label className="label text-sm font-medium text-gray-700">
-                    Probabilité (%) <span className="text-error">*</span>
+                    Probabilite (%) <span className="text-error">*</span>
                   </label>
                   <input
                     type="number"
@@ -424,7 +436,7 @@ const PrevisionsForm = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 <div>
                   <label className="label text-sm font-medium text-gray-700">
-                    Montant prévu <span className="text-error">*</span>
+                    Montant prevu <span className="text-error">*</span>
                   </label>
                   <input
                     type="number"
@@ -441,7 +453,7 @@ const PrevisionsForm = () => {
 
                 <div>
                   <label className="label text-sm font-medium text-gray-700">
-                    Montant réel (si connu)
+                    Montant reel (si connu)
                   </label>
                   <input
                     type="number"
@@ -478,14 +490,14 @@ const PrevisionsForm = () => {
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
             <div className="bg-gray-50 px-6 py-3 border-b">
               <h3 className="font-semibold flex items-center gap-2">
-                <Calendar className="w-4 h-4 text-primary" /> Période de prévision
+                <Calendar className="w-4 h-4 text-primary" /> Periode de prevision
               </h3>
             </div>
             <div className="p-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="label text-sm font-medium text-gray-700">
-                    Date début <span className="text-error">*</span>
+                    Date debut <span className="text-error">*</span>
                   </label>
                   <input
                     type="date"
@@ -514,18 +526,18 @@ const PrevisionsForm = () => {
             </div>
           </div>
 
-          {/* Section 5 : Catégorisation et source */}
+          {/* Section 5 : Categorisation et source */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
             <div className="bg-gray-50 px-6 py-3 border-b">
               <h3 className="font-semibold flex items-center gap-2">
-                <Hash className="w-4 h-4 text-primary" /> Catégorisation et source
+                <Hash className="w-4 h-4 text-primary" /> Categorisation et source
               </h3>
             </div>
             <div className="p-6">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <label className="label text-sm font-medium text-gray-700">
-                    Catégorie
+                    Categorie
                   </label>
                   <input
                     type="text"
@@ -539,7 +551,7 @@ const PrevisionsForm = () => {
 
                 <div>
                   <label className="label text-sm font-medium text-gray-700">
-                    Sous-catégorie
+                    Sous-categorie
                   </label>
                   <input
                     type="text"
@@ -596,7 +608,7 @@ const PrevisionsForm = () => {
                 value={formData.notes}
                 onChange={handleChange}
                 className="textarea textarea-bordered w-full min-h-[80px]"
-                placeholder="Informations complémentaires..."
+                placeholder="Informations complementaires..."
               />
             </div>
           </div>
@@ -621,7 +633,7 @@ const PrevisionsForm = () => {
               ) : (
                 <Save className="w-4 h-4" />
               )}
-              {isEdit ? 'Modifier' : 'Créer'}
+              {isEdit ? 'Modifier' : 'Creer'}
             </button>
           </div>
 

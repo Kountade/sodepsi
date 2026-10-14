@@ -23,10 +23,6 @@ const MouvementTresorerieForm = () => {
   const [warehouses, setWarehouses] = useState([]);
   const [caisses, setCaisses] = useState([]);
   const [comptes, setComptes] = useState([]);
-  const [ventes, setVentes] = useState([]);
-  const [purchaseOrders, setPurchaseOrders] = useState([]);
-  const [factures, setFactures] = useState([]);
-  const [paiements, setPaiements] = useState([]);
 
   const [formData, setFormData] = useState({
     reference: '',
@@ -46,22 +42,25 @@ const MouvementTresorerieForm = () => {
     reference_externe: '',
     piece_justificative: '',
     libelle: '',
-    notes: '',
-    vente: '',
-    purchase_order: '',
-    facture_vente: '',
-    paiement: ''
+    notes: ''
   });
   const [errors, setErrors] = useState({});
 
   const getToken = () => localStorage.getItem('Token');
+
+  // NORMALISATION : tableau direct OU reponse paginee DRF
+  const normalizeData = (data) => {
+    if (Array.isArray(data)) return data;
+    if (data && Array.isArray(data.results)) return data.results;
+    return [];
+  };
 
   const showNotification = (message, type) => {
     setNotification({ message, type });
     setTimeout(() => setNotification(null), 4000);
   };
 
-  // Générer une référence automatique (même logique que le backend)
+  // Generer une reference automatique (meme logique que le backend)
   const generateReference = async (type) => {
     const prefixMap = {
       'encaissement': 'ENC',
@@ -72,10 +71,12 @@ const MouvementTresorerieForm = () => {
     const month = new Date().toISOString().slice(0, 7).replace('-', '');
     try {
       const token = getToken();
-      const response = await AxiosInstance.get('/mouvements/', {
-        headers: { 'Authorization': `Token ${token}` }
-      });
-      const mouvements = response.data || [];
+      const response = await AxiosInstance.get(
+        '/mouvements/?page_size=2000',
+        { headers: { 'Authorization': `Token ${token}` } }
+      );
+      // NORMALISATION
+      const mouvements = normalizeData(response.data);
       const filtered = mouvements.filter(m => m.reference && m.reference.startsWith(prefix + month));
       const maxNum = filtered.reduce((max, m) => {
         const num = parseInt(m.reference.replace(prefix + month, ''), 10);
@@ -88,98 +89,65 @@ const MouvementTresorerieForm = () => {
     }
   };
 
-  // Charger les listes
+  // Charger les entrepots
   const fetchWarehouses = async () => {
     try {
       const token = getToken();
-      const response = await AxiosInstance.get('/warehouses/?is_active=true', {
-        headers: { 'Authorization': `Token ${token}` }
-      });
-      setWarehouses(response.data || []);
+      const response = await AxiosInstance.get(
+        '/warehouses/?is_active=true&page_size=1000',
+        { headers: { 'Authorization': `Token ${token}` } }
+      );
+      // NORMALISATION
+      setWarehouses(normalizeData(response.data));
     } catch (error) {
-      console.error('Erreur chargement entrepôts:', error);
+      console.error('Erreur chargement entrepots:', error);
+      setWarehouses([]);
     }
   };
 
+  // Charger les caisses pour un entrepot
   const fetchCaisses = async (warehouseId) => {
-    if (!warehouseId) return;
+    if (!warehouseId) {
+      setCaisses([]);
+      return;
+    }
     try {
       const token = getToken();
-      const response = await AxiosInstance.get(`/caisses/?warehouse=${warehouseId}&is_active=true`, {
-        headers: { 'Authorization': `Token ${token}` }
-      });
-      setCaisses(response.data || []);
+      const response = await AxiosInstance.get(
+        `/caisses/?warehouse=${warehouseId}&is_active=true&page_size=500`,
+        { headers: { 'Authorization': `Token ${token}` } }
+      );
+      // NORMALISATION
+      setCaisses(normalizeData(response.data));
     } catch (error) {
       console.error('Erreur chargement caisses:', error);
+      setCaisses([]);
     }
   };
 
+  // Charger les comptes bancaires pour un entrepot
   const fetchComptes = async (warehouseId) => {
-    if (!warehouseId) return;
+    if (!warehouseId) {
+      setComptes([]);
+      return;
+    }
     try {
       const token = getToken();
-      const response = await AxiosInstance.get(`/comptes-bancaires/?warehouse=${warehouseId}&is_active=true`, {
-        headers: { 'Authorization': `Token ${token}` }
-      });
-      setComptes(response.data || []);
+      const response = await AxiosInstance.get(
+        `/comptes-bancaires/?warehouse=${warehouseId}&is_active=true&page_size=500`,
+        { headers: { 'Authorization': `Token ${token}` } }
+      );
+      // NORMALISATION
+      setComptes(normalizeData(response.data));
     } catch (error) {
       console.error('Erreur chargement comptes:', error);
+      setComptes([]);
     }
   };
 
-  // Charger les entités liées (ventes, commandes, factures, paiements) - simplifié avec des listes récentes
-  const fetchVentes = async () => {
-    try {
-      const token = getToken();
-      const response = await AxiosInstance.get('/ventes/?limit=50', {
-        headers: { 'Authorization': `Token ${token}` }
-      });
-      setVentes(response.data || []);
-    } catch (error) {
-      console.error('Erreur chargement ventes:', error);
-    }
-  };
-
-  const fetchPurchaseOrders = async () => {
-    try {
-      const token = getToken();
-      const response = await AxiosInstance.get('/achats/?limit=50', {
-        headers: { 'Authorization': `Token ${token}` }
-      });
-      setPurchaseOrders(response.data || []);
-    } catch (error) {
-      console.error('Erreur chargement commandes:', error);
-    }
-  };
-
-  const fetchFactures = async () => {
-    try {
-      const token = getToken();
-      const response = await AxiosInstance.get('/factures/?limit=50', {
-        headers: { 'Authorization': `Token ${token}` }
-      });
-      setFactures(response.data || []);
-    } catch (error) {
-      console.error('Erreur chargement factures:', error);
-    }
-  };
-
-  const fetchPaiements = async () => {
-    try {
-      const token = getToken();
-      const response = await AxiosInstance.get('/paiements/?limit=50', {
-        headers: { 'Authorization': `Token ${token}` }
-      });
-      setPaiements(response.data || []);
-    } catch (error) {
-      console.error('Erreur chargement paiements:', error);
-    }
-  };
-
-  // Charger le mouvement en édition
+  // Charger le mouvement en edition
   const fetchMouvement = async () => {
     if (!isEdit) {
-      // Générer la référence par défaut
       const ref = await generateReference('encaissement');
       setFormData(prev => ({ ...prev, reference: ref }));
       return;
@@ -192,8 +160,11 @@ const MouvementTresorerieForm = () => {
         headers: { 'Authorization': `Token ${token}` }
       });
       const data = response.data;
+
       // Formater les dates pour les inputs
-      const dateMouvement = data.date_mouvement ? data.date_mouvement.slice(0, 16) : '';
+      const dateMouvement = data.date_mouvement
+        ? new Date(data.date_mouvement).toISOString().slice(0, 16)
+        : '';
       const dateValeur = data.date_valeur || '';
       const datePrevue = data.date_prevue || '';
 
@@ -215,59 +186,52 @@ const MouvementTresorerieForm = () => {
         reference_externe: data.reference_externe || '',
         piece_justificative: data.piece_justificative || '',
         libelle: data.libelle || '',
-        notes: data.notes || '',
-        vente: data.vente || '',
-        purchase_order: data.purchase_order || '',
-        facture_vente: data.facture_vente || '',
-        paiement: data.paiement || ''
+        notes: data.notes || ''
       });
 
-      // Charger les caisses et comptes pour l'entrepôt sélectionné
+      // Charger les caisses et comptes pour l'entrepot selectionne
       if (data.warehouse) {
         await fetchCaisses(data.warehouse);
         await fetchComptes(data.warehouse);
       }
     } catch (error) {
       console.error('Erreur chargement mouvement:', error);
-      showNotification('Erreur de chargement des données', 'error');
+      showNotification('Erreur de chargement des donnees', 'error');
       setTimeout(() => navigate('/mouvements-tresorerie'), 2000);
     } finally {
       setLoading(false);
     }
   };
 
-  // Charger les listes au montage
+  // Chargement initial
   useEffect(() => {
     fetchWarehouses();
-    fetchVentes();
-    fetchPurchaseOrders();
-    fetchFactures();
-    fetchPaiements();
     fetchMouvement();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
-  // Mettre à jour les caisses et comptes quand l'entrepôt change
+  // Mettre a jour les caisses et comptes quand l'entrepot change
   useEffect(() => {
     if (formData.warehouse) {
       fetchCaisses(formData.warehouse);
       fetchComptes(formData.warehouse);
-      // Réinitialiser les champs caisse et compte si l'entrepôt change
-      setFormData(prev => ({ ...prev, caisse: '', compte_bancaire: '' }));
     } else {
       setCaisses([]);
       setComptes([]);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [formData.warehouse]);
 
-  // Mettre à jour la référence quand le type change
+  // Mettre a jour la reference quand le type change (en creation)
   useEffect(() => {
-    if (!isEdit) {
+    if (!isEdit && formData.type_mouvement) {
       const updateRef = async () => {
         const ref = await generateReference(formData.type_mouvement);
         setFormData(prev => ({ ...prev, reference: ref }));
       };
       updateRef();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [formData.type_mouvement]);
 
   const handleChange = (e) => {
@@ -281,20 +245,50 @@ const MouvementTresorerieForm = () => {
     }
   };
 
+  // Quand on change l'entrepot, reinitialiser caisse et compte
+  const handleWarehouseChange = (e) => {
+    const value = e.target.value;
+    setFormData(prev => ({
+      ...prev,
+      warehouse: value,
+      caisse: '',
+      compte_bancaire: ''
+    }));
+  };
+
+  // Quand on selectionne une caisse, effacer le compte, et inversement
+  const handleCaisseChange = (e) => {
+    const value = e.target.value;
+    setFormData(prev => ({
+      ...prev,
+      caisse: value,
+      compte_bancaire: value ? '' : prev.compte_bancaire
+    }));
+  };
+
+  const handleCompteChange = (e) => {
+    const value = e.target.value;
+    setFormData(prev => ({
+      ...prev,
+      compte_bancaire: value,
+      caisse: value ? '' : prev.caisse
+    }));
+  };
+
   const validate = () => {
     const newErrors = {};
     if (!formData.type_mouvement) newErrors.type_mouvement = 'Le type est requis';
-    if (!formData.warehouse) newErrors.warehouse = "L'entrepôt est requis";
+    if (!formData.warehouse) newErrors.warehouse = "L'entrepot est requis";
     if (!formData.montant || parseFloat(formData.montant) <= 0) {
-      newErrors.montant = 'Le montant doit être supérieur à 0';
+      newErrors.montant = 'Le montant doit etre superieur a 0';
     }
     if (!formData.mode_paiement) newErrors.mode_paiement = 'Le mode de paiement est requis';
     if (!formData.caisse && !formData.compte_bancaire) {
-      newErrors.caisse = 'Veuillez sélectionner une caisse ou un compte bancaire';
+      newErrors.caisse = 'Veuillez selectionner une caisse ou un compte bancaire';
     }
     if (!formData.date_mouvement) newErrors.date_mouvement = 'La date du mouvement est requise';
     if (!formData.date_valeur) newErrors.date_valeur = 'La date de valeur est requise';
-    if (!formData.libelle.trim()) newErrors.libelle = 'Le libellé est requis';
+    if (!formData.libelle || !formData.libelle.trim()) newErrors.libelle = 'Le libelle est requis';
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -315,12 +309,8 @@ const MouvementTresorerieForm = () => {
         ...formData,
         montant: parseFloat(formData.montant) || 0,
         source_id: formData.source_id || null,
-        caisse: formData.caisse || null,
-        compte_bancaire: formData.compte_bancaire || null,
-        vente: formData.vente || null,
-        purchase_order: formData.purchase_order || null,
-        facture_vente: formData.facture_vente || null,
-        paiement: formData.paiement || null,
+        caisse: formData.caisse ? parseInt(formData.caisse) : null,
+        compte_bancaire: formData.compte_bancaire ? parseInt(formData.compte_bancaire) : null,
         date_prevue: formData.date_prevue || null,
         date_valeur: formData.date_valeur || null,
       };
@@ -333,7 +323,7 @@ const MouvementTresorerieForm = () => {
       });
 
       showNotification(
-        isEdit ? 'Mouvement modifié avec succès' : 'Mouvement créé avec succès',
+        isEdit ? 'Mouvement modifie avec succes' : 'Mouvement cree avec succes',
         'success'
       );
 
@@ -354,7 +344,7 @@ const MouvementTresorerieForm = () => {
         setErrors(newErrors);
         showNotification('Erreur lors de l\'enregistrement', 'error');
       } else {
-        showNotification('Erreur réseau', 'error');
+        showNotification('Erreur reseau', 'error');
       }
     } finally {
       setSubmitting(false);
@@ -362,9 +352,9 @@ const MouvementTresorerieForm = () => {
   };
 
   const typeOptions = [
-    { value: 'encaissement', label: 'Encaissement', icon: TrendingUp },
-    { value: 'decaissement', label: 'Décaissement', icon: TrendingDown },
-    { value: 'transfert', label: 'Transfert', icon: Repeat }
+    { value: 'encaissement', label: 'Encaissement' },
+    { value: 'decaissement', label: 'Decaissement' },
+    { value: 'transfert', label: 'Transfert' }
   ];
 
   const sourceTypeOptions = [
@@ -383,21 +373,21 @@ const MouvementTresorerieForm = () => {
   ];
 
   const modeOptions = [
-    { value: 'especes', label: 'Espèces' },
+    { value: 'especes', label: 'Especes' },
     { value: 'carte', label: 'Carte bancaire' },
-    { value: 'cheque', label: 'Chèque' },
+    { value: 'cheque', label: 'Cheque' },
     { value: 'virement', label: 'Virement' },
     { value: 'mobile_money', label: 'Mobile Money' },
-    { value: 'prelevement', label: 'Prélèvement' },
+    { value: 'prelevement', label: 'Prelevement' },
     { value: 'autre', label: 'Autre' }
   ];
 
   const statusOptions = [
-    { value: 'planifie', label: 'Planifié' },
+    { value: 'planifie', label: 'Planifie' },
     { value: 'en_attente', label: 'En attente' },
-    { value: 'effectue', label: 'Effectué' },
-    { value: 'annule', label: 'Annulé' },
-    { value: 'rejete', label: 'Rejeté' }
+    { value: 'effectue', label: 'Effectue' },
+    { value: 'annule', label: 'Annule' },
+    { value: 'rejete', label: 'Rejete' }
   ];
 
   if (loading) {
@@ -445,7 +435,7 @@ const MouvementTresorerieForm = () => {
                     {isEdit ? 'Modifier le mouvement' : 'Nouveau mouvement'}
                   </h1>
                   <p className="text-sm text-gray-500">
-                    {isEdit ? 'Modifiez les informations du mouvement' : 'Enregistrez une nouvelle opération'}
+                    {isEdit ? 'Modifiez les informations du mouvement' : 'Enregistrez une nouvelle operation'}
                   </p>
                 </div>
               </div>
@@ -458,18 +448,18 @@ const MouvementTresorerieForm = () => {
       <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
         <form onSubmit={handleSubmit} className="space-y-6">
 
-          {/* Section 1 : Informations générales */}
+          {/* Section 1 : Informations generales */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
             <div className="bg-gray-50 px-6 py-3 border-b">
               <h3 className="font-semibold flex items-center gap-2">
-                <Layers className="w-4 h-4 text-primary" /> Informations générales
+                <Layers className="w-4 h-4 text-primary" /> Informations generales
               </h3>
             </div>
             <div className="p-6">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 <div>
                   <label className="label text-sm font-medium text-gray-700">
-                    Référence <span className="text-error">*</span>
+                    Reference <span className="text-error">*</span>
                   </label>
                   <input
                     type="text"
@@ -501,15 +491,15 @@ const MouvementTresorerieForm = () => {
 
                 <div>
                   <label className="label text-sm font-medium text-gray-700">
-                    Entrepôt <span className="text-error">*</span>
+                    Entrepot <span className="text-error">*</span>
                   </label>
                   <select
                     name="warehouse"
                     value={formData.warehouse}
-                    onChange={handleChange}
+                    onChange={handleWarehouseChange}
                     className={`select select-bordered w-full ${errors.warehouse ? 'select-error' : ''}`}
                   >
-                    <option value="">Sélectionner un entrepôt</option>
+                    <option value="">Selectionner un entrepot</option>
                     {warehouses.map(w => (
                       <option key={w.id} value={w.id}>{w.name} ({w.code})</option>
                     ))}
@@ -535,7 +525,7 @@ const MouvementTresorerieForm = () => {
 
                 <div>
                   <label className="label text-sm font-medium text-gray-700">
-                    Référence source
+                    Reference source
                   </label>
                   <input
                     type="text"
@@ -543,7 +533,7 @@ const MouvementTresorerieForm = () => {
                     value={formData.source_reference}
                     onChange={handleChange}
                     className="input input-bordered w-full"
-                    placeholder="Référence externe"
+                    placeholder="Reference externe"
                   />
                 </div>
               </div>
@@ -595,7 +585,7 @@ const MouvementTresorerieForm = () => {
 
                 <div>
                   <label className="label text-sm font-medium text-gray-700">
-                    Libellé <span className="text-error">*</span>
+                    Libelle <span className="text-error">*</span>
                   </label>
                   <input
                     type="text"
@@ -627,16 +617,15 @@ const MouvementTresorerieForm = () => {
                   <select
                     name="caisse"
                     value={formData.caisse}
-                    onChange={handleChange}
+                    onChange={handleCaisseChange}
                     className={`select select-bordered w-full ${errors.caisse ? 'select-error' : ''}`}
                     disabled={!formData.warehouse}
                   >
-                    <option value="">Sélectionner une caisse</option>
+                    <option value="">Selectionner une caisse</option>
                     {caisses.map(c => (
                       <option key={c.id} value={c.id}>{c.code} - {c.nom}</option>
                     ))}
                   </select>
-                  {errors.caisse && <p className="text-error text-xs mt-1">{errors.caisse}</p>}
                 </div>
 
                 <div>
@@ -646,19 +635,19 @@ const MouvementTresorerieForm = () => {
                   <select
                     name="compte_bancaire"
                     value={formData.compte_bancaire}
-                    onChange={handleChange}
+                    onChange={handleCompteChange}
                     className={`select select-bordered w-full ${errors.compte_bancaire ? 'select-error' : ''}`}
                     disabled={!formData.warehouse}
                   >
-                    <option value="">Sélectionner un compte</option>
+                    <option value="">Selectionner un compte</option>
                     {comptes.map(c => (
                       <option key={c.id} value={c.id}>{c.banque} - {c.nom}</option>
                     ))}
                   </select>
-                  {errors.compte_bancaire && <p className="text-error text-xs mt-1">{errors.compte_bancaire}</p>}
                 </div>
               </div>
-              <p className="text-xs text-gray-400 mt-2">Sélectionnez une caisse OU un compte bancaire.</p>
+              {errors.caisse && <p className="text-error text-xs mt-2">{errors.caisse}</p>}
+              <p className="text-xs text-gray-400 mt-2">Selectionnez une caisse OU un compte bancaire.</p>
             </div>
           </div>
 
@@ -701,7 +690,7 @@ const MouvementTresorerieForm = () => {
 
                 <div>
                   <label className="label text-sm font-medium text-gray-700">
-                    Date prévue (optionnelle)
+                    Date prevue (optionnelle)
                   </label>
                   <input
                     type="date"
@@ -715,11 +704,11 @@ const MouvementTresorerieForm = () => {
             </div>
           </div>
 
-          {/* Section 5 : Statut et références */}
+          {/* Section 5 : Statut et references */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
             <div className="bg-gray-50 px-6 py-3 border-b">
               <h3 className="font-semibold flex items-center gap-2">
-                <Clock className="w-4 h-4 text-primary" /> Statut et références
+                <Clock className="w-4 h-4 text-primary" /> Statut et references
               </h3>
             </div>
             <div className="p-6">
@@ -742,7 +731,7 @@ const MouvementTresorerieForm = () => {
 
                 <div>
                   <label className="label text-sm font-medium text-gray-700">
-                    Référence externe
+                    Reference externe
                   </label>
                   <input
                     type="text"
@@ -750,13 +739,13 @@ const MouvementTresorerieForm = () => {
                     value={formData.reference_externe}
                     onChange={handleChange}
                     className="input input-bordered w-full"
-                    placeholder="Référence du fournisseur/client"
+                    placeholder="Reference du fournisseur/client"
                   />
                 </div>
 
                 <div>
                   <label className="label text-sm font-medium text-gray-700">
-                    Pièce justificative
+                    Piece justificative
                   </label>
                   <input
                     type="text"
@@ -764,94 +753,14 @@ const MouvementTresorerieForm = () => {
                     value={formData.piece_justificative}
                     onChange={handleChange}
                     className="input input-bordered w-full"
-                    placeholder="N° de pièce"
+                    placeholder="N de piece"
                   />
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Section 6 : Liens vers les entités */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-            <div className="bg-gray-50 px-6 py-3 border-b">
-              <h3 className="font-semibold flex items-center gap-2">
-                <FileText className="w-4 h-4 text-primary" /> Liens vers d'autres entités
-              </h3>
-            </div>
-            <div className="p-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div>
-                  <label className="label text-sm font-medium text-gray-700">
-                    Vente associée
-                  </label>
-                  <select
-                    name="vente"
-                    value={formData.vente}
-                    onChange={handleChange}
-                    className="select select-bordered w-full"
-                  >
-                    <option value="">Aucune</option>
-                    {ventes.map(v => (
-                      <option key={v.id} value={v.id}>{v.reference} - {v.client_name || v.id}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="label text-sm font-medium text-gray-700">
-                    Commande fournisseur
-                  </label>
-                  <select
-                    name="purchase_order"
-                    value={formData.purchase_order}
-                    onChange={handleChange}
-                    className="select select-bordered w-full"
-                  >
-                    <option value="">Aucune</option>
-                    {purchaseOrders.map(p => (
-                      <option key={p.id} value={p.id}>{p.reference}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="label text-sm font-medium text-gray-700">
-                    Facture vente
-                  </label>
-                  <select
-                    name="facture_vente"
-                    value={formData.facture_vente}
-                    onChange={handleChange}
-                    className="select select-bordered w-full"
-                  >
-                    <option value="">Aucune</option>
-                    {factures.map(f => (
-                      <option key={f.id} value={f.id}>{f.numero} - {f.client_name || f.id}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="label text-sm font-medium text-gray-700">
-                    Paiement
-                  </label>
-                  <select
-                    name="paiement"
-                    value={formData.paiement}
-                    onChange={handleChange}
-                    className="select select-bordered w-full"
-                  >
-                    <option value="">Aucun</option>
-                    {paiements.map(p => (
-                      <option key={p.id} value={p.id}>{p.reference}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Section 7 : Notes */}
+          {/* Section 6 : Notes */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
             <div className="bg-gray-50 px-6 py-3 border-b">
               <h3 className="font-semibold flex items-center gap-2">
@@ -865,7 +774,7 @@ const MouvementTresorerieForm = () => {
                   value={formData.notes}
                   onChange={handleChange}
                   className="textarea textarea-bordered w-full min-h-[80px]"
-                  placeholder="Informations complémentaires..."
+                  placeholder="Informations complementaires..."
                 />
               </div>
             </div>
@@ -891,7 +800,7 @@ const MouvementTresorerieForm = () => {
               ) : (
                 <Save className="w-4 h-4" />
               )}
-              {isEdit ? 'Modifier' : 'Créer'}
+              {isEdit ? 'Modifier' : 'Creer'}
             </button>
           </div>
 
