@@ -1,5 +1,9 @@
 // src/components/achats/PurchaseReturnForm.jsx
-import React, { useEffect, useState, useCallback } from 'react';
+// ============================================================
+// VERSION CORRIGÉE - Formulaire retour fournisseur
+// ============================================================
+
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import AxiosInstance from '../AxiosInstance';
 import {
@@ -7,61 +11,88 @@ import {
   Search, Truck, Info, Loader2, Building2, FileText, Warehouse
 } from 'lucide-react';
 
+// ============================================================
+// CONSTANTES
+// ============================================================
+const DEBOUNCE_MS = 400;
+
+// ============================================================
+// COMPOSANT
+// ============================================================
 const PurchaseReturnForm = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const receiptIdParam = searchParams.get('receipt');
   const poIdParam = searchParams.get('purchase_order');
 
+  // ----- États -----
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+
+  // ----- Listes -----
   const [receipts, setReceipts] = useState([]);
   const [selectedReceipt, setSelectedReceipt] = useState(null);
   const [receiptLines, setReceiptLines] = useState([]);
   const [returnLines, setReturnLines] = useState([]);
-  const [searchReceipt, setSearchReceipt] = useState('');
-  const [notification, setNotification] = useState({ show: false, message: '', type: 'success' });
 
+  // ----- Recherche -----
+  const [searchInput, setSearchInput] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+
+  // ----- Formulaire -----
   const [formData, setFormData] = useState({
     receipt: receiptIdParam || '',
     purchase_order: poIdParam || '',
     reason: 'defective',
-    notes: ''
+    notes: '',
   });
 
-  const showNotification = useCallback((message, type) => {
+  // ----- Notification -----
+  const [notification, setNotification] = useState({
+    show: false,
+    message: '',
+    type: 'success',
+  });
+
+  const abortRef = useRef(null);
+
+  // ============================================================
+  // NOTIFICATIONS
+  // ============================================================
+  const showNotification = useCallback((message, type = 'success') => {
     setNotification({ show: true, message, type });
-    setTimeout(() => setNotification(prev => ({ ...prev, show: false })), 5000);
+    setTimeout(
+      () => setNotification((prev) => ({ ...prev, show: false })),
+      5000
+    );
   }, []);
 
   const getToken = () => localStorage.getItem('Token');
 
-  // ─── Sélection d'une réception ───────────────────────────────
+  // ============================================================
+  // SÉLECTION RÉCEPTION
+  // ============================================================
   const handleReceiptSelect = useCallback(async (receipt) => {
-    console.log('📥 Réception sélectionnée:', receipt);
-
     setSelectedReceipt(receipt);
 
     const poId = receipt.purchase_order_id || receipt.purchase_order;
-    console.log('🔗 Purchase Order ID:', poId);
 
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
       receipt: receipt.id,
-      purchase_order: poId
+      purchase_order: poId,
     }));
 
     try {
       const token = getToken();
-      const response = await AxiosInstance.get(
-        `/receipts/${receipt.id}/`,
-        { headers: { 'Authorization': `Token ${token}` } }
-      );
+      const response = await AxiosInstance.get(`/receipts/${receipt.id}/`, {
+        headers: { Authorization: `Token ${token}` },
+      });
       const lines = response.data.lines || [];
       setReceiptLines(lines);
 
       setReturnLines(
-        lines.map(line => ({
+        lines.map((line) => ({
           receipt_line: line.id,
           product: line.product,
           product_name: line.product_name,
@@ -71,43 +102,82 @@ const PurchaseReturnForm = () => {
           quantity_damaged: line.quantity_damaged || 0,
           quantity: 0,
           unit_price: parseFloat(line.po_line_unit_price || 0),
-          max_quantity: line.quantity_received
+          max_quantity: line.quantity_received,
         }))
       );
     } catch (error) {
-      console.error('Erreur lignes:', error);
+      console.error('❌ Erreur lignes:', error);
       showNotification('Erreur de chargement des lignes', 'error');
     }
   }, [showNotification]);
 
-  // ─── Chargement des réceptions disponibles ───────────────────
-  useEffect(() => {
-    const fetchReceipts = async () => {
-      try {
-        const token = getToken();
-        const response = await AxiosInstance.get(
-          '/receipts/?status=completed&is_invoiced=false',
-          { headers: { 'Authorization': `Token ${token}` } }
-        );
+  // ============================================================
+  // CHARGEMENT RÉCEPTIONS
+  // ============================================================
+  const fetchReceipts = useCallback(async (search = '') => {
+    if (abortRef.current) abortRef.current.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
 
-        console.log('📋 Réceptions chargées:', response.data.length);
-        setReceipts(response.data);
+    setLoading(true);
+    try {
+      const token = getToken();
+      const params = new URLSearchParams();
+      params.append('status', 'completed');
+      params.append('is_invoiced', 'false');
+      params.append('page_size', '100');
+      if (search) params.append('search', search);
 
-        if (receiptIdParam) {
-          const found = response.data.find(r => r.id === parseInt(receiptIdParam));
-          if (found) await handleReceiptSelect(found);
+      const response = await AxiosInstance.get(
+        `/receipts/?${params.toString()}`,
+        {
+          headers: { Authorization: `Token ${token}` },
+          signal: controller.signal,
         }
-      } catch (error) {
-        console.error('Erreur:', error);
-        showNotification('Erreur de chargement des réceptions', 'error');
-      } finally {
-        setLoading(false);
+      );
+
+      const data = response.data;
+      const results = Array.isArray(data) ? data : data.results || [];
+      setReceipts(results);
+
+      // Pré-sélection depuis URL
+      if (receiptIdParam) {
+        const found = results.find((r) => r.id === parseInt(receiptIdParam));
+        if (found) await handleReceiptSelect(found);
       }
-    };
-    fetchReceipts();
+    } catch (error) {
+      if (error.name === 'CanceledError' || error.name === 'AbortError') return;
+      console.error('❌ Erreur chargement réceptions:', error);
+      showNotification('Erreur de chargement des réceptions', 'error');
+    } finally {
+      setLoading(false);
+    }
   }, [receiptIdParam, handleReceiptSelect, showNotification]);
 
-  // ─── Gestion des quantités / prix ───────────────────────────
+  // ============================================================
+  // EFFETS
+  // ============================================================
+  useEffect(() => {
+    fetchReceipts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Debounce recherche
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(searchInput), DEBOUNCE_MS);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
+  useEffect(() => {
+    if (debouncedSearch !== undefined) {
+      fetchReceipts(debouncedSearch);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedSearch]);
+
+  // ============================================================
+  // HANDLERS LIGNES
+  // ============================================================
   const handleQuantityChange = (index, value) => {
     const qty = Math.max(
       0,
@@ -127,9 +197,11 @@ const PurchaseReturnForm = () => {
   const calculateTotal = () =>
     returnLines.reduce((sum, line) => sum + line.quantity * line.unit_price, 0);
 
-  // ─── Soumission ──────────────────────────────────────────────
+  // ============================================================
+  // SOUMISSION
+  // ============================================================
   const handleSubmit = async (e) => {
-    e.preventDefault();
+    if (e) e.preventDefault();
 
     if (!formData.receipt) {
       showNotification('Veuillez sélectionner une réception', 'error');
@@ -137,14 +209,19 @@ const PurchaseReturnForm = () => {
     }
 
     if (!formData.purchase_order) {
-      showNotification('Erreur : la réception n\'a pas de commande associée', 'error');
-      console.error('❌ purchase_order manquant. Réception:', selectedReceipt);
+      showNotification(
+        "Erreur : la réception n'a pas de commande associée",
+        'error'
+      );
       return;
     }
 
-    const validLines = returnLines.filter(l => l.quantity > 0);
+    const validLines = returnLines.filter((l) => l.quantity > 0);
     if (validLines.length === 0) {
-      showNotification('Veuillez saisir au moins une quantité à retourner', 'error');
+      showNotification(
+        'Veuillez saisir au moins une quantité à retourner',
+        'error'
+      );
       return;
     }
 
@@ -157,34 +234,30 @@ const PurchaseReturnForm = () => {
         receipt: parseInt(formData.receipt),
         reason: formData.reason,
         notes: formData.notes || '',
-        lines: validLines.map(l => ({
+        lines: validLines.map((l) => ({
           receipt_line: parseInt(l.receipt_line),
-          quantity: parseInt(l.quantity)
-        }))
+          quantity: parseInt(l.quantity),
+        })),
       };
 
-      console.log('═══════════════════════════════════');
-      console.log('📤 PAYLOAD ENVOYÉ:');
-      console.log(JSON.stringify(payload, null, 2));
-      console.log('═══════════════════════════════════');
-
-      const response = await AxiosInstance.post('/purchase-returns/', payload, {
-        headers: {
-          'Authorization': `Token ${token}`,
-          'Content-Type': 'application/json'
+      const response = await AxiosInstance.post(
+        '/purchase-returns/',
+        payload,
+        {
+          headers: {
+            Authorization: `Token ${token}`,
+            'Content-Type': 'application/json',
+          },
         }
-      });
+      );
 
-      console.log('✅ RÉPONSE:', response.data);
       showNotification('✅ Retour créé avec succès', 'success');
-      setTimeout(() => navigate(`/retours-fournisseurs/${response.data.id}`), 1200);
-
+      setTimeout(
+        () => navigate(`/retours-fournisseurs/${response.data.id}`),
+        1200
+      );
     } catch (error) {
-      console.error('═══════════════════════════════════');
-      console.error('❌ ERREUR CRÉATION RETOUR');
-      console.error('Status:', error.response?.status);
-      console.error('Data:', JSON.stringify(error.response?.data, null, 2));
-      console.error('═══════════════════════════════════');
+      console.error('❌ Erreur création retour:', error);
 
       const errData = error.response?.data;
       let msg = 'Erreur lors de la création du retour';
@@ -200,7 +273,9 @@ const PurchaseReturnForm = () => {
             allErrors.push(`${key}: ${value.join(', ')}`);
           } else if (typeof value === 'object' && value !== null) {
             Object.entries(value).forEach(([k2, v2]) => {
-              allErrors.push(`${k2}: ${Array.isArray(v2) ? v2.join(', ') : v2}`);
+              allErrors.push(
+                `${k2}: ${Array.isArray(v2) ? v2.join(', ') : v2}`
+              );
             });
           } else {
             allErrors.push(`${key}: ${value}`);
@@ -215,39 +290,66 @@ const PurchaseReturnForm = () => {
     }
   };
 
-  // ─── Filtre des réceptions ──────────────────────────────────
-  const filteredReceipts = receipts.filter(r =>
-    !searchReceipt ||
-    r.receipt_number?.toLowerCase().includes(searchReceipt.toLowerCase()) ||
-    r.supplier_name?.toLowerCase().includes(searchReceipt.toLowerCase()) ||
-    r.po_number?.toLowerCase().includes(searchReceipt.toLowerCase())
+  const handleCancel = () => {
+    navigate('/retours-fournisseurs');
+  };
+
+  // ============================================================
+  // FILTRES
+  // ============================================================
+  const filteredReceipts = receipts.filter(
+    (r) =>
+      !searchInput ||
+      r.receipt_number?.toLowerCase().includes(searchInput.toLowerCase()) ||
+      r.supplier_name?.toLowerCase().includes(searchInput.toLowerCase()) ||
+      r.po_number?.toLowerCase().includes(searchInput.toLowerCase())
   );
 
-  if (loading) {
+  // ============================================================
+  // CHARGEMENT
+  // ============================================================
+  if (loading && receipts.length === 0) {
     return (
-      <div className="flex items-center justify-center min-h-[calc(100vh-200px)]">
+      <div className="flex items-center justify-center min-h-[calc(100vh-200px)] bg-gray-50">
         <div className="text-center space-y-4">
-          <Loader2 className="w-12 h-12 text-primary animate-spin mx-auto" />
-          <p className="text-base font-semibold text-gray-500">Chargement...</p>
+          <Loader2 className="animate-spin text-primary w-12 h-12 mx-auto" />
+          <p className="text-base font-medium text-gray-500">Chargement…</p>
         </div>
       </div>
     );
   }
 
+  // ============================================================
+  // RENDU
+  // ============================================================
   return (
     <div className="space-y-4 sm:space-y-6 p-4 sm:p-6 bg-gray-50 min-h-screen">
       {/* Notification */}
       {notification.show && (
-        <div className="fixed top-20 right-4 z-50">
-          <div className={`alert ${notification.type === 'success' ? 'alert-success' : 'alert-error'} shadow-xl rounded-xl max-w-md`}>
+        <div className="fixed top-20 right-4 z-50 max-w-md">
+          <div
+            className={`alert ${
+              notification.type === 'success'
+                ? 'alert-success'
+                : notification.type === 'warning'
+                ? 'alert-warning'
+                : 'alert-error'
+            } shadow-xl rounded-xl`}
+          >
             <div className="flex items-center gap-2">
-              {notification.type === 'success' ? <CheckCircle className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+              {notification.type === 'success' ? (
+                <CheckCircle className="w-4 h-4 shrink-0" />
+              ) : (
+                <AlertCircle className="w-4 h-4 shrink-0" />
+              )}
               <span className="font-medium text-sm">{notification.message}</span>
             </div>
             <button
               type="button"
               className="btn btn-ghost btn-xs btn-circle"
-              onClick={() => setNotification(prev => ({ ...prev, show: false }))}
+              onClick={() =>
+                setNotification((prev) => ({ ...prev, show: false }))
+              }
             >
               <X className="w-3 h-3" />
             </button>
@@ -273,8 +375,9 @@ const PurchaseReturnForm = () => {
           </div>
           <button
             type="button"
-            onClick={() => navigate('/retours-fournisseurs')}
+            onClick={handleCancel}
             className="btn btn-outline gap-2"
+            disabled={saving}
           >
             <ArrowLeft className="w-4 h-4" /> Retour à la liste
           </button>
@@ -282,7 +385,7 @@ const PurchaseReturnForm = () => {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
-        {/* Section 1 : Informations générales */}
+        {/* Section 1 : Infos générales */}
         <div className="bg-white rounded-xl shadow-md p-5 space-y-4">
           <h2 className="text-lg font-bold text-gray-700 flex items-center gap-2">
             <Info className="w-5 h-5 text-primary" /> Informations générales
@@ -297,23 +400,28 @@ const PurchaseReturnForm = () => {
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input
                   type="text"
-                  placeholder="Rechercher une réception..."
+                  placeholder="Rechercher une réception…"
                   className="input input-bordered w-full pl-9 input-sm"
-                  value={searchReceipt}
-                  onChange={(e) => setSearchReceipt(e.target.value)}
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
                 />
+                {loading && (
+                  <Loader2 className="w-4 h-4 animate-spin text-primary absolute right-3 top-1/2 -translate-y-1/2" />
+                )}
               </div>
               <select
                 className="select select-bordered w-full"
                 value={formData.receipt}
                 onChange={(e) => {
-                  const r = receipts.find(x => x.id === parseInt(e.target.value));
+                  const r = receipts.find(
+                    (x) => x.id === parseInt(e.target.value)
+                  );
                   if (r) handleReceiptSelect(r);
                 }}
                 required
               >
                 <option value="">-- Sélectionner une réception --</option>
-                {filteredReceipts.map(r => (
+                {filteredReceipts.map((r) => (
                   <option key={r.id} value={r.id}>
                     {r.receipt_number} — {r.supplier_name} (
                     {new Date(r.receipt_date).toLocaleDateString('fr-FR')})
@@ -324,12 +432,16 @@ const PurchaseReturnForm = () => {
 
             <div className="form-control">
               <label className="label">
-                <span className="label-text font-semibold">Raison du retour *</span>
+                <span className="label-text font-semibold">
+                  Raison du retour *
+                </span>
               </label>
               <select
                 className="select select-bordered w-full"
                 value={formData.reason}
-                onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
+                onChange={(e) =>
+                  setFormData({ ...formData, reason: e.target.value })
+                }
                 required
               >
                 <option value="defective">Produit défectueux</option>
@@ -341,20 +453,16 @@ const PurchaseReturnForm = () => {
             </div>
           </div>
 
-          {/* ✅ BLOC INFO : fond blanc, texte NOIR, bordures bleues */}
+          {/* Bloc info réception */}
           {selectedReceipt && (
             <div className="rounded-xl border-2 border-blue-500 overflow-hidden bg-white">
-              {/* Header bleu (texte blanc autorisé car fond foncé) */}
               <div className="bg-blue-600 px-4 py-2">
                 <p className="text-white font-bold text-sm uppercase tracking-wide">
                   Détails de la réception sélectionnée
                 </p>
               </div>
 
-              {/* Contenu : FOND BLANC + TEXTE NOIR */}
               <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-gray-200">
-
-                {/* Commande */}
                 <div className="p-4 flex items-start gap-3">
                   <div className="p-2 bg-blue-100 rounded-lg">
                     <FileText className="w-5 h-5 text-blue-600" />
@@ -369,7 +477,6 @@ const PurchaseReturnForm = () => {
                   </div>
                 </div>
 
-                {/* Fournisseur */}
                 <div className="p-4 flex items-start gap-3">
                   <div className="p-2 bg-blue-100 rounded-lg">
                     <Building2 className="w-5 h-5 text-blue-600" />
@@ -384,7 +491,6 @@ const PurchaseReturnForm = () => {
                   </div>
                 </div>
 
-                {/* Entrepôt */}
                 <div className="p-4 flex items-start gap-3">
                   <div className="p-2 bg-blue-100 rounded-lg">
                     <Warehouse className="w-5 h-5 text-blue-600" />
@@ -400,7 +506,6 @@ const PurchaseReturnForm = () => {
                 </div>
               </div>
 
-              {/* Pied : ID commande */}
               {formData.purchase_order && (
                 <div className="border-t border-gray-200 bg-gray-50 px-4 py-2">
                   <p className="text-xs text-gray-600">
@@ -421,14 +526,16 @@ const PurchaseReturnForm = () => {
             <textarea
               className="textarea textarea-bordered"
               rows="3"
-              placeholder="Détails supplémentaires sur le retour..."
+              placeholder="Détails supplémentaires sur le retour…"
               value={formData.notes}
-              onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+              onChange={(e) =>
+                setFormData({ ...formData, notes: e.target.value })
+              }
             />
           </div>
         </div>
 
-        {/* Section 2 : Lignes à retourner */}
+        {/* Section 2 : Lignes */}
         {selectedReceipt && receiptLines.length > 0 && (
           <div className="bg-white rounded-xl shadow-md p-5 space-y-4">
             <h2 className="text-lg font-bold text-gray-700 flex items-center gap-2">
@@ -451,7 +558,9 @@ const PurchaseReturnForm = () => {
                   {returnLines.map((line, idx) => (
                     <tr key={idx} className="hover:bg-gray-50">
                       <td>
-                        <div className="font-semibold">{line.product_name}</div>
+                        <div className="font-semibold">
+                          {line.product_name}
+                        </div>
                         <div className="text-xs text-gray-500 font-mono">
                           {line.product_code}
                         </div>
@@ -460,7 +569,13 @@ const PurchaseReturnForm = () => {
                         {line.quantity_received}
                       </td>
                       <td className="text-center">
-                        <span className={`badge ${line.quantity_damaged > 0 ? 'badge-error' : 'badge-ghost'}`}>
+                        <span
+                          className={`badge ${
+                            line.quantity_damaged > 0
+                              ? 'badge-error'
+                              : 'badge-ghost'
+                          }`}
+                        >
                           {line.quantity_damaged}
                         </span>
                       </td>
@@ -471,7 +586,9 @@ const PurchaseReturnForm = () => {
                           max={line.max_quantity}
                           className="input input-bordered input-sm w-full text-center"
                           value={line.quantity}
-                          onChange={(e) => handleQuantityChange(idx, e.target.value)}
+                          onChange={(e) =>
+                            handleQuantityChange(idx, e.target.value)
+                          }
                         />
                       </td>
                       <td>
@@ -481,11 +598,16 @@ const PurchaseReturnForm = () => {
                           step="0.01"
                           className="input input-bordered input-sm w-full text-right"
                           value={line.unit_price}
-                          onChange={(e) => handlePriceChange(idx, e.target.value)}
+                          onChange={(e) =>
+                            handlePriceChange(idx, e.target.value)
+                          }
                         />
                       </td>
-                      <td className="text-right font-bold">
-                        {(line.quantity * line.unit_price).toLocaleString('fr-FR')} FCFA
+                      <td className="text-right font-bold whitespace-nowrap">
+                        {(line.quantity * line.unit_price).toLocaleString(
+                          'fr-FR'
+                        )}{' '}
+                        FCFA
                       </td>
                     </tr>
                   ))}
@@ -495,7 +617,7 @@ const PurchaseReturnForm = () => {
                     <td colSpan="5" className="text-right font-bold text-lg">
                       TOTAL À RETOURNER
                     </td>
-                    <td className="text-right font-black text-primary text-lg">
+                    <td className="text-right font-black text-primary text-lg whitespace-nowrap">
                       {calculateTotal().toLocaleString('fr-FR')} FCFA
                     </td>
                   </tr>
@@ -509,7 +631,7 @@ const PurchaseReturnForm = () => {
         <div className="flex flex-col sm:flex-row gap-3 justify-end">
           <button
             type="button"
-            onClick={() => navigate('/retours-fournisseurs')}
+            onClick={handleCancel}
             className="btn btn-outline gap-2"
             disabled={saving}
           >
@@ -518,11 +640,11 @@ const PurchaseReturnForm = () => {
           <button
             type="submit"
             className="btn bg-gradient-to-r from-primary to-primary/80 text-white border-none gap-2 shadow-lg"
-            disabled={saving}
+            disabled={saving || !selectedReceipt}
           >
             {saving ? (
               <>
-                <Loader2 className="w-4 h-4 animate-spin" /> Enregistrement...
+                <Loader2 className="w-4 h-4 animate-spin" /> Enregistrement…
               </>
             ) : (
               <>
