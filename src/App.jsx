@@ -97,6 +97,9 @@ import RapportsFinanciersList from './components/finances/RapportFinancierList';
 import RapportFinancierForm from './components/finances/RapportFinancierForm';
 import RapportFinancierDetail from './components/finances/RapportFinancierDetail';
 import RapportPdf from './components/finances/RapportPdf';
+import DashboardFinancier from './components/finances/DashboardFinancier';
+import ComptesList from './components/finances/ComptesList';
+import CompteForm from './components/finances/CompteForm';
 
 import DevisList from './components/ventesclients/DevisList';
 import DevisForm from './components/ventesclients/DevisForm';
@@ -155,9 +158,7 @@ import PaiementsFournisseursList from './components/achatsfournisseurs/Paiements
 import PaiementFournisseurForm from './components/achatsfournisseurs/PaiementFournisseurForm';
 import ClientFacturesPDF from './components/ventesclients/ClientFacturesPDF';
 
-import DashboardFinancier from './components/finances/DashboardFinancier';
-import ComptesList from './components/finances/ComptesList';
-import CompteForm from './components/finances/CompteForm';
+
 
 import RetoursClientsList from './components/ventesclients/RetoursClientsList';
 import RetourClientForm from './components/ventesclients/RetourClientForm';
