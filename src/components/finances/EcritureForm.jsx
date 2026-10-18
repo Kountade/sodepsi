@@ -1,19 +1,35 @@
 // src/components/finances/EcritureForm.jsx
-import React, { useState, useEffect, useCallback } from 'react';
+// ============================================================
+// VERSION CORRIGÉE - Formulaire écriture comptable
+// ============================================================
+
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import AxiosInstance from '../AxiosInstance';
 import {
   ArrowLeft, Save, X, FileText, Loader2,
-  CheckCircle, AlertCircle, Calendar
+  CheckCircle, AlertCircle, AlertTriangle
 } from 'lucide-react';
 
 // ============================================================
-// COMPOSANT PRINCIPAL
+// CONSTANTES
+// ============================================================
+const TYPE_OPTIONS = [
+  { value: 'vente', label: 'Vente' },
+  { value: 'achat', label: 'Achat' },
+  { value: 'paiement_client', label: 'Paiement client' },
+  { value: 'paiement_fournisseur', label: 'Paiement fournisseur' },
+  { value: 'recette', label: 'Recette' },
+  { value: 'depense', label: 'Dépense' },
+  { value: 'tresorerie', label: 'Trésorerie' },
+  { value: 'regularisation', label: 'Régularisation' },
+  { value: 'autre', label: 'Autre' },
+];
+
+// ============================================================
+// COMPOSANT
 // ============================================================
 const EcritureForm = () => {
-  // ==========================================================
-  // HOOKS
-  // ==========================================================
   const navigate = useNavigate();
   const { id } = useParams();
   const isEdit = !!id;
@@ -23,12 +39,16 @@ const EcritureForm = () => {
   // ==========================================================
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [loadingComptes, setLoadingComptes] = useState(false);
   const [comptes, setComptes] = useState([]);
+  const [errors, setErrors] = useState({});
+
   const [notification, setNotification] = useState({
     show: false,
     message: '',
-    type: 'success'
+    type: 'success',
   });
+
   const [formData, setFormData] = useState({
     date_ecriture: new Date().toISOString().split('T')[0],
     date_echeance: '',
@@ -39,40 +59,66 @@ const EcritureForm = () => {
     reference: '',
     type: 'autre',
     description: '',
-    notes: ''
+    notes: '',
   });
-  const [errors, setErrors] = useState({});
+
+  const abortComptesRef = useRef(null);
+  const abortEcritureRef = useRef(null);
 
   // ==========================================================
-  // FONCTIONS UTILITAIRES
+  // NOTIFICATIONS
   // ==========================================================
+  const showNotification = useCallback((message, type = 'success') => {
+    setNotification({ show: true, message, type });
+    setTimeout(
+      () => setNotification((prev) => ({ ...prev, show: false })),
+      4000
+    );
+  }, []);
+
   const getToken = () => localStorage.getItem('Token');
 
-  const showNotification = (message, type) => {
-    setNotification({ show: true, message, type });
-    setTimeout(() => setNotification(prev => ({ ...prev, show: false })), 4000);
-  };
-
   // ==========================================================
-  // REQUÊTES API
+  // CHARGEMENT COMPTES
   // ==========================================================
   const fetchComptes = useCallback(async () => {
+    if (abortComptesRef.current) abortComptesRef.current.abort();
+    const controller = new AbortController();
+    abortComptesRef.current = controller;
+
+    setLoadingComptes(true);
     try {
       const token = getToken();
       if (!token) return;
 
-      const response = await AxiosInstance.get('/comptes-comptables/', {
-        headers: { 'Authorization': `Token ${token}` },
-        params: { is_active: 'true' }
-      });
-      setComptes(response.data);
-    } catch (error) {
-      console.error('Erreur chargement comptes:', error);
+      const response = await AxiosInstance.get(
+        '/comptes-comptables/?is_active=true&page_size=500',
+        {
+          headers: { Authorization: `Token ${token}` },
+          signal: controller.signal,
+        }
+      );
+
+      const data = response.data;
+      const results = Array.isArray(data) ? data : data.results || [];
+      setComptes(results);
+    } catch (err) {
+      if (err.name === 'CanceledError' || err.name === 'AbortError') return;
+      console.error('❌ Erreur chargement comptes:', err);
+    } finally {
+      setLoadingComptes(false);
     }
   }, []);
 
+  // ==========================================================
+  // CHARGEMENT ÉCRITURE (mode édition)
+  // ==========================================================
   const fetchEcriture = useCallback(async () => {
     if (!isEdit) return;
+
+    if (abortEcritureRef.current) abortEcritureRef.current.abort();
+    const controller = new AbortController();
+    abortEcritureRef.current = controller;
 
     setLoading(true);
     try {
@@ -83,9 +129,14 @@ const EcritureForm = () => {
         return;
       }
 
-      const response = await AxiosInstance.get(`/ecritures-comptables/${id}/`, {
-        headers: { 'Authorization': `Token ${token}` }
-      });
+      // ✅ URL CORRIGÉE
+      const response = await AxiosInstance.get(
+        `/ecritures-comptables/${id}/`,
+        {
+          headers: { Authorization: `Token ${token}` },
+          signal: controller.signal,
+        }
+      );
 
       const data = response.data;
       setFormData({
@@ -98,15 +149,21 @@ const EcritureForm = () => {
         reference: data.reference || '',
         type: data.type || 'autre',
         description: data.description || '',
-        notes: data.notes || ''
+        notes: data.notes || '',
       });
-    } catch (error) {
-      console.error('Erreur:', error);
-      showNotification('Erreur de chargement', 'error');
+    } catch (err) {
+      if (err.name === 'CanceledError' || err.name === 'AbortError') return;
+      console.error('❌ Erreur chargement écriture:', err);
+      if (err.response?.status === 404) {
+        showNotification('Écriture introuvable', 'error');
+        setTimeout(() => navigate('/ecritures-comptables'), 1500);
+      } else {
+        showNotification('Erreur de chargement', 'error');
+      }
     } finally {
       setLoading(false);
     }
-  }, [id, isEdit, navigate]);
+  }, [id, isEdit, navigate, showNotification]);
 
   // ==========================================================
   // EFFETS
@@ -114,28 +171,53 @@ const EcritureForm = () => {
   useEffect(() => {
     fetchComptes();
     if (isEdit) fetchEcriture();
+    return () => {
+      if (abortComptesRef.current) abortComptesRef.current.abort();
+      if (abortEcritureRef.current) abortEcritureRef.current.abort();
+    };
   }, [fetchComptes, fetchEcriture, isEdit]);
 
   // ==========================================================
-  // GESTIONNAIRES
+  // HANDLERS
   // ==========================================================
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    setFormData((prev) => ({ ...prev, [name]: value }));
+
+    if (errors[name]) {
+      setErrors((prev) => ({ ...prev, [name]: '' }));
+    }
   };
 
+  // ==========================================================
+  // VALIDATION
+  // ==========================================================
   const validateForm = () => {
     const newErrors = {};
-    if (!formData.date_ecriture) newErrors.date_ecriture = 'La date est requise';
-    if (!formData.compte_debit) newErrors.compte_debit = 'Le compte débit est requis';
-    if (!formData.compte_credit) newErrors.compte_credit = 'Le compte crédit est requis';
-    if (formData.compte_debit === formData.compte_credit) {
-      newErrors.compte_credit = 'Les comptes doivent être différents';
+
+    if (!formData.date_ecriture) {
+      newErrors.date_ecriture = "La date d'écriture est requise";
+    }
+    if (!formData.compte_debit) {
+      newErrors.compte_debit = 'Le compte débit est requis';
+    }
+    if (!formData.compte_credit) {
+      newErrors.compte_credit = 'Le compte crédit est requis';
+    }
+    if (
+      formData.compte_debit &&
+      formData.compte_credit &&
+      formData.compte_debit === formData.compte_credit
+    ) {
+      newErrors.compte_credit = 'Les comptes débit et crédit doivent être différents';
     }
     if (!formData.montant || parseFloat(formData.montant) <= 0) {
       newErrors.montant = 'Le montant doit être supérieur à 0';
     }
-    if (!formData.description) newErrors.description = 'La description est requise';
+    if (!formData.description || formData.description.trim() === '') {
+      newErrors.description = 'La description est requise';
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -144,8 +226,11 @@ const EcritureForm = () => {
   // SOUMISSION
   // ==========================================================
   const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!validateForm()) return;
+    if (e) e.preventDefault();
+    if (!validateForm()) {
+      showNotification('Veuillez corriger les erreurs du formulaire', 'error');
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -159,83 +244,123 @@ const EcritureForm = () => {
       const dataToSend = {
         ...formData,
         montant: parseFloat(formData.montant),
-        taxe: parseFloat(formData.taxe) || 0
+        taxe: parseFloat(formData.taxe) || 0,
+        compte_debit: parseInt(formData.compte_debit),
+        compte_credit: parseInt(formData.compte_credit),
       };
 
       if (isEdit) {
-        await AxiosInstance.put(`/ecritures-comptables/${id}/`, dataToSend, {
-          headers: { 'Authorization': `Token ${token}` }
-        });
+        // ✅ URL CORRIGÉE
+        await AxiosInstance.put(
+          `/ecritures-comptables/${id}/`,
+          dataToSend,
+          { headers: { Authorization: `Token ${token}` } }
+        );
         showNotification('Écriture modifiée avec succès', 'success');
       } else {
-        await AxiosInstance.post('/ecritures-comptables/', dataToSend, {
-          headers: { 'Authorization': `Token ${token}` }
-        });
+        // ✅ URL CORRIGÉE
+        await AxiosInstance.post(
+          '/ecritures-comptables/',
+          dataToSend,
+          { headers: { Authorization: `Token ${token}` } }
+        );
         showNotification('Écriture créée avec succès', 'success');
       }
 
       setTimeout(() => navigate('/ecritures-comptables'), 1500);
+    } catch (err) {
+      console.error('❌ Erreur enregistrement:', err);
 
-    } catch (error) {
-      console.error('Erreur:', error);
-      showNotification('Erreur lors de l\'enregistrement', 'error');
+      let errorMsg = "Erreur lors de l'enregistrement";
+
+      if (err.response?.data) {
+        const data = err.response.data;
+        if (typeof data === 'object') {
+          if (data.non_field_errors) {
+            errorMsg = data.non_field_errors.join(', ');
+          } else if (data.detail) {
+            errorMsg = data.detail;
+          } else if (data.message) {
+            errorMsg = data.message;
+          } else {
+            const firstError = Object.values(data)[0];
+            if (Array.isArray(firstError)) errorMsg = firstError[0];
+            else if (typeof firstError === 'string') errorMsg = firstError;
+
+            // Injecter dans les erreurs de champ
+            const newFieldErrors = {};
+            Object.keys(data).forEach((key) => {
+              if (Array.isArray(data[key])) {
+                newFieldErrors[key] = data[key][0];
+              } else {
+                newFieldErrors[key] = data[key];
+              }
+            });
+            setErrors(newFieldErrors);
+          }
+        } else if (typeof data === 'string') {
+          errorMsg = data;
+        }
+      }
+
+      showNotification(errorMsg, 'error');
     } finally {
       setSubmitting(false);
     }
   };
 
-  // ==========================================================
-  // OPTIONS
-  // ==========================================================
-  const typeOptions = [
-    { value: 'vente', label: 'Vente' },
-    { value: 'achat', label: 'Achat' },
-    { value: 'paiement_client', label: 'Paiement client' },
-    { value: 'paiement_fournisseur', label: 'Paiement fournisseur' },
-    { value: 'recette', label: 'Recette' },
-    { value: 'depense', label: 'Dépense' },
-    { value: 'tresorerie', label: 'Trésorerie' },
-    { value: 'regularisation', label: 'Régularisation' },
-    { value: 'autre', label: 'Autre' }
-  ];
+  const handleCancel = () => {
+    navigate('/ecritures-comptables');
+  };
 
   // ==========================================================
-  // RENDU : CHARGEMENT
+  // CHARGEMENT INITIAL
   // ==========================================================
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[calc(100vh-200px)] bg-gray-50">
         <div className="text-center space-y-4">
           <Loader2 className="animate-spin text-primary w-14 h-14 mx-auto" />
-          <p className="text-lg font-medium text-gray-500">Chargement...</p>
+          <p className="text-lg font-medium text-gray-500">
+            Chargement de l'écriture…
+          </p>
         </div>
       </div>
     );
   }
 
   // ==========================================================
-  // RENDU : COMPOSANT PRINCIPAL
+  // RENDU
   // ==========================================================
   return (
     <div className="space-y-4 sm:space-y-6 p-4 sm:p-6 bg-gray-50 min-h-screen">
-
-      {/* ======================================================
-          NOTIFICATION
-          ====================================================== */}
+      {/* Notification */}
       {notification.show && (
-        <div className="fixed top-20 right-4 z-50 animate-slideDown">
-          <div className={`alert ${notification.type === 'success' ? 'alert-success' : 'alert-error'} shadow-xl rounded-xl`}>
+        <div className="fixed top-20 right-4 z-50 animate-slideDown max-w-md">
+          <div
+            className={`alert ${
+              notification.type === 'success'
+                ? 'alert-success'
+                : notification.type === 'warning'
+                ? 'alert-warning'
+                : 'alert-error'
+            } shadow-xl rounded-xl`}
+          >
             <div className="flex items-center gap-2">
               {notification.type === 'success' ? (
-                <CheckCircle className="w-4 h-4" />
+                <CheckCircle className="w-4 h-4 shrink-0" />
+              ) : notification.type === 'warning' ? (
+                <AlertTriangle className="w-4 h-4 shrink-0" />
               ) : (
-                <AlertCircle className="w-4 h-4" />
+                <AlertCircle className="w-4 h-4 shrink-0" />
               )}
-              <span className="font-medium">{notification.message}</span>
+              <span className="font-medium text-sm">{notification.message}</span>
             </div>
             <button
               className="btn btn-ghost btn-xs btn-circle"
-              onClick={() => setNotification(prev => ({ ...prev, show: false }))}
+              onClick={() =>
+                setNotification((prev) => ({ ...prev, show: false }))
+              }
             >
               <X className="w-3 h-3" />
             </button>
@@ -243,16 +368,14 @@ const EcritureForm = () => {
         </div>
       )}
 
-      {/* ======================================================
-          EN-TÊTE
-          ====================================================== */}
+      {/* En-tête */}
       <div className="relative overflow-hidden bg-gradient-to-r from-primary/10 via-primary/5 to-transparent rounded-2xl p-5">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-
           <div className="flex items-center gap-4">
             <button
-              onClick={() => navigate('/ecritures-comptables')}
+              onClick={handleCancel}
               className="btn btn-ghost btn-sm gap-2"
+              disabled={submitting}
             >
               <ArrowLeft className="w-4 h-4" /> Retour
             </button>
@@ -263,10 +386,14 @@ const EcritureForm = () => {
                 </div>
                 <div>
                   <h1 className="text-2xl sm:text-3xl font-black text-primary">
-                    {isEdit ? 'Modifier l\'écriture' : 'Nouvelle écriture comptable'}
+                    {isEdit
+                      ? "Modifier l'écriture"
+                      : 'Nouvelle écriture comptable'}
                   </h1>
                   <p className="text-sm text-gray-500">
-                    {isEdit ? 'Modifiez les informations de l\'écriture' : 'Enregistrez une nouvelle écriture comptable'}
+                    {isEdit
+                      ? "Modifiez les informations de l'écriture"
+                      : 'Enregistrez une nouvelle écriture comptable'}
                   </p>
                 </div>
               </div>
@@ -275,12 +402,9 @@ const EcritureForm = () => {
         </div>
       </div>
 
-      {/* ======================================================
-          FORMULAIRE
-          ====================================================== */}
+      {/* Formulaire */}
       <div className="max-w-4xl mx-auto">
         <form onSubmit={handleSubmit} className="space-y-6">
-
           <div className="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden">
             <div className="bg-gray-50 px-6 py-3.5 border-b border-gray-200">
               <h3 className="font-semibold flex items-center gap-2 text-gray-700">
@@ -288,8 +412,9 @@ const EcritureForm = () => {
                 Informations de l'écriture
               </h3>
             </div>
-            <div className="p-6 space-y-4">
 
+            <div className="p-6 space-y-4">
+              {/* Dates */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="label text-sm font-medium text-gray-700">
@@ -300,22 +425,33 @@ const EcritureForm = () => {
                     name="date_ecriture"
                     value={formData.date_ecriture}
                     onChange={handleChange}
-                    className={`input input-bordered w-full ${errors.date_ecriture ? 'input-error' : ''}`}
+                    className={`input input-bordered w-full ${
+                      errors.date_ecriture ? 'input-error' : ''
+                    }`}
+                    disabled={submitting}
                   />
-                  {errors.date_ecriture && <p className="text-red-500 text-xs mt-1">{errors.date_ecriture}</p>}
+                  {errors.date_ecriture && (
+                    <p className="text-red-500 text-xs mt-1">
+                      {errors.date_ecriture}
+                    </p>
+                  )}
                 </div>
                 <div>
-                  <label className="label text-sm font-medium text-gray-700">Date d'échéance</label>
+                  <label className="label text-sm font-medium text-gray-700">
+                    Date d'échéance
+                  </label>
                   <input
                     type="date"
                     name="date_echeance"
                     value={formData.date_echeance}
                     onChange={handleChange}
                     className="input input-bordered w-full"
+                    disabled={submitting}
                   />
                 </div>
               </div>
 
+              {/* Comptes */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="label text-sm font-medium text-gray-700">
@@ -325,16 +461,27 @@ const EcritureForm = () => {
                     name="compte_debit"
                     value={formData.compte_debit}
                     onChange={handleChange}
-                    className={`select select-bordered w-full ${errors.compte_debit ? 'select-error' : ''}`}
+                    className={`select select-bordered w-full ${
+                      errors.compte_debit ? 'select-error' : ''
+                    }`}
+                    disabled={loadingComptes || submitting}
                   >
-                    <option value="">Sélectionner un compte</option>
-                    {comptes.map(c => (
+                    <option value="">
+                      {loadingComptes
+                        ? 'Chargement…'
+                        : 'Sélectionner un compte'}
+                    </option>
+                    {comptes.map((c) => (
                       <option key={c.id} value={c.id}>
                         {c.numero} - {c.nom}
                       </option>
                     ))}
                   </select>
-                  {errors.compte_debit && <p className="text-red-500 text-xs mt-1">{errors.compte_debit}</p>}
+                  {errors.compte_debit && (
+                    <p className="text-red-500 text-xs mt-1">
+                      {errors.compte_debit}
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className="label text-sm font-medium text-gray-700">
@@ -344,46 +491,80 @@ const EcritureForm = () => {
                     name="compte_credit"
                     value={formData.compte_credit}
                     onChange={handleChange}
-                    className={`select select-bordered w-full ${errors.compte_credit ? 'select-error' : ''}`}
+                    className={`select select-bordered w-full ${
+                      errors.compte_credit ? 'select-error' : ''
+                    }`}
+                    disabled={loadingComptes || submitting}
                   >
-                    <option value="">Sélectionner un compte</option>
-                    {comptes.map(c => (
+                    <option value="">
+                      {loadingComptes
+                        ? 'Chargement…'
+                        : 'Sélectionner un compte'}
+                    </option>
+                    {comptes.map((c) => (
                       <option key={c.id} value={c.id}>
                         {c.numero} - {c.nom}
                       </option>
                     ))}
                   </select>
-                  {errors.compte_credit && <p className="text-red-500 text-xs mt-1">{errors.compte_credit}</p>}
+                  {errors.compte_credit && (
+                    <p className="text-red-500 text-xs mt-1">
+                      {errors.compte_credit}
+                    </p>
+                  )}
                 </div>
               </div>
 
+              {/* Montant + Taxe + Type */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <label className="label text-sm font-medium text-gray-700">
                     Montant <span className="text-red-500">*</span>
                   </label>
-                  <input
-                    type="number"
-                    name="montant"
-                    value={formData.montant}
-                    onChange={handleChange}
-                    className={`input input-bordered w-full ${errors.montant ? 'input-error' : ''}`}
-                    placeholder="0"
-                    step="100"
-                  />
-                  {errors.montant && <p className="text-red-500 text-xs mt-1">{errors.montant}</p>}
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+                      F
+                    </span>
+                    <input
+                      type="number"
+                      name="montant"
+                      value={formData.montant}
+                      onChange={handleChange}
+                      className={`input input-bordered w-full pl-8 ${
+                        errors.montant ? 'input-error' : ''
+                      }`}
+                      placeholder="0"
+                      step="0.01"
+                      min="0"
+                      disabled={submitting}
+                    />
+                  </div>
+                  {errors.montant && (
+                    <p className="text-red-500 text-xs mt-1">
+                      {errors.montant}
+                    </p>
+                  )}
                 </div>
                 <div>
-                  <label className="label text-sm font-medium text-gray-700">Taxe (FCFA)</label>
-                  <input
-                    type="number"
-                    name="taxe"
-                    value={formData.taxe}
-                    onChange={handleChange}
-                    className="input input-bordered w-full"
-                    placeholder="0"
-                    step="100"
-                  />
+                  <label className="label text-sm font-medium text-gray-700">
+                    Taxe (FCFA)
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+                      F
+                    </span>
+                    <input
+                      type="number"
+                      name="taxe"
+                      value={formData.taxe}
+                      onChange={handleChange}
+                      className="input input-bordered w-full pl-8"
+                      placeholder="0"
+                      step="0.01"
+                      min="0"
+                      disabled={submitting}
+                    />
+                  </div>
                 </div>
                 <div>
                   <label className="label text-sm font-medium text-gray-700">
@@ -394,26 +575,34 @@ const EcritureForm = () => {
                     value={formData.type}
                     onChange={handleChange}
                     className="select select-bordered w-full"
+                    disabled={submitting}
                   >
-                    {typeOptions.map(opt => (
-                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    {TYPE_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
                     ))}
                   </select>
                 </div>
               </div>
 
+              {/* Référence */}
               <div>
-                <label className="label text-sm font-medium text-gray-700">Référence</label>
+                <label className="label text-sm font-medium text-gray-700">
+                  Référence
+                </label>
                 <input
                   type="text"
                   name="reference"
                   value={formData.reference}
                   onChange={handleChange}
                   className="input input-bordered w-full"
-                  placeholder="Référence externe..."
+                  placeholder="Référence externe…"
+                  disabled={submitting}
                 />
               </div>
 
+              {/* Description */}
               <div>
                 <label className="label text-sm font-medium text-gray-700">
                   Description <span className="text-red-500">*</span>
@@ -422,20 +611,31 @@ const EcritureForm = () => {
                   name="description"
                   value={formData.description}
                   onChange={handleChange}
-                  className={`textarea textarea-bordered w-full min-h-[80px] ${errors.description ? 'textarea-error' : ''}`}
-                  placeholder="Description de l'écriture..."
+                  className={`textarea textarea-bordered w-full min-h-[80px] ${
+                    errors.description ? 'textarea-error' : ''
+                  }`}
+                  placeholder="Description de l'écriture…"
+                  disabled={submitting}
                 />
-                {errors.description && <p className="text-red-500 text-xs mt-1">{errors.description}</p>}
+                {errors.description && (
+                  <p className="text-red-500 text-xs mt-1">
+                    {errors.description}
+                  </p>
+                )}
               </div>
 
+              {/* Notes */}
               <div>
-                <label className="label text-sm font-medium text-gray-700">Notes</label>
+                <label className="label text-sm font-medium text-gray-700">
+                  Notes
+                </label>
                 <textarea
                   name="notes"
                   value={formData.notes}
                   onChange={handleChange}
                   className="textarea textarea-bordered w-full min-h-[60px]"
-                  placeholder="Notes supplémentaires..."
+                  placeholder="Notes supplémentaires…"
+                  disabled={submitting}
                 />
               </div>
             </div>
@@ -445,7 +645,7 @@ const EcritureForm = () => {
           <div className="flex flex-col sm:flex-row gap-3 justify-end">
             <button
               type="button"
-              onClick={() => navigate('/ecritures-comptables')}
+              onClick={handleCancel}
               className="btn btn-ghost gap-2"
               disabled={submitting}
             >
@@ -456,11 +656,19 @@ const EcritureForm = () => {
               className="btn btn-primary gap-2 min-w-[180px]"
               disabled={submitting}
             >
-              {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
-              {isEdit ? 'Modifier' : 'Créer'}
+              {submitting ? (
+                <>
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  Enregistrement…
+                </>
+              ) : (
+                <>
+                  <Save className="w-5 h-5" />
+                  {isEdit ? 'Modifier' : 'Créer'}
+                </>
+              )}
             </button>
           </div>
-
         </form>
       </div>
     </div>

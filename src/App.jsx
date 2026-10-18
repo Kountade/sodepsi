@@ -75,10 +75,12 @@ import PaiementsList from './components/ventesclients/PaiementsList';
 import PaiementForm from './components/ventesclients/PaiementForm';
 import PaiementDetail from './components/ventesclients/PaiementDetail';
 import PaiementPdf from './components/ventesclients/PaiementPdf';
-import CompteListe from './components/finances/CompteListe';
 import CompteDetail from './components/finances/CompteDetail';
 import EcrituresList from './components/finances/EcrituresList';
 import EcritureForm from './components/finances/EcritureForm';
+import JournalComptable from './components/finances/JournalComptable';
+import GrandLivre from './components/finances/GrandLivre';
+import BalanceGenerale from './components/finances/BalanceGenerale';
 import TresorerieListe from './components/finances/TresorerieListe';
 import TresorerieForm from './components/finances/TresorerieForm';
 import TresorerieDetail from './components/finances/TresorerieDetail';
@@ -89,7 +91,7 @@ import DepensesList from './components/finances/DepensesList';
 import DepenseForm from './components/finances/DepenseForm';
 
 import ConfigurationFinanciere from './components/finances/ConfigurationFinanciere';
-import BudgetCategorieListe from './components/finances/BudgetCategorieListe';
+import BudgetCategorieList from './components/finances/BudgetCategorieList';
 import BudgetCategorieForm from './components/finances/BudgetCategorieForm';
 import BudgetsList from './components/finances/BudgetsList';
 import BudgetForm from './components/finances/BudgetForm';
@@ -100,6 +102,7 @@ import RapportPdf from './components/finances/RapportPdf';
 import DashboardFinancier from './components/finances/DashboardFinancier';
 import ComptesList from './components/finances/ComptesList';
 import CompteForm from './components/finances/CompteForm';
+
 
 import DevisList from './components/ventesclients/DevisList';
 import DevisForm from './components/ventesclients/DevisForm';
@@ -157,7 +160,6 @@ import PaiementFournisseurDetail from './components/achatsfournisseurs/PaiementF
 import PaiementsFournisseursList from './components/achatsfournisseurs/PaiementsFournisseursList';
 import PaiementFournisseurForm from './components/achatsfournisseurs/PaiementFournisseurForm';
 import ClientFacturesPDF from './components/ventesclients/ClientFacturesPDF';
-
 
 
 import RetoursClientsList from './components/ventesclients/RetoursClientsList';
@@ -397,11 +399,6 @@ function App() {
 
                 <Route path="/purchase-alerts" element={<PurchaseAlerts />} />
 
-                <Route path="/comptes" element={<CompteListe />} />
-                <Route path="/comptes/nouveau" element={<CompteForm />} />
-                <Route path="/comptes/:id" element={<CompteDetail />} />
-                <Route path="/comptes/:id/modifier" element={<CompteForm />} />
-
                 {/* Alertes globales */}
                 <Route path="/dashboard/alerts" element={<AlertsDashboard />} />
 
@@ -415,8 +412,10 @@ function App() {
 
                 <Route path="/config-financiere" element={<ConfigurationFinanciere />} />
 
-                <Route path="/budget-categories" element={<BudgetCategorieListe />} />
+                {/* ==================== BUDGETS & CATÉGORIES ==================== */}
+                <Route path="/budget-categories" element={<BudgetCategorieList />} />
                 <Route path="/budget-categories/nouveau" element={<BudgetCategorieForm />} />
+                <Route path="/budget-categories/:id/modifier" element={<BudgetCategorieForm />} />
 
                 <Route path="/budgets" element={<BudgetsList />} />
                 <Route path="/budgets/nouveau" element={<BudgetForm />} />
@@ -429,70 +428,67 @@ function App() {
                 <Route path="/rapports-financiers/:id/pdf" element={<RapportPdf />} />
 
                 <Route path="/dashboard-finances" element={<DashboardFinancier />} />
+
+                {/* ==================== COMPTES ==================== */}
+                <Route path="/comptes" element={<ComptesList />} />
+                <Route path="/comptes/nouveau" element={<CompteForm />} />
+                <Route path="/comptes/:id" element={<CompteDetail />} />
+                <Route path="/comptes/:id/modifier" element={<CompteForm />} />
+
                 <Route path="/comptes-comptables" element={<ComptesList />} />
                 <Route path="/comptes-comptables/nouveau" element={<CompteForm />} />
+                <Route path="/comptes-comptables/:id" element={<CompteDetail />} />
 
+                {/* ==================== COMPTABILITÉ ==================== */}
                 <Route path="/ecritures-comptables" element={<EcrituresList />} />
                 <Route path="/ecritures-comptables/nouveau" element={<EcritureForm />} />
                 <Route path="/ecritures-comptables/:id/modifier" element={<EcritureForm />} />
+
+                <Route path="/journal-comptable" element={<JournalComptable />} />
+                <Route path="/grand-livre" element={<GrandLivre />} />
+                <Route path="/balance-generale" element={<BalanceGenerale />} />
 
                 <Route path="/depenses" element={<DepensesList />} />
                 <Route path="/depenses/nouveau" element={<DepenseForm />} />
                 <Route path="/depenses/:id/modifier" element={<DepenseForm />} />
 
+                <Route path="/cuves" element={<CuvesList />} />
+                <Route path="/cuves/nouveau" element={<CuveForm />} />
+                <Route path="/cuves/approvisionnement" element={<CuveApprovisionnement />} />
+                <Route path="/cuves/mouvements" element={<CuvesMouvements />} />
+                <Route path="/cuves/:id" element={<CuveDetail />} />
+                <Route path="/cuves/:id/modifier" element={<CuveForm />} />
 
+                <Route path="/pompes" element={<PompesList />} />
+                <Route path="/pompes/nouveau" element={<PompeForm />} />
+                <Route path="/pompes/:id" element={<PompeDetail />} />
+                <Route path="/pompes/:id/modifier" element={<PompeForm />} />
+                <Route path="/pompes/ventes" element={<VentesParPompe />} />
+                <Route path="/ventes-carburant/nouveau" element={<VenteCarburantForm />} />
+                <Route path="/ventes-carburant" element={<VentesCarburantList />} />
 
+                <Route path="/ventes-carburant/nouveau" element={<VenteCarburantForm />} />
+                <Route path="/ventes-carburant/:id" element={<VenteCarburantDetail />} />
 
+                <Route path="/prix-carburant" element={<PrixCarburantList />} />
+                <Route path="/prix-carburant/nouveau" element={<PrixCarburantForm />} />
+                <Route path="/prix-carburant/:id" element={<PrixCarburantDetail />} />
+                <Route path="/prix-carburant/:id/modifier" element={<PrixCarburantForm />} />
 
+                <Route path="/services" element={<ServicesList />} />
+                <Route path="/services/nouveau" element={<ServiceForm />} />
+                <Route path="/services/:id" element={<ServiceDetail />} />
+                <Route path="/services/:id/modifier" element={<ServiceForm />} />
+                <Route path="/ventes-services" element={<VentesServicesList />} />
 
+                <Route path="/ventes-services/nouveau" element={<VenteServiceForm />} />
+                <Route path="/ventes-services/:id/modifier" element={<VenteServiceForm />} />
+                <Route path="/ventes-services/:id" element={<VenteServiceDetail />} />
 
-<Route path="/cuves" element={<CuvesList />} />
-<Route path="/cuves/nouveau" element={<CuveForm />} />
-<Route path="/cuves/approvisionnement" element={<CuveApprovisionnement />} />
-<Route path="/cuves/mouvements" element={<CuvesMouvements />} />
-<Route path="/cuves/:id" element={<CuveDetail />} />
-<Route path="/cuves/:id/modifier" element={<CuveForm />} />
-
-
-
-<Route path="/pompes" element={<PompesList />} />
-<Route path="/pompes/nouveau" element={<PompeForm />} />
-<Route path="/pompes/:id" element={<PompeDetail />} />
-<Route path="/pompes/:id/modifier" element={<PompeForm />} />
-<Route path="/pompes/ventes" element={<VentesParPompe />} />
-<Route path="/ventes-carburant/nouveau" element={<VenteCarburantForm />} />
-<Route path="/ventes-carburant" element={<VentesCarburantList />} />
-
-
-
-
-<Route path="/ventes-carburant/nouveau" element={<VenteCarburantForm />} />
-<Route path="/ventes-carburant/:id" element={<VenteCarburantDetail />} />
-
-
-<Route path="/prix-carburant" element={<PrixCarburantList />} />
-<Route path="/prix-carburant/nouveau" element={<PrixCarburantForm />} />
-<Route path="/prix-carburant/:id" element={<PrixCarburantDetail />} />
-<Route path="/prix-carburant/:id/modifier" element={<PrixCarburantForm />} />
-
-
-
-<Route path="/services" element={<ServicesList />} />
-<Route path="/services/nouveau" element={<ServiceForm />} />
-<Route path="/services/:id" element={<ServiceDetail />} />
-<Route path="/services/:id/modifier" element={<ServiceForm />} />
-<Route path="/ventes-services" element={<VentesServicesList />} />
-
-<Route path="/ventes-services/nouveau" element={<VenteServiceForm />} />
-<Route path="/ventes-services/:id/modifier" element={<VenteServiceForm />} />
-<Route path="/ventes-services/:id" element={<VenteServiceDetail />} />
-
-
-<Route path="/dashboard-station" element={<StationDashboard />} />
-<Route path="/statistiques-station" element={<StatistiquesStation />} />
-<Route path="/rapports-station" element={<RapportsStation />} />
-<Route path="/config-station" element={<ConfigStation />} />
-
+                <Route path="/dashboard-station" element={<StationDashboard />} />
+                <Route path="/statistiques-station" element={<StatistiquesStation />} />
+                <Route path="/rapports-station" element={<RapportsStation />} />
+                <Route path="/config-station" element={<ConfigStation />} />
 
                 <Route path="/company-config" element={<EtablissementSettings />} />
               </Route>
